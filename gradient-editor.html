@@ -1,0 +1,232 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>CSS Gradient Editor —Build Linear &amp; Radial Gradients Visually —jslet</title>
+    <meta name="description" content="Visually build CSS gradients with a live preview. Add, remove, and reposition color stops. Copy the CSS linear-gradient or radial-gradient code instantly. Perfect for backgrounds, buttons, hero sections. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/gradient-editor">
+    <meta property="og:title" content="CSS Gradient Editor —Build Gradients Visually"><meta property="og:description" content="Visually build CSS linear and radial gradients. Copy CSS instantly. 100% client-side."><meta property="og:url" content="https://www.jslet.com/gradient-editor"><meta property="og:type" content="website"><meta property="og:site_name" content="jslet"><meta property="og:image" content="https://www.jslet.com/og-image.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="CSS Gradient Editor"><meta name="twitter:description" content="Build CSS gradients visually. Copy CSS. 100% client-side."><meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"CSS Gradient Editor","description":"Visual CSS gradient builder. Add/remove color stops, adjust angles, toggle between linear and radial gradients. Copy production-ready CSS. 100% client-side.","url":"https://www.jslet.com/gradient-editor","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I create a CSS gradient visually without manually writing gradient code?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "CSS gradient syntax is notoriously verbose and hard to tweak by hand — a single linear-gradient() with three color stops and an angle looks like linear-gradient(135deg, #ff6b35 0%, #f7c948 50%, #1dd1a1 100%). Changing one stop's position means recalculating percentages, and getting the angle right by trial-and-error is slow. A visual gradient editor like jslet's solves this: you see a live preview of the gradient that updates instantly as you adjust each parameter. Add color stops by clicking '+ Add Color Stop' — each stop gets a color picker (click to open the native OS color picker or enter a HEX value) and a position slider (0% at the start, 100% at the end). Drag the angle slider to rotate a linear gradient, or switch to radial mode to make it circular or elliptical. Rearrange stops by adjusting their position percentages — the preview re-renders on every change. When you're satisfied, the CSS code appears below the preview — click it to copy the full linear-gradient() or radial-gradient() declaration to your clipboard, ready to paste into your stylesheet, Tailwind config, or CSS-in-JS."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What's the difference between linear and radial CSS gradients?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Linear gradients transition colors along a straight line defined by an angle (e.g., 90deg = left-to-right, 180deg = top-to-bottom, 45deg = bottom-left to top-right). They create directional shading — perfect for headers, hero sections, button backgrounds, and progress bars. Syntax: background: linear-gradient(135deg, #color1 0%, #color2 100%). Radial gradients transition colors outward from a center point in a circular or elliptical shape. They create focal-point effects — ideal for spotlight overlays, vignette effects on images, glowing element backgrounds, and depth cues on cards. Syntax: background: radial-gradient(circle at center, #color1 0%, #color2 100%). You can control the shape (circle vs ellipse), position (at top left, at 30% 70%), and size (closest-side, farthest-corner). A third variant — conic gradients (conic-gradient()) — rotates colors around a center point like a color wheel, useful for pie charts and loading spinners, though browser support is more limited. jslet's editor supports both linear and radial modes with a toggle, plus angle control for linear and position/shape control for radial."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How many color stops can a CSS gradient have, and how do I position them?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "CSS gradients support an unlimited number of color stops — you can create smooth multi-stop gradients with dozens of color transitions. Each color stop has two properties: a color value (any CSS color format — HEX, RGB, HSL, or named colors) and an optional position (a percentage or length indicating where along the gradient line this color appears). Stop positions work like keyframes: the browser interpolates colors smoothly between consecutive stops. If you omit a position, stops are distributed evenly — three stops without positions default to 0%, 50%, 100%. You can create sharp transitions (hard lines) by placing two stops at the same position with different colors: #ff0000 50%, #0000ff 50% produces an abrupt red-to-blue change at the midpoint with no blending. A practical tip: for smooth gradients, use 2–4 stops. Beyond ~6 stops, the visual difference is negligible and the CSS becomes hard to maintain. Use the editor's live preview to experiment — add stops, drag position sliders, and see the effect instantly. When you're done, the generated CSS includes all stop positions explicitly, so the gradient looks identical in production."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .gradient-preview { width: 100%; height: 180px; border-radius: var(--radius-sm); margin-bottom: 20px; border: 2px solid var(--border); transition: background 0.3s; }
+        .stops-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+        .stop-chip { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 20px; font-size: 0.82rem; }
+        .stop-chip input[type="color"] { width: 28px; height: 28px; border: none; cursor: pointer; padding: 0; border-radius: 4px; }
+        .stop-chip button { background: none; border: none; cursor: pointer; font-size: 0.9rem; color: #e74c3c; padding: 0 4px; }
+        .control-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+        .control-row label { font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+        .control-row input[type="range"] { width: 120px; }
+        .control-row select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-input); color: var(--text-body); }
+        .css-output { font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.85rem; padding: 14px 18px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); word-break: break-all; cursor: pointer; transition: border-color 0.2s; }
+        .css-output:hover { border-color: var(--accent); }
+        .btn-row { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); } .btn-outline:hover { background: var(--accent-soft); }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>CSS Gradient <span>Editor</span></h1><p>Visually build CSS gradients. Drag the angle, tweak color stops, toggle between linear and radial. Copy the CSS in one click.</p></header>
+        <div class="gradient-preview" id="gradient-preview"></div>
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="addStop()">+ Add Color Stop</button>
+            <button class="btn-outline" onclick="randomGradient()">🟢🎲 Random</button>
+            <button class="btn-outline" onclick="copyGradientCSS()">🟢📋 Copy CSS</button>
+        </div>
+        <div class="control-row">
+            <label>Type: <select id="grad-type" onchange="updateGradient()"><option value="linear">Linear</option><option value="radial">Radial</option></select></label>
+            <label id="angle-label">Angle: <input type="range" id="grad-angle" min="0" max="360" value="135" oninput="updateGradient()"> <span id="angle-val">135°</span></label>
+        </div>
+        <div class="stops-row" id="stops-container"></div>
+        <div class="css-output" id="css-output" onclick="copyGradientCSS()" title="Click to copy">Click to copy CSS →</div>
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">🟢📖 CSS Gradient Properties</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>linear-gradient(direction, color-stop1, color-stop2, ...)</strong> —creates a gradient that transitions along a straight line. The direction can be an angle (e.g., 135deg) or keyword (to right, to bottom left).</p>
+                <p><strong>radial-gradient(shape, color-stop1, ...)</strong> —creates a circular or elliptical gradient radiating from a center point. Default is ellipse at center.</p>
+                <p><strong>Color stops</strong> can include an optional percentage after the color to control where the transition happens. Example: <code>linear-gradient(135deg, #667eea 0%, #764ba2 100%)</code>. Modern CSS also supports <strong>conic-gradient</strong> and <strong>repeating-linear-gradient</strong>.</p>
+                <p><strong>Why gradients beat background images.</strong> A linear-gradient CSS rule is a few dozen bytes of text. An equivalent PNG/SVG background image is kilobytes, requires an HTTP request, and doesn't scale cleanly across screen sizes. Gradients are resolution-independent — they render at the device's native pixel density with no blur or artifacting. They animate smoothly with CSS transitions (changing the gradient angle or color stop positions), which would require JavaScript canvas work with images. And they compose with other CSS backgrounds via the layered background property: you can stack a gradient over a background-image for a tint effect. For hero sections, button hover states, and card backgrounds, a well-tuned CSS gradient is always the faster, lighter choice compared to serving image assets.</p>
+                <p><strong>Conic gradients for charts and spinners.</strong> <code>conic-gradient()</code> rotates color stops around a center point like slices of a pie. This is the CSS-native way to build: pie/donut charts (one div, one conic-gradient, no chart library), circular progress indicators, color wheels, and radar sweep animations. Combined with CSS custom properties (@property) for animation, you can smoothly transition conic gradient angles to create a spinning loader entirely in CSS — no JavaScript, no canvas, just declarative styling. This pattern is increasingly replacing GIF spinners on modern sites because CSS animations run on the GPU compositor thread and don't block the main thread.</p>
+                <p><strong>Gradient text — background-clip trick.</strong> Apply a gradient to text with three CSS rules: <code>background: linear-gradient(...); background-clip: text; -webkit-text-fill-color: transparent;</code>. The gradient fills the text shape instead of a box. This works for headings, logos, and icon fonts. Caveats: it requires the -webkit- prefix (all modern browsers support it, but it's non-standard), it doesn't work with text-shadow simultaneously in all browsers, and it's not accessible if used as the only visual distinction for links (the gradient might have low contrast). Use it for decorative headings where the plain-text fallback is still readable.</p>
+                <p>See also: <a href="/color-converter">Color Converter</a> · <a href="/box-shadow-generator">Box Shadow Generator</a> · <a href="/border-radius-generator">Border Radius</a></p>
+            </div>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var stops = [{color:'#667eea',pos:0},{color:'#764ba2',pos:100}];
+
+        function renderStops() {
+            var html = '';
+            for (var i = 0; i < stops.length; i++) {
+                html += '<div class="stop-chip"><input type="color" aria-label="Color stop" value="' + stops[i].color + '" onchange="updateStopColor(' + i + ',this.value)"><span style="font-size:0.78rem;">' + stops[i].pos + '%</span><button onclick="removeStop(' + i + ')" title="Remove">✕?</button></div>';
+            }
+            document.getElementById('stops-container').innerHTML = html;
+        }
+
+        window.addStop = function() {
+            stops.push({color:'#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0'),pos:50});
+            stops.sort(function(a,b){return a.pos - b.pos;});
+            renderStops(); updateGradient();
+        };
+
+        window.removeStop = function(i) {
+            if (stops.length <= 2) return;
+            stops.splice(i,1); renderStops(); updateGradient();
+        };
+
+        window.updateStopColor = function(i, color) { stops[i].color = color; updateGradient(); };
+
+        window.updateGradient = function() {
+            var type = document.getElementById('grad-type').value;
+            var angle = document.getElementById('grad-angle').value;
+            document.getElementById('angle-val').textContent = angle + '°';
+            var lbl = document.getElementById('angle-label');
+            lbl.style.display = type === 'linear' ? '' : 'none';
+            var stopsStr = stops.map(function(s){return s.color+' '+s.pos+'%';}).join(', ');
+            var css = type === 'linear' ? 'linear-gradient(' + angle + 'deg, ' + stopsStr + ')' : 'radial-gradient(circle, ' + stopsStr + ')';
+            document.getElementById('gradient-preview').style.background = css;
+            document.getElementById('css-output').textContent = 'background: ' + css + ';';
+        };
+
+        window.randomGradient = function() {
+            var c1 = '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+            var c2 = '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+            var a = Math.floor(Math.random()*360);
+            stops = [{color:c1,pos:0},{color:c2,pos:100}];
+            document.getElementById('grad-angle').value = a;
+            document.getElementById('angle-val').textContent = a + '°';
+            renderStops(); updateGradient();
+        };
+
+        window.copyGradientCSS = function() {
+            var text = document.getElementById('css-output').textContent;
+            if (text) navigator.clipboard.writeText(text);
+            var el = document.getElementById('css-output');
+            var orig = el.style.background;
+            el.style.background = 'var(--accent-soft)';
+            setTimeout(function(){el.style.background = orig;}, 200);
+        };
+
+        renderStops(); updateGradient();
+    })();
+    </script>
+</body>
+</html>
+

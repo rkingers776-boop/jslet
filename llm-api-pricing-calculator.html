@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>LLM API Pricing Calculator — Compare OpenAI, Anthropic, Google, DeepSeek Costs — jslet</title>
+    <meta name="description" content="Summarization is 8:1 input-to-output. Code generation is 1:2. Chat is 1:0.4. The same 10K daily requests cost 100× more on one provider than another — and your workload profile is the multiplier. Compare 12 models across 6 providers with caching and batch discounts.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <meta property="og:title" content="LLM API Pricing Calculator — Compare OpenAI, Anthropic, Google, DeepSeek Costs">
+    <meta property="og:description" content="Compare LLM API costs across 12 models and 6 providers. Model prompt caching savings (up to 90% off) and batch processing discounts. Workload-aware: chat, summarization, code gen, RAG, translation.">
+    <meta property="og:url" content="https://www.jslet.com/llm-api-pricing-calculator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="LLM API Pricing Calculator — Compare 12 Models Across 6 Providers">
+    <meta name="twitter:description" content="Workload-aware LLM cost comparison. Chat costs different from summarization. Caching saves 50-90%. Batch saves 50%. See the real math.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/llm-api-pricing-calculator">
+    <style>
+        .input-row-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 14px; }
+        .input-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 800px) { .input-row-4 { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 500px) { .input-row-4, .input-row-2 { grid-template-columns: 1fr; } }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono","Cascadia Code",Consolas,monospace; transition: border-color 0.2s,box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .toggle-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
+        .toggle-label { font-size: 0.85rem; color: var(--text-body); font-weight: 600; }
+        .toggle-switch { position: relative; display: inline-block; width: 48px; height: 26px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: var(--border); border-radius: 26px; transition: 0.2s; }
+        .toggle-slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
+        .toggle-switch input:checked + .toggle-slider { background: var(--accent); }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(22px); }
+        .slider-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .slider-wrap input[type=range] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+        .slider-val { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-weight: 700; color: var(--accent); min-width: 42px; text-align: right; font-size: 0.9rem; }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .metric-tile.best { border-color: #27ae60; background: #eafaf1; }
+        .metric-tile.best .metric-val { color: #27ae60; }
+        .compare-table-wrap { overflow-x: auto; margin-top: 14px; }
+        .compare-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 780px; }
+        .compare-table th { background: var(--bg-input); color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.6px; padding: 10px 12px; text-align: right; border-bottom: 2px solid var(--border); white-space: nowrap; }
+        .compare-table th:first-child { text-align: left; }
+        .compare-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: right; font-family: "SF Mono","Cascadia Code",Consolas,monospace; white-space: nowrap; }
+        .compare-table td:first-child { text-align: left; font-family: inherit; font-weight: 600; }
+        .compare-table td.provider-cell { font-size: 0.78rem; color: var(--text-muted); font-weight: 400; }
+        .compare-table tr.row-best { background: #eafaf1; }
+        .compare-table tr.row-best td:first-child::after { content: " ★"; color: #27ae60; font-size: 0.7rem; }
+        .compare-table tr.row-provider-divider td { border-top: 2px solid var(--border); }
+        .cost-high { color: #e74c3c; }
+        .cost-mid { color: #e67e22; }
+        .cost-low { color: #27ae60; }
+        .warn-box { background: #fff3cd; border: 1px solid #ffc107; border-radius: var(--radius-sm); padding: 14px 18px; margin-top: 14px; font-size: 0.9rem; color: #856404; }
+        .info-box { background: #d1ecf1; border: 1px solid #17a2b8; border-radius: var(--radius-sm); padding: 14px 18px; margin-top: 14px; font-size: 0.9rem; color: #0c5460; }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "LLM API Pricing Calculator",
+      "description": "Compare LLM API costs across 12 models and 6 providers including OpenAI, Anthropic, Google, DeepSeek, Mistral, and Meta/Groq. Workload-aware cost modeling with prompt caching and batch processing discounts.",
+      "url": "https://www.jslet.com/llm-api-pricing-calculator",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why is LLM API pricing not a simple multiplication?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Because input and output tokens are priced differently, and your workload profile decides the ratio: summarization is ~8:1 input-to-output, code generation is 1:2, chat is 1:0.4. The same 10K daily requests can cost 100× more on one provider than another depending on the profile. This calculator compares 12 models across 6 providers with caching and batch discounts applied."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is prompt caching and how much does it save?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Prompt caching reuses the token computation for repeated prompt prefixes at a heavily discounted rate — often a fraction of the input price. For workloads with stable system prompts (chat assistants, RAG), caching is the most underutilized discount in the LLM bill. The calculator models cache hit rates so the savings show up in the comparison."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why do tokenizers change the effective price?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Tokenizers split text differently per model — 1,000 characters is not 1,000 tokens, and the same English text can tokenize to different counts across providers. Combined with input/output ratio differences, the \"same\" prompt costs different amounts. The calculator accounts for tokenizer variance so your comparison is apples-to-apples."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>LLM <span>API Pricing</span> Calculator</h1>
+            <p>Compare real token costs across 12 models from 6 providers. Workload-aware — chat costs different from summarization. Includes prompt caching (up to 90% off) and batch processing (up to 50% off) discounts. All calculations client-side. No data leaves your browser.</p>
+        </header>
+        <main class="matrix-grid">
+
+            <!-- ═══ Input Card ═══ -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📋 Workload Configuration</h3>
+                <p class="card-desc">Select a workload profile to auto-fill typical token ratios, or configure custom values. Token counts are approximate — different providers use different tokenizers, so the same text produces different token counts. The calculator uses your numbers uniformly; see the methodology note below.</p>
+
+                <div class="input-row-4">
+                    <div class="input-group">
+                        <label for="workload">Workload Profile</label>
+                        <select class="unit-input" id="workload" aria-label="Workload type">
+                            <option value="chat">💬 Conversational Chat</option>
+                            <option value="summarization">📝 Summarization</option>
+                            <option value="codegen">💻 Code Generation</option>
+                            <option value="rag">🔍 RAG / Q&amp;A</option>
+                            <option value="translation">🌐 Translation</option>
+                            <option value="custom">⚙️ Custom</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="requests">Daily Requests</label>
+                        <input type="number" class="unit-input" id="requests" value="1000" min="1" max="100000000" step="100">
+                    </div>
+                    <div class="input-group">
+                        <label for="inputTokens">Avg Input Tokens / Request</label>
+                        <input type="number" class="unit-input" id="inputTokens" value="2000" min="1" max="1000000" step="100">
+                    </div>
+                    <div class="input-group">
+                        <label for="outputTokens">Avg Output Tokens / Request</label>
+                        <input type="number" class="unit-input" id="outputTokens" value="800" min="1" max="1000000" step="100">
+                    </div>
+                </div>
+
+                <div class="toggle-row">
+                    <div style="flex:1; min-width: 200px;">
+                        <div class="slider-wrap">
+                            <span class="toggle-label">Prompt Cache Hit Rate:</span>
+                            <input type="range" id="cacheRate" min="0" max="100" value="0" step="5">
+                            <span class="slider-val" id="cacheRateVal">0%</span>
+                        </div>
+                        <span style="font-size:0.72rem;color:var(--text-muted);">% of input tokens served from cache. Anthropic gives 90% discount, OpenAI 50%.</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span class="toggle-label">Batch Processing:</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="batchMode">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span style="font-size:0.72rem;color:var(--text-muted);">50% off for async (24h SLA).</span>
+                    </div>
+                </div>
+
+                <button class="btn-calc">Compare All Providers</button>
+            </div>
+
+            <!-- ═══ Results Card ═══ -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Cost Comparison</h3>
+                <p class="card-desc" id="results-desc"></p>
+
+                <!-- Summary tiles -->
+                <div class="metric-grid" id="summary-grid"></div>
+
+                <!-- Comparison table -->
+                <div class="compare-table-wrap">
+                    <table class="compare-table" id="compare-table">
+                        <thead>
+                            <tr>
+                                <th>Provider / Model</th>
+                                <th>Input $/1M tok</th>
+                                <th>Output $/1M tok</th>
+                                <th>Daily Cost</th>
+                                <th>Monthly Cost</th>
+                                <th>Annual Cost</th>
+                                <th>Optimized Annual</th>
+                            </tr>
+                        </thead>
+                        <tbody id="compare-tbody"></tbody>
+                    </table>
+                </div>
+
+                <div id="insight-area"></div>
+            </div>
+        </main>
+
+        <!-- ═══ SEO Explainer ═══ -->
+        <section class="seo-section">
+            <h2>Why LLM API Pricing Isn't a Simple Multiplication</h2>
+            <p>The pricing page says <strong>$2.50 per million input tokens</strong>. Your mental math: "10,000 requests × 2,000 tokens × $2.50/M = $50/day." Then the bill arrives and it's <strong>$180/day</strong>. Four structural reasons the napkin math fails every time.</p>
+
+            <h3>1. Input ≠ Output Token Counts</h3>
+            <p>Most pricing pages quote input and output prices separately — but your workload determines the ratio. A <strong>chat application</strong> with system prompts and conversation history averages roughly 1:0.4 input-to-output tokens (2.5× more input than output). A <strong>summarization pipeline</strong> averages 8:1 (long document in, short summary out). A <strong>code generation agent</strong> averages 1:2 (short prompt, longer code block out). Since output tokens cost 3–4× more than input tokens at most providers, the workload ratio is a cost multiplier. A summarization workload at 8:1 pays mostly input prices; a code generation workload at 1:2 pays mostly output prices. <strong>Same daily request count, same provider — 3× cost difference between profiles.</strong></p>
+
+            <h3>2. Prompt Caching: The Most Underutilized Discount</h3>
+            <p>Anthropic gives a <strong>90% discount</strong> on cached input tokens. OpenAI gives <strong>50% off</strong>. Google's context caching is <strong>free for prompts under 128K tokens</strong> with a small storage fee. If your application sends the same system prompt with every request — and most do — that's 500–2,000 tokens per request that qualify for caching. At a 90% discount on Anthropic, a 2,000-token system prompt at 1M requests/month saves <strong>$27,000/month</strong> on Claude Opus 4 alone. The discount exists. Most teams never configure it.</p>
+
+            <h3>3. Batch Processing: Half Price for Patience</h3>
+            <p>Both OpenAI and Anthropic offer <strong>50% off</strong> for batch (asynchronous) processing with a 24-hour completion SLA. For offline workloads — evaluation runs, dataset labeling, embedding generation, nightly summarization jobs — batch pricing cuts the bill in half with no downsides. Combined with prompt caching on Anthropic, the effective cost for batched, cached inference can be <strong>5–10% of the sticker price</strong>.</p>
+
+            <h3>4. Tokenizer Variance: 1,000 Tokens ≠ 1,000 Tokens</h3>
+            <p>OpenAI, Anthropic, Google, and DeepSeek each use different tokenizers. The same English paragraph might be 800 tokens on OpenAI's cl100k_base tokenizer, 750 on Anthropic's tokenizer, and 880 on Google's SentencePiece tokenizer. Across 1 million requests per day, a 10% tokenizer efficiency difference translates to <strong>thousands of dollars per month</strong> in cost variance — before you even compare the per-token prices. The calculator uses uniform token counts for comparability; in practice, benchmark your actual text across providers before committing.</p>
+
+            <h3>How to Use This Calculator</h3>
+            <ol>
+                <li>Pick your workload profile — this sets realistic input/output token ratios.</li>
+                <li>Set your daily request volume and adjust token counts if needed.</li>
+                <li>Slide the prompt cache hit rate based on what percentage of your requests share a common prefix (system prompts, few-shot examples, RAG context).</li>
+                <li>Toggle batch processing for offline/non-realtime workloads.</li>
+                <li>Compare the "Annual Cost" column (no optimizations) with "Optimized Annual" (cache + batch) — the gap is savings you're leaving on the table.</li>
+            </ol>
+        </section>
+
+        <!-- ═══ Related Tools ═══ -->
+        <div class="related-tools">
+            <h3>Related Tools &amp; Reading</h3>
+            <div class="related-grid">
+                <a href="/gpu-training-cost">GPU Training Cost Estimator →</a>
+                <a href="/parameters-to-vram-fp16">LLM Params → FP16 VRAM →</a>
+                <a href="/context-window-vram-inflation">Context Window VRAM Inflation →</a>
+                <a href="/token-size-to-storage">Token Count → Storage →</a>
+                <a href="/llm-api-pricing-real">📰 LLM API Token Economics Deep-Dive →</a>
+                <a href="/ai-gpu-compute">All AI &amp; GPU Tools →</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    /* ── Pricing Data (per 1M tokens, USD) ── */
+    var PROVIDERS = [
+        { id: 'openai',     name: 'OpenAI',     models: [
+            { id: 'gpt-4o',         name: 'GPT-4o',         input: 2.50, output: 10.00, cachedInput: 1.25,  batchDiscount: 0.50 },
+            { id: 'gpt-4o-mini',    name: 'GPT-4o-mini',    input: 0.15, output: 0.60,  cachedInput: 0.075, batchDiscount: 0.50 },
+            { id: 'o4-mini',        name: 'o4-mini',        input: 1.10, output: 4.40,  cachedInput: 0.55,  batchDiscount: 0.50 }
+        ]},
+        { id: 'anthropic',  name: 'Anthropic',  models: [
+            { id: 'claude-opus-4',  name: 'Claude Opus 4',   input: 15.00, output: 75.00, cachedInput: 1.50,  batchDiscount: 0.50 },
+            { id: 'claude-sonnet-4',name: 'Claude Sonnet 4', input: 3.00,  output: 15.00, cachedInput: 0.30,  batchDiscount: 0.50 },
+            { id: 'claude-haiku-4', name: 'Claude Haiku 4',  input: 0.25,  output: 1.25,  cachedInput: 0.025, batchDiscount: 0.50 }
+        ]},
+        { id: 'google',     name: 'Google (Gemini)', models: [
+            { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro',  input: 1.25, output: 5.00,  cachedInput: 0.3125, batchDiscount: 0 },
+            { id: 'gemini-2.5-flash',name:'Gemini 2.5 Flash',input: 0.15, output: 0.60,  cachedInput: 0.0375, batchDiscount: 0 }
+        ]},
+        { id: 'deepseek',   name: 'DeepSeek',   models: [
+            { id: 'deepseek-v3',    name: 'DeepSeek-V3',     input: 0.27, output: 1.10,  cachedInput: 0.27,  batchDiscount: 0.50 },
+            { id: 'deepseek-r1',    name: 'DeepSeek-R1',     input: 0.55, output: 2.19,  cachedInput: 0.55,  batchDiscount: 0.50 }
+        ]},
+        { id: 'mistral',    name: 'Mistral',    models: [
+            { id: 'mistral-large',  name: 'Mistral Large 2', input: 3.00, output: 9.00,  cachedInput: 3.00,  batchDiscount: 0 },
+            { id: 'mistral-small',  name: 'Mistral Small',   input: 1.00, output: 3.00,  cachedInput: 1.00,  batchDiscount: 0 }
+        ]},
+        { id: 'meta',       name: 'Meta (via Groq/Together)', models: [
+            { id: 'llama-4-groq',   name: 'Llama 4 Scout (Groq)',  input: 0.15, output: 0.50,  cachedInput: 0.15,  batchDiscount: 0 },
+            { id: 'llama-4-together',name:'Llama 4 Maverick (Together)', input: 0.60, output: 2.00, cachedInput: 0.60, batchDiscount: 0 }
+        ]}
+    ];
+
+    /* ── Workload Profiles ── */
+    var WORKLOADS = {
+        chat:          { name: 'Conversational Chat', desc: 'Multi-turn dialogue, customer support',    inputTokens: 2000, outputTokens: 800,  descFull: 'Chat: ~1:0.4 in-to-out ratio' },
+        summarization: { name: 'Summarization',       desc: 'Long document → short summary',           inputTokens: 8000, outputTokens: 1000, descFull: 'Summarization: ~8:1 in-to-out ratio' },
+        codegen:       { name: 'Code Generation',     desc: 'Prompt → code completion / generation',    inputTokens: 1500, outputTokens: 3000, descFull: 'Code Gen: ~1:2 in-to-out ratio' },
+        rag:           { name: 'RAG / Q&amp;A',       desc: 'Retrieval-augmented question answering',   inputTokens: 6000, outputTokens: 800,  descFull: 'RAG: ~7.5:1 in-to-out ratio' },
+        translation:   { name: 'Translation',         desc: 'Source language → target language',        inputTokens: 3000, outputTokens: 3000, descFull: 'Translation: ~1:1 in-to-out ratio' },
+        custom:        { name: 'Custom',              desc: 'Manually configured token counts',          inputTokens: 2000, outputTokens: 800,  descFull: 'Custom token configuration' }
+    };
+
+    /* ── Helpers ── */
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+    function fmtUSD(n) {
+        if (n < 0.01) return '$' + n.toFixed(4);
+        if (n < 1) return '$' + n.toFixed(2);
+        if (n < 1000) return '$' + n.toFixed(0);
+        if (n < 1000000) return '$' + (n / 1000).toFixed(1) + 'K';
+        return '$' + (n / 1000000).toFixed(2) + 'M';
+    }
+    function costClass(n, min, max) {
+        if (n <= min * 1.15) return 'cost-low';
+        if (n >= max * 0.85) return 'cost-high';
+        return 'cost-mid';
+    }
+
+    /* ── Compute ── */
+    function compute() {
+        var workloadKey = document.getElementById('workload').value;
+        var wl = WORKLOADS[workloadKey];
+        var requests = Math.max(1, v('requests'));
+        var inTok = Math.max(1, v('inputTokens'));
+        var outTok = Math.max(1, v('outputTokens'));
+        var cachePct = Math.min(100, Math.max(0, v('cacheRate') || 0));
+        var batch = document.getElementById('batchMode').checked;
+
+        /* Per-request token volumes */
+        var cachedInPerReq = inTok * (cachePct / 100);
+        var uncachedInPerReq = inTok - cachedInPerReq;
+
+        /* Collect all model costs */
+        var rows = [];
+        PROVIDERS.forEach(function(prov) {
+            prov.models.forEach(function(m) {
+                var effCachedInput = m.cachedInput; /* price for cached input tokens */
+                var dailyNaive = (inTok * requests / 1e6 * m.input) + (outTok * requests / 1e6 * m.output);
+                var dailyCached = (uncachedInPerReq * requests / 1e6 * m.input) + (cachedInPerReq * requests / 1e6 * effCachedInput) + (outTok * requests / 1e6 * m.output);
+                var dailyOptimized = dailyCached;
+                if (batch && m.batchDiscount > 0) {
+                    dailyOptimized = dailyOptimized * (1 - m.batchDiscount);
+                }
+                var monthlyOptimized = dailyOptimized * 30;
+                var annualOptimized = dailyOptimized * 365;
+                var monthlyNaive = dailyNaive * 30;
+                var annualNaive = dailyNaive * 365;
+
+                rows.push({
+                    providerName: prov.name,
+                    providerId: prov.id,
+                    modelName: m.name,
+                    modelId: m.id,
+                    inputPrice: m.input,
+                    outputPrice: m.output,
+                    cachedInputPrice: effCachedInput,
+                    hasCaching: effCachedInput < m.input,
+                    hasBatch: m.batchDiscount > 0,
+                    dailyNaive: dailyNaive,
+                    monthlyNaive: monthlyNaive,
+                    annualNaive: annualNaive,
+                    dailyOptimized: dailyOptimized,
+                    monthlyOptimized: monthlyOptimized,
+                    annualOptimized: annualOptimized
+                });
+            });
+        });
+
+        /* Sort by annual optimized cost (lowest first) */
+        rows.sort(function(a, b) { return a.annualOptimized - b.annualOptimized; });
+
+        /* Find min/max for coloring */
+        var minAnnual = rows[0].annualNaive;
+        var maxAnnual = rows[rows.length - 1].annualNaive;
+
+        /* ── Render ── */
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-desc').innerText =
+            wl.descFull + ' · ' + requests.toLocaleString() + ' requests/day · ' +
+            inTok.toLocaleString() + ' in / ' + outTok.toLocaleString() + ' out tokens per request · ' +
+            'Cache rate: ' + cachePct + '% · ' + (batch ? 'Batch mode ON' : 'Batch mode OFF');
+
+        /* Summary tiles */
+        var cheapestNaive = rows[0];
+        var cheapestOpt = rows.reduce(function(a, b) { return a.annualOptimized < b.annualOptimized ? a : b; });
+        var maxSavings = rows.reduce(function(a, b) {
+            var sa = a.annualNaive - a.annualOptimized;
+            var sb = b.annualNaive - b.annualOptimized;
+            return sa > sb ? a : b;
+        });
+
+        var summaryHtml = '';
+        summaryHtml += '<div class="metric-tile best"><div class="metric-val">' + cheapestNaive.providerName + '</div><div class="metric-label">Cheapest (No Opt) — ' + fmtUSD(cheapestNaive.monthlyNaive) + '/mo</div></div>';
+        summaryHtml += '<div class="metric-tile best"><div class="metric-val">' + cheapestOpt.providerName + '</div><div class="metric-label">Cheapest (Optimized) — ' + fmtUSD(cheapestOpt.monthlyOptimized) + '/mo</div></div>';
+        summaryHtml += '<div class="metric-tile"><div class="metric-val">' + fmtUSD(rows[rows.length - 1].annualNaive - minAnnual) + '</div><div class="metric-label">Annual Spread (Cheapest → Priciest)</div></div>';
+        if (maxSavings.annualNaive - maxSavings.annualOptimized > 0.01) {
+            summaryHtml += '<div class="metric-tile"><div class="metric-val">' + fmtUSD(maxSavings.annualNaive - maxSavings.annualOptimized) + '</div><div class="metric-label">Max Annual Savings (Cache + Batch) — ' + maxSavings.providerName + '</div></div>';
+        }
+        document.getElementById('summary-grid').innerHTML = summaryHtml;
+
+        /* Comparison table */
+        var tbody = '';
+        var lastProv = '';
+        rows.forEach(function(r, i) {
+            var isBest = (i === 0); /* cheapest optimized */
+            var rowClass = isBest ? 'row-best' : '';
+            if (r.providerId !== lastProv && lastProv !== '') {
+                rowClass += ' row-provider-divider';
+            }
+            lastProv = r.providerId;
+
+            tbody += '<tr class="' + rowClass + '">';
+            tbody += '<td><span style="color:var(--text-heading);">' + r.modelName + '</span><br><span class="provider-cell">' + r.providerName + '</span></td>';
+            tbody += '<td>$' + r.inputPrice.toFixed(2) + '</td>';
+            tbody += '<td>$' + r.outputPrice.toFixed(2) + '</td>';
+            tbody += '<td class="' + costClass(r.dailyNaive, rows[0].dailyNaive, rows[rows.length - 1].dailyNaive) + '">' + fmtUSD(r.dailyNaive) + '</td>';
+            tbody += '<td class="' + costClass(r.monthlyNaive, rows[0].monthlyNaive, rows[rows.length - 1].monthlyNaive) + '">' + fmtUSD(r.monthlyNaive) + '</td>';
+            tbody += '<td class="' + costClass(r.annualNaive, minAnnual, maxAnnual) + '">' + fmtUSD(r.annualNaive) + '</td>';
+            tbody += '<td class="cost-low"><strong>' + fmtUSD(r.annualOptimized) + '</strong></td>';
+            tbody += '</tr>';
+        });
+        document.getElementById('compare-tbody').innerHTML = tbody;
+
+        /* Insight area */
+        var insightHtml = '';
+        if (cachePct > 0 || batch) {
+            var totalSavingsAnnual = rows.reduce(function(sum, r) { return sum + (r.annualNaive - r.annualOptimized); }, 0);
+            var avgSavingsPct = rows.reduce(function(sum, r) {
+                return sum + (r.annualNaive > 0 ? ((r.annualNaive - r.annualOptimized) / r.annualNaive * 100) : 0);
+            }, 0) / rows.length;
+            insightHtml += '<div class="info-box"><strong>💡 Optimization Impact:</strong> Across all providers, caching + batch saves an average of <strong>' + avgSavingsPct.toFixed(1) + '%</strong>. Total annual savings achievable across all models: <strong>' + fmtUSD(totalSavingsAnnual) + '</strong>. The "Optimized Annual" column (far right) shows the realistic cost when you configure caching and batch processing — compare it to the "Annual Cost" column (naive pricing) to see your specific savings per model.</div>';
+        }
+        if (cachePct === 0 && !batch) {
+            insightHtml += '<div class="warn-box"><strong>💡 Try adding optimizations:</strong> Set a prompt cache hit rate (even 30-50% cuts costs dramatically on Anthropic and OpenAI) or enable batch processing to see the savings gap. Most production applications can cache system prompts and few-shot examples — that alone covers 20-60% of input tokens.</div>';
+        }
+        document.getElementById('insight-area').innerHTML = insightHtml;
+
+        /* Scroll to results */
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    /* ── Event Wiring ── */
+    document.addEventListener('DOMContentLoaded', function() {
+        /* Workload profile changes auto-fill token counts */
+        document.getElementById('workload').addEventListener('change', function() {
+            var wl = WORKLOADS[this.value];
+            document.getElementById('inputTokens').value = wl.inputTokens;
+            document.getElementById('outputTokens').value = wl.outputTokens;
+            compute();
+        });
+        /* Cache rate slider */
+        var cacheSlider = document.getElementById('cacheRate');
+        cacheSlider.addEventListener('input', function() {
+            document.getElementById('cacheRateVal').textContent = this.value + '%';
+            compute();
+        });
+        /* Batch toggle */
+        document.getElementById('batchMode').addEventListener('change', compute);
+        /* Input changes */
+        ['requests','inputTokens','outputTokens'].forEach(function(id) {
+            document.getElementById(id).addEventListener('input', compute);
+        });
+        /* Button */
+        document.querySelector('.btn-calc').addEventListener('click', compute);
+        /* Initial compute */
+        compute();
+    });
+    </script>
+    <script src="nav.js"></script>
+</body>
+</html>

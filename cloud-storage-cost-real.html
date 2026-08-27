@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Cloud Storage Costs: The Egress Trap — Why Your $/GB Number Is Lying to You (2026) — jslet</title>
+    <meta name="description" content="S3 Standard costs $0.023/GB. R2 costs $0.015/GB with zero egress. At 10 TB stored and 50 TB served, R2 is $150/mo and S3 is $4,730/mo — a 31× gap. The $/GB storage number on the pricing page is the least important variable. Egress is the one that bankrupts you.">
+    <meta property="og:title" content="Cloud Storage Costs: The Egress Trap — Why Your $/GB Number Is Lying to You">
+    <meta property="og:description" content="S3 at $0.023/GB vs R2 at $0.015/GB looks like a 1.5× difference. Add egress and it's 31×. Full comparison across 6 vendors with real workload profiles, the cold storage calculus, and the minimum-retention fine print.">
+    <meta property="og:url" content="https://www.jslet.com/cloud-storage-cost-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-06-30T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-06-30T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Cloud Storage Costs: The Egress Trap">
+    <meta name="twitter:description" content="The $/GB storage number is the least important variable. Egress is the one that bankrupts you. Full 6-vendor cost comparison with real workload profiles.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/cloud-storage-cost-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "Cloud Storage Costs: The Egress Trap — Why Your $/GB Number Is Lying to You (2026)",
+      "description": "S3 Standard costs $0.023/GB. R2 costs $0.015/GB with zero egress. At 10 TB stored and 50 TB served, the gap is 31×. The $/GB storage number is the least important variable — egress, API operations, and minimum retention penalties dominate real-world TCO. Full 6-vendor comparison with four workload profiles.",
+      "url": "https://www.jslet.com/cloud-storage-cost-real",
+      "datePublished": "2026-06-30T00:00:00+00:00",
+      "dateModified": "2026-06-30T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is the cheapest cloud storage provider in 2026?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "There is no single cheapest provider — the answer depends entirely on your egress-to-storage ratio. For storage-heavy, low-egress workloads (backups, archives): Backblaze B2 at $0.006/GB and Wasabi at $0.00699/GB are the clear winners, roughly 3–4× cheaper than S3 Standard. For egress-heavy workloads (CDN origin, file sharing, streaming): Cloudflare R2 at $0.015/GB with zero egress fees beats every competitor — at 50 TB monthly egress, R2 saves $4,500/mo compared to S3. For balanced workloads with high API operations: Wasabi becomes attractive because it charges zero for API calls. The vendor that wins at one workload profile loses at another. The $/GB storage number alone is misleading — you must model all three cost dimensions (storage + API ops + egress) against your actual traffic pattern."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does Cloudflare R2 compare to AWS S3 on cost?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "R2 charges $0.015/GB for storage with zero egress fees. S3 Standard charges $0.023/GB for storage plus $0.09/GB for egress. At face value, R2 is 35% cheaper on storage. But the real difference emerges with egress: a workload storing 10 TB and serving 50 TB/month costs $150/mo on R2 (storage only) versus $4,730/mo on S3 ($230 storage + $4,500 egress). That's a 31× gap. However, R2 is a single-tier product — no cold storage, no archival tiers, no lifecycle policies. For long-term archival workloads where data is rarely accessed, S3 Glacier Deep Archive at $0.00099/GB plus cold retrieval fees can beat R2 if the data sits untouched for months. R2 wins on egress-heavy workloads. S3 wins on cold archival workloads with near-zero access patterns. The choice is not about brand — it's about your egress-to-storage ratio."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why is cloud egress so expensive?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Cloud egress pricing ($0.05–0.12/GB at the major hyperscalers) is not a technical cost — it's a business model decision. Bandwidth transit costs for large cloud providers are estimated at $0.01–0.03/GB, meaning egress is priced at 3–10× the underlying cost. The high price serves two strategic purposes: (1) it makes data migration expensive, creating vendor lock-in — once your data is in S3, moving 100 TB to another provider costs $9,000 in egress fees alone, and (2) it subsidizes steep storage discounts for cold tiers, making the entry price attractive while extracting revenue on the way out. Cloudflare R2 and Wasabi broke this model by offering zero egress — R2 because Cloudflare's global network already carries traffic at scale, and Wasabi because they bake the egress assumption into a slightly higher storage price with a fair-use clause. The hyperscalers maintain high egress pricing not because bandwidth is expensive, but because it's the most effective retention mechanism they have."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "When should I use cold storage tiers vs standard storage?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Cold storage tiers (S3 Glacier, GCP Coldline, Azure Archive) charge 5–20× less per GB than standard storage but add retrieval fees ($0.01–0.05/GB) and minimum retention periods (30–180 days). The breakeven for a cold tier is a function of how long data sits untouched. For data accessed once per month, cold storage rarely saves money because retrieval fees eat the storage savings. For data accessed once per quarter, cold tiers reduce costs 2–3× vs standard. For data accessed once per year or less (compliance archives, legal holds, old backups), cold/archive tiers reduce costs 5–15×. The trap: if you move 100 TB to S3 Glacier Deep Archive to save $2,000/mo and then get a legal discovery request requiring you to retrieve all of it, the retrieval fees alone cost $2,000–10,000 depending on retrieval speed. Cold storage is not cheaper storage — it's a bet that you won't need the data. If you're wrong, it's more expensive than standard."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much does 1 TB of cloud storage cost per month?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "For 1 TB of hot/standard storage with no egress: AWS S3 costs $23.55/mo ($23 storage + ~$0.55 API ops), GCP Cloud Storage costs $20/mo, Azure Blob Hot costs $18/mo, Cloudflare R2 costs $15/mo, Backblaze B2 costs $6/mo, and Wasabi costs $6.99/mo. But the 'no egress' assumption is unrealistic for most workloads. If that 1 TB is served 10 times over in a month (10 TB egress), the numbers shift dramatically: S3 becomes $923/mo, GCP becomes $1,220/mo, R2 stays at $15/mo, and Wasabi stays at $6.99/mo (within fair use). The 1 TB question has no single answer — it depends on how many times that terabyte leaves the cloud. Use our cloud storage cost calculator to model your specific egress-to-storage ratio."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>Cloud Storage <span>Costs</span></h1>
+            <p>The egress trap: how a workload that costs $150/month on one provider costs $4,730/month on another — with the same storage volume, the same traffic, and the same data.</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-06-30 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 15 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <!-- ═══ Table of Contents ═══ -->
+        <nav class="toc" aria-label="Table of Contents" style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:20px 24px; margin-bottom:24px;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+            <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+                <li><a href="#three-bills" style="color:var(--accent); text-decoration:none;">The Three Bills Inside Every Cloud Storage Invoice</a></li>
+                <li><a href="#vendor-field" style="color:var(--accent); text-decoration:none;">The Vendor Field: What Six Providers Actually Charge</a></li>
+                <li><a href="#egress-trap" style="color:var(--accent); text-decoration:none;">The Egress Trap: S3 vs R2 at Real Scale</a></li>
+                <li><a href="#workloads" style="color:var(--accent); text-decoration:none;">Four Workload Profiles, Costed</a></li>
+                <li><a href="#cold-storage" style="color:var(--accent); text-decoration:none;">The Cold Storage Calculus</a></li>
+                <li><a href="#fine-print" style="color:var(--accent); text-decoration:none;">The Fine Print: Minimum Retention &amp; Fair Use</a></li>
+                <li><a href="#decision" style="color:var(--accent); text-decoration:none;">How to Pick: A Decision Framework</a></li>
+                <li><a href="#faq" style="color:var(--accent); text-decoration:none;">FAQ</a></li>
+            </ol>
+        </nav>
+
+        <section class="seo-section">
+            <h2 id="three-bills">The Three Bills Inside Every Cloud Storage Invoice</h2>
+            <p>Here is how most people pick a cloud storage provider: they go to the pricing page, find the number next to "Standard Storage," and multiply it by their estimated terabyte count. S3 is $0.023/GB. R2 is $0.015/GB. B2 is $0.006/GB. Decision made in 30 seconds.</p>
+
+            <p>Here is the problem: that number is the smallest of the three charges on a real invoice. Cloud storage bills are not one line item — they are three, and the one that gets the pricing-page headline is not the one that determines your total cost.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:16px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0; font-size:1.05rem; font-weight:700; color:var(--text-heading);">A cloud storage bill = storage ($/GB/month) + API operations ($/1K requests) + egress ($/GB transferred out).</p>
+                <p style="margin:8px 0 0 0; font-size:0.85rem; color:var(--text-body);">Storage is what you pay to keep the bits on disk. API ops is what you pay every time your application reads or writes those bits. Egress is what you pay every time those bits leave the cloud provider's network. The ratio between these three line items — not any one of them in isolation — determines whether your bill is $150 or $4,730.</p>
+            </div>
+
+            <p>I built the <a href="/cloud-storage-cost">cloud storage cost comparison calculator</a> because I watched a friend's startup get a $9,000 S3 bill for a workload they'd estimated at $400. The storage estimate was correct. They had modeled one-third of the invoice. The other two-thirds — egress and API operations — were 22× what they'd budgeted. They are not unusual. Every team I've talked to that runs a production workload on cloud object storage has some version of this story: the first bill was a surprise, the second bill was what they'd budgeted for the first, and by the third month they'd re-architected around the pricing model.</p>
+
+            <p>This article is about understanding all three dimensions before you get the first bill. I've modeled the numbers across six providers for four common workload patterns, and the spread between cheapest and most expensive within each pattern is rarely less than 5× and, in one case, exceeds 30×.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="vendor-field">The Vendor Field: What Six Providers Actually Charge</h2>
+            <p>The cloud object storage market in 2026 has split into two camps. The hyperscalers (AWS, GCP, Azure) charge for all three dimensions with pricing that hasn't fundamentally changed in five years. The challengers (Cloudflare R2, Backblaze B2, Wasabi) have each attacked a different dimension of the hyperscaler pricing model — R2 eliminated egress, B2 slashed the base storage rate, Wasabi eliminated both egress and API charges. The result is a market where the cheapest vendor for one workload is the most expensive for another.</p>
+
+            <p>Here is the raw pricing across all three dimensions, mid-2026, for the hot/standard tier in US East:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Vendor</th><th style="text-align:right;padding:6px 10px;">Storage ($/GB)</th><th style="text-align:right;padding:6px 10px;">Write Ops ($/1K)</th><th style="text-align:right;padding:6px 10px;">Read Ops ($/1K)</th><th style="text-align:right;padding:6px 10px;">Egress ($/GB)</th><th style="text-align:left;padding:6px 10px;">The Play</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>AWS S3 Standard</strong></td><td style="text-align:right;padding:6px 10px;">$0.023</td><td style="text-align:right;padding:6px 10px;">$0.005</td><td style="text-align:right;padding:6px 10px;">$0.0004</td><td style="text-align:right;padding:6px 10px;">$0.09</td><td style="padding:6px 10px;font-size:0.8rem;">Ecosystem breadth. 8 storage tiers. Data stays where your compute lives.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>GCP Cloud Storage</strong></td><td style="text-align:right;padding:6px 10px;">$0.020</td><td style="text-align:right;padding:6px 10px;">$0.005</td><td style="text-align:right;padding:6px 10px;">$0.0004</td><td style="text-align:right;padding:6px 10px;">$0.12</td><td style="padding:6px 10px;font-size:0.8rem;">Highest egress in the comparison. Strong lifecycle automation.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Azure Blob Hot</strong></td><td style="text-align:right;padding:6px 10px;">$0.018</td><td style="text-align:right;padding:6px 10px;">$0.005</td><td style="text-align:right;padding:6px 10px;">$0.0004</td><td style="text-align:right;padding:6px 10px;">$0.087</td><td style="padding:6px 10px;font-size:0.8rem;">Lowest hyperscaler hot storage. Deep Archive at $0.00099/GB.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Cloudflare R2</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$0.015</strong></td><td style="text-align:right;padding:6px 10px;">$0.0045</td><td style="text-align:right;padding:6px 10px;">$0.00036</td><td style="text-align:right;padding:6px 10px; color:var(--success);"><strong>$0.00</strong></td><td style="padding:6px 10px;font-size:0.8rem;">Zero egress. Single tier. Built on Cloudflare's global network.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Backblaze B2</strong></td><td style="text-align:right;padding:6px 10px; color:var(--success);"><strong>$0.006</strong></td><td style="text-align:right;padding:6px 10px;">$0.005</td><td style="text-align:right;padding:6px 10px;">$0.0004</td><td style="text-align:right;padding:6px 10px;">$0.01</td><td style="padding:6px 10px;font-size:0.8rem;">Lowest base storage. 3× free egress (up to 3× stored volume).</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Wasabi</strong></td><td style="text-align:right;padding:6px 10px;">$0.00699</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0.00</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0.00</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0.00</td><td style="padding:6px 10px;font-size:0.8rem;">Zero egress + zero API fees. 90-day minimum storage. Fair use policy.</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">Sources: Provider public pricing pages, June 2026. All prices are US East region for the standard/hot storage tier. Egress pricing shown is for the first tier (typically 0–10 TB); hyperscaler egress rates decline at higher volumes. API operations are Class A (write) and Class B (read) equivalents. Enterprise negotiated discounts and committed-use contracts can reduce these rates — the numbers shown are the list prices a new customer pays.</p>
+
+            <p>Look at the extremes in this table. The cheapest storage (B2 at $0.006) is 3.8× cheaper than the most expensive (S3 at $0.023). The cheapest egress (R2 and Wasabi at $0.00) is — literally — infinitely cheaper than GCP at $0.12/GB. And API operations, which most people ignore entirely, range from Wasabi's zero to a line item that can match the storage cost for write-heavy workloads.</p>
+
+            <p>These differences are not marginal. They flip the vendor ranking depending on what your application actually does with the data. A backup workload (write once, read almost never) crowns B2 and Wasabi. A CDN origin workload (write rarely, read constantly with high egress) crowns R2. A data lake query workload (balanced reads and writes, moderate egress) can crown any of the six depending on the exact ratios. There is no "cheapest cloud storage." There is only "cheapest cloud storage <em>for your egress-to-storage ratio</em>."</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="egress-trap">The Egress Trap: S3 vs R2 at Real Scale</h2>
+            <p>The single most expensive mistake in cloud storage is comparing $/GB storage rates while ignoring egress. It is the mistake the pricing pages are designed to encourage — put the low storage number in 48-point font, and bury the egress rate in a collapsible table three scrolls down.</p>
+
+            <p>Let's make the egress impact explicit. Take a workload that stores 10 TB and serves 50 TB of egress per month — a small CDN origin, a software distribution server, a video hosting backend. This is not a large workload. It's a mid-size SaaS product or a popular open-source project's download server.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Vendor</th><th style="text-align:right;padding:6px 10px;">Storage (10 TB)</th><th style="text-align:right;padding:6px 10px;">API Ops</th><th style="text-align:right;padding:6px 10px;">Egress (50 TB)</th><th style="text-align:right;padding:6px 10px;">Total/Month</th><th style="text-align:right;padding:6px 10px;">Annual</th></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Cloudflare R2</strong></td><td style="text-align:right;padding:6px 10px; color:var(--text-heading);">$154</td><td style="text-align:right;padding:6px 10px; color:var(--text-heading);">~$9</td><td style="text-align:right;padding:6px 10px; color:var(--success); font-weight:700;">$0</td><td style="text-align:right;padding:6px 10px; color:var(--success); font-weight:700;">$163</td><td style="text-align:right;padding:6px 10px;">$1,956</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Backblaze B2</strong></td><td style="text-align:right;padding:6px 10px;">$61</td><td style="text-align:right;padding:6px 10px;">~$9</td><td style="text-align:right;padding:6px 10px;">$200*</td><td style="text-align:right;padding:6px 10px; color:var(--text-heading);">$270</td><td style="text-align:right;padding:6px 10px;">$3,240</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Wasabi</strong></td><td style="text-align:right;padding:6px 10px;">$72</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px; color:var(--text-heading);">$72</td><td style="text-align:right;padding:6px 10px;">$864</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Azure Blob</strong></td><td style="text-align:right;padding:6px 10px;">$184</td><td style="text-align:right;padding:6px 10px;">~$9</td><td style="text-align:right;padding:6px 10px;">$4,454</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">$4,647</td><td style="text-align:right;padding:6px 10px;">$55,764</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>AWS S3</strong></td><td style="text-align:right;padding:6px 10px;">$236</td><td style="text-align:right;padding:6px 10px;">~$9</td><td style="text-align:right;padding:6px 10px;">$4,608</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">$4,853</td><td style="text-align:right;padding:6px 10px;">$58,236</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>GCP Cloud Storage</strong></td><td style="text-align:right;padding:6px 10px;">$205</td><td style="text-align:right;padding:6px 10px;">~$9</td><td style="text-align:right;padding:6px 10px;">$6,144</td><td style="text-align:right;padding:6px 10px; color:var(--error);">$6,358</td><td style="text-align:right;padding:6px 10px;">$76,296</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">* B2 egress: 3× stored volume free = 30 TB free, 20 TB billable × $0.01/GB = $200. API ops estimated at moderate read/write volume. All prices exclude the first-byte-free tier minimums where applicable. Egress calculated at first-tier pricing; hyperscaler egress rates decline at higher volumes but the order-of-magnitude gap persists.</p>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--accent); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">💡 The Core Insight</p>
+                <p style="margin:0; font-size:1.5rem; font-weight:800; color:var(--text-heading); font-family:'SF Mono','Cascadia Code',Consolas,monospace;">$163 <span style="font-size:0.9rem; font-weight:400; color:var(--text-secondary);">R2</span> &nbsp;vs&nbsp; <strong style="color:var(--error);">$6,358 GCP</strong></p>
+                <p style="margin:6px 0 0 0; font-size:0.85rem; color:var(--text-body);">Same 10 TB stored. Same 50 TB served. The gap is <strong style="color:var(--error);">39×</strong> — and the storage cost difference ($154 vs $205) accounts for less than 1% of it. Egress is not one factor among many. It is the factor.</p>
+            </div>
+
+            <p>The storage cost — the number on the pricing page — ranges from $61 (B2) to $236 (S3), a 3.9× spread. The egress cost ranges from $0 (R2, Wasabi) to $6,144 (GCP). That is not a spread — it is the difference between a line item and a bankruptcy. If your workload is egress-heavy, the $/GB storage number is noise. The egress rate is the signal.</p>
+
+            <p>This is why "S3 vs R2 cost comparison 1TB" is the wrong question. At 1 TB stored and 1 TB egress, S3 costs $113/month and R2 costs $15/month — a 7.5× gap, noticeable but not catastrophic. At 1 TB stored and 100 TB egress, S3 costs $9,023/month and R2 costs $15/month — a 600× gap. The storage number didn't change. The egress ratio did. Use our <a href="/cloud-storage-cost">cloud storage cost calculator</a> to model your exact numbers — the interactive bars make the egress-to-storage tradeoff visible in a way a static table can't.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="workloads">Four Workload Profiles, Costed</h2>
+            <p>Abstract pricing tables are useful for understanding the mechanics. But nobody runs "an average workload." You run a specific application with specific access patterns. Here are four common ones, costed across all six vendors with all three dimensions included. All scenarios use standard/hot tier storage in US East, no lifecycle tiering (we'll handle that separately), and moderate API operation estimates.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Profile A: The CDN Origin (Egress-Heavy)</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); margin-bottom: 16px;">10 TB stored · 100 TB egress/month · 50K writes · 500K reads</p>
+            <p>Software downloads, video streaming origin, container image registry, public dataset hosting. The defining characteristic: every byte stored is downloaded many times over. Egress dominates the bill so completely that storage and API costs are rounding errors.</p>
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Vendor</th><th style="text-align:right;padding:6px 10px;">Storage</th><th style="text-align:right;padding:6px 10px;">API Ops</th><th style="text-align:right;padding:6px 10px;">Egress</th><th style="text-align:right;padding:6px 10px;">Monthly Total</th></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Wasabi</strong></td><td style="text-align:right;padding:6px 10px;">$72</td><td style="text-align:right;padding:6px 10px;">$0</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px; color:var(--success); font-weight:700;">$72</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Cloudflare R2</strong></td><td style="text-align:right;padding:6px 10px;">$154</td><td style="text-align:right;padding:6px 10px;">~$2</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px; color:var(--text-heading); font-weight:700;">$156</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Backblaze B2</strong></td><td style="text-align:right;padding:6px 10px;">$61</td><td style="text-align:right;padding:6px 10px;">~$2</td><td style="text-align:right;padding:6px 10px;">$700*</td><td style="text-align:right;padding:6px 10px; color:var(--text-heading);">$763</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Azure Blob</strong></td><td style="text-align:right;padding:6px 10px;">$184</td><td style="text-align:right;padding:6px 10px;">~$2</td><td style="text-align:right;padding:6px 10px;">$8,909</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">$9,095</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>AWS S3</strong></td><td style="text-align:right;padding:6px 10px;">$236</td><td style="text-align:right;padding:6px 10px;">~$2</td><td style="text-align:right;padding:6px 10px;">$9,216</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">$9,454</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>GCP Cloud Storage</strong></td><td style="text-align:right;padding:6px 10px;">$205</td><td style="text-align:right;padding:6px 10px;">~$2</td><td style="text-align:right;padding:6px 10px;">$12,288</td><td style="text-align:right;padding:6px 10px; color:var(--error);">$12,495</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">* B2 egress: 100 TB total, 30 TB free (3× storage), 70 TB billable × $0.01 = $700. First-tier hyperscaler egress rates used; actual S3/GCP/Azure egress declines at higher volumes but the gap vs. zero-egress vendors remains >50×.</p>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--accent); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">📡 CDN Origin Verdict</p>
+                <p style="margin:0; font-size:1.1rem; font-weight:700; color:var(--text-heading);">R2 or Wasabi. The hyperscalers are <span style="color:var(--error);">60–170× more expensive</span> for this workload — and the gap widens as egress grows.</p>
+                <p style="margin:6px 0 0 0; font-size:0.85rem; color:var(--text-body);">Wasabi's fair-use policy requires egress to stay below stored volume, so at 10 TB stored and 100 TB egress, R2 is the safer bet. The annual difference between R2 ($1,872) and S3 ($113,448) is a full-time engineer's salary. For the price of one year on S3, you could run the same workload on R2 for 60 years.</p>
+            </div>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Profile B: Backup &amp; Archive (Storage-Heavy, Low Egress)</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); margin-bottom: 16px;">100 TB stored · 2 TB egress/month · 1M writes (initial) · 50K reads (restores)</p>
+            <p>Database backups, VM snapshots, log archives, compliance retention. Data goes in, sits for months or years, and is retrieved rarely — typically in an emergency. Storage cost dominates. Egress is negligible. API ops matter only during the initial upload.</p>
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Vendor</th><th style="text-align:right;padding:6px 10px;">Storage</th><th style="text-align:right;padding:6px 10px;">API Ops</th><th style="text-align:right;padding:6px 10px;">Egress</th><th style="text-align:right;padding:6px 10px;">Monthly Total</th></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Backblaze B2</strong></td><td style="text-align:right;padding:6px 10px; color:var(--success);">$614</td><td style="text-align:right;padding:6px 10px;">~$5</td><td style="text-align:right;padding:6px 10px;">$0*</td><td style="text-align:right;padding:6px 10px; color:var(--success); font-weight:700;">$619</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Wasabi</strong></td><td style="text-align:right;padding:6px 10px;">$716</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px; color:var(--text-heading);">$716</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Cloudflare R2</strong></td><td style="text-align:right;padding:6px 10px;">$1,536</td><td style="text-align:right;padding:6px 10px;">~$5</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px;">$1,541</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Azure Blob</strong></td><td style="text-align:right;padding:6px 10px;">$1,843</td><td style="text-align:right;padding:6px 10px;">~$5</td><td style="text-align:right;padding:6px 10px;">$178</td><td style="text-align:right;padding:6px 10px;">$2,026</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>GCP Cloud Storage</strong></td><td style="text-align:right;padding:6px 10px;">$2,048</td><td style="text-align:right;padding:6px 10px;">~$5</td><td style="text-align:right;padding:6px 10px;">$246</td><td style="text-align:right;padding:6px 10px;">$2,299</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>AWS S3</strong></td><td style="text-align:right;padding:6px 10px;">$2,355</td><td style="text-align:right;padding:6px 10px;">~$5</td><td style="text-align:right;padding:6px 10px;">$184</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">$2,544</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">* B2 egress: 2 TB is well within the 3× storage free egress allowance (300 TB free on 100 TB stored).</p>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--success); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">🗄️ Backup Verdict</p>
+                <p style="margin:0; font-size:1.1rem; font-weight:700; color:var(--text-heading);"><span style="color:var(--success);">B2 at $619/mo</span> or <span style="color:var(--text-heading);">Wasabi at $716/mo</span>. But if you need cold tiering, read on.</p>
+                <p style="margin:6px 0 0 0; font-size:0.85rem; color:var(--text-body);">For storage-heavy workloads, the $/GB rate finally matters — and B2's $0.006/GB is the clear winner. The 4.1× gap between B2 and S3 is material: $7,428/year vs $30,528/year. This comparison uses hot-tier pricing for all vendors, though. If your backup data is truly cold (accessed less than once per quarter), hyperscaler cold tiers narrow the gap substantially. We'll model that.</p>
+            </div>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Profile C: The Data Lake (Balanced, Ops-Heavy)</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); margin-bottom: 16px;">50 TB stored · 15 TB egress/month · 2M writes · 10M reads</p>
+            <p>Analytics data lake, log aggregation backend, feature store for ML training. Large volumes of data are written, queried, and occasionally exported to external systems. API operations are a meaningful cost driver because every Athena/Presto/Spark query generates thousands of LIST and GET requests.</p>
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Vendor</th><th style="text-align:right;padding:6px 10px;">Storage</th><th style="text-align:right;padding:6px 10px;">API Ops</th><th style="text-align:right;padding:6px 10px;">Egress</th><th style="text-align:right;padding:6px 10px;">Monthly Total</th></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Wasabi</strong></td><td style="text-align:right;padding:6px 10px;">$358</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px; color:var(--success); font-weight:700;">$358</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Cloudflare R2</strong></td><td style="text-align:right;padding:6px 10px;">$768</td><td style="text-align:right;padding:6px 10px;">$13</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px; color:var(--text-heading);">$781</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Backblaze B2</strong></td><td style="text-align:right;padding:6px 10px;">$307</td><td style="text-align:right;padding:6px 10px;">$14</td><td style="text-align:right;padding:6px 10px;">$0*</td><td style="text-align:right;padding:6px 10px; color:var(--text-heading);">$321</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Azure Blob</strong></td><td style="text-align:right;padding:6px 10px;">$922</td><td style="text-align:right;padding:6px 10px;">$14</td><td style="text-align:right;padding:6px 10px;">$1,336</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">$2,272</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>AWS S3</strong></td><td style="text-align:right;padding:6px 10px;">$1,178</td><td style="text-align:right;padding:6px 10px;">$14</td><td style="text-align:right;padding:6px 10px;">$1,382</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">$2,574</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>GCP Cloud Storage</strong></td><td style="text-align:right;padding:6px 10px;">$1,024</td><td style="text-align:right;padding:6px 10px;">$14</td><td style="text-align:right;padding:6px 10px;">$1,843</td><td style="text-align:right;padding:6px 10px; color:var(--error);">$2,881</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">* B2 egress: 15 TB is within 3× storage (150 TB free). API ops at moderate volume are a minor cost across all vendors at this scale.</p>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--accent); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">🏷️ Data Lake Verdict</p>
+                <p style="margin:0; font-size:1.1rem; font-weight:700; color:var(--text-heading);">B2 ($321) or Wasabi ($358) win on cost. But this is where the hyperscaler ecosystem argument has teeth.</p>
+                <p style="margin:6px 0 0 0; font-size:0.85rem; color:var(--text-body);">If your data lake is queried by Athena, processed by EMR, and fed into SageMaker — all inside AWS — the S3 premium ($2,574/mo vs $321 on B2) buys zero-latency access with no egress charges between AWS services. If your analytics stack is cloud-agnostic (Presto/Trino, Spark on Kubernetes), B2 or Wasabi delivers the same functionality at 8× lower cost. The hyperscaler premium is the price of not re-architecting your query layer. For the data lake use case specifically, use our <a href="/cloud-storage-cost">cloud storage cost comparison calculator</a> to model the exact egress-to-storage ratio — small changes in query volume shift the breakeven between R2 and B2.</p>
+            </div>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Profile D: Log &amp; Telemetry Storage (Write-Heavy, Grow-Over-Time)</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); margin-bottom: 16px;">5 TB new/month, 30 TB retained · 2 TB egress · 5M writes · 500K reads</p>
+            <p>Application logs, metrics, traces, security event data. This workload is characterized by continuous ingestion: high write operation counts with data that ages out or tiers down over time. Write API costs can match or exceed storage costs on some providers.</p>
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Vendor</th><th style="text-align:right;padding:6px 10px;">Storage</th><th style="text-align:right;padding:6px 10px;">API Ops</th><th style="text-align:right;padding:6px 10px;">Egress</th><th style="text-align:right;padding:6px 10px;">Monthly Total</th></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Wasabi</strong></td><td style="text-align:right;padding:6px 10px;">$215</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px; color:var(--success); font-weight:700;">$215</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Backblaze B2</strong></td><td style="text-align:right;padding:6px 10px; color:var(--success);">$184</td><td style="text-align:right;padding:6px 10px;">$25</td><td style="text-align:right;padding:6px 10px;">$0*</td><td style="text-align:right;padding:6px 10px; color:var(--text-heading);">$209</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Cloudflare R2</strong></td><td style="text-align:right;padding:6px 10px;">$461</td><td style="text-align:right;padding:6px 10px;">$23</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$0</td><td style="text-align:right;padding:6px 10px;">$484</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Azure Blob</strong></td><td style="text-align:right;padding:6px 10px;">$553</td><td style="text-align:right;padding:6px 10px;">$25</td><td style="text-align:right;padding:6px 10px;">$178</td><td style="text-align:right;padding:6px 10px;">$756</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>GCP Cloud Storage</strong></td><td style="text-align:right;padding:6px 10px;">$614</td><td style="text-align:right;padding:6px 10px;">$25</td><td style="text-align:right;padding:6px 10px;">$246</td><td style="text-align:right;padding:6px 10px;">$885</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>AWS S3</strong></td><td style="text-align:right;padding:6px 10px;">$707</td><td style="text-align:right;padding:6px 10px;">$25</td><td style="text-align:right;padding:6px 10px;">$184</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">$916</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">* B2 egress: 2 TB within free allowance. Write ops at scale add $25/mo on providers that charge for them — noticeable but not dominant.</p>
+
+            <p>For this workload, the zero-API-fee structure of Wasabi makes it competitive with B2 despite slightly higher storage pricing. At 5M writes/month, hyperscaler API charges add $25 — not trivial but not the decision variable. The decision variable remains egress: if you ever need to export your logs to an external analytics platform, the hyperscaler egress charges will dwarf everything else. If your logs stay within the same cloud as your analytics, the hyperscalers become more competitive — not on price, but on the zero-egress-between-services advantage. This is the lock-in mechanism working as designed.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="cold-storage">The Cold Storage Calculus: When Does Cheaper Storage Actually Save Money?</h2>
+            <p>Every hyperscaler offers cold storage tiers that cost a fraction of standard storage. S3 Glacier Deep Archive is $0.00099/GB — 23× cheaper than S3 Standard. GCP Archive is $0.0012/GB. Azure Archive is $0.00099/GB. These numbers look like obvious wins for data that isn't accessed frequently. But cold storage is not cheaper storage — it's a bet that you won't need the data, and if you lose the bet, it's more expensive than standard.</p>
+
+            <p>The cold storage pricing model works like this: you pay less per GB to store the data, but you pay a retrieval fee ($0.01–0.05/GB) every time you access it, and you commit to a minimum retention period (30–180 days). If you delete data before the minimum, you pay for the full period anyway. If you retrieve data frequently, the retrieval fees overwhelm the storage savings.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">The Breakeven Math</h3>
+            <p>Let's model 100 TB of data, comparing S3 Standard ($0.023/GB) against S3 Glacier Deep Archive ($0.00099/GB) with standard retrieval ($0.02/GB, 12-hour retrieval time) and a 180-day minimum retention:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Access Pattern</th><th style="text-align:right;padding:6px 10px;">S3 Standard</th><th style="text-align:right;padding:6px 10px;">S3 Glacier Deep Archive</th><th style="text-align:left;padding:6px 10px;">Winner</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Never accessed (pure archive)</td><td style="text-align:right;padding:6px 10px;">$2,355/mo</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$101/mo</td><td style="padding:6px 10px;">Deep Archive saves <strong>$27,048/year</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">1% accessed per month (1 TB)</td><td style="text-align:right;padding:6px 10px;">$2,355/mo</td><td style="text-align:right;padding:6px 10px;">$101 + $20 = $121/mo</td><td style="padding:6px 10px;">Deep Archive still saves <strong>$26,808/year</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">10% accessed per month (10 TB)</td><td style="text-align:right;padding:6px 10px;">$2,355/mo</td><td style="text-align:right;padding:6px 10px;">$101 + $200 = $301/mo</td><td style="padding:6px 10px;">Deep Archive still saves <strong>$24,648/year</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>50% accessed per month (50 TB)</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$2,355/mo</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$101 + $1,000 = $1,101/mo</strong></td><td style="padding:6px 10px;">Deep Archive still saves $15,048/year</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">100% accessed per month</td><td style="text-align:right;padding:6px 10px; color:var(--success);">$2,355/mo</td><td style="text-align:right;padding:6px 10px; color:var(--error);">$101 + $2,000 = $2,101/mo</td><td style="padding:6px 10px;">Near parity — but Deep Archive has 12-hour retrieval latency</td></tr>
+            </table>
+
+            <p>The breakeven is surprisingly high: you have to access more than 90% of your cold-stored data every month before standard storage becomes cheaper — and even then, only marginally. The real reason not to use cold storage isn't cost. It's latency and operational complexity. Glacier Deep Archive retrieval takes 12 hours. If your application needs sub-second access to any object at any time, cold storage is not an option regardless of the price. If your data is a compliance archive that will be accessed once every two years in response to a subpoena, cold storage is a 23× cost reduction with no downside.</p>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--error); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">⚠️ The Cold Storage Trap</p>
+                <p style="margin:0; font-size:1.1rem; font-weight:700; color:var(--text-heading);">The retrieval bill on 100 TB of cold data can exceed <span style="color:var(--error);">$10,000</span> — and you only find out after the legal team asks for "everything."</p>
+                <p style="margin:6px 0 0 0; font-size:0.85rem; color:var(--text-body);">If you move 100 TB to Glacier Deep Archive and then get a discovery request requiring full retrieval with expedited access ($0.03/GB + $0.10/GB expedited), the one-time retrieval cost is $13,000. That's more than five months of standard storage. Cold storage is a bet that this won't happen. If you're a company that gets sued with any regularity, factor the retrieval liability into your storage strategy. The cheapest storage can become the most expensive on exactly the day you need it most.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="fine-print">The Fine Print: Minimum Retention, Fair Use, and the Gotchas</h2>
+            <p>The pricing tables above assume you're reading the headline numbers. But cloud storage pricing has a sub-basement of fine print that changes the total cost of ownership for specific workloads. Here are the ones that have burned people I know.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Minimum Retention: The 90-Day Trap</h3>
+            <p>AWS Glacier and Glacier Deep Archive have a 90-day and 180-day minimum storage duration, respectively. If you upload an object to Glacier Deep Archive and delete it 30 days later, you are charged for 180 days of storage. At $0.00099/GB, that's $0.00594 for one GB deleted early — 6× the listed monthly rate. For 100 TB deleted after 30 days, that's a $594 penalty instead of the $99 you budgeted. Azure Archive has similar minimums (180 days). GCP Archive requires 365 days. Wasabi has a 90-day minimum on all storage — even hot — which means short-lived data costs 3× the advertised monthly rate.</p>
+
+            <p>If your workload involves data that lives for less than the minimum retention period — log files that rotate weekly, temporary build artifacts, staging data — cold tiers and Wasabi are more expensive than they appear. Model the effective rate as <code>listed_rate × max(minimum_days, actual_days) ÷ actual_days</code>. The <a href="/cloud-storage-cost">cloud storage cost calculator</a> surfaces these minimums in the results for every vendor.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Wasabi's Fair Use Policy: The Egress Asterisk</h3>
+            <p>Wasabi's zero-egress pricing is the most attractive number in cloud storage. But it comes with a fair-use policy: your monthly egress should not exceed your stored volume. If you store 10 TB and egress 30 TB, Wasabi will flag your account. The policy is not automatic enforcement — it's a terms-of-service boundary — but it means Wasabi is not a CDN origin. For the CDN origin workload in Profile A (10 TB stored, 100 TB egress), Wasabi's $72/mo number is not available to you. R2's $156/mo is the real zero-egress option at that scale.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">R2's Single Tier: No Lifecycle, No Archive</h3>
+            <p>R2 charges $0.015/GB for everything. There is no cold tier, no archive tier, no infrequent access discount. For data that will be accessed regularly, this is fine — the zero-egress more than compensates. For 500 TB of compliance archives that will sit untouched for seven years, R2 costs $90,000/year while S3 Glacier Deep Archive costs $5,940/year. R2 is not the answer for archival storage. The absence of tiering is the price of simplicity.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">B2's Egress Allowance: Free Up to 3×, Then Cheap</h3>
+            <p>B2's egress model is the most nuanced of the six. You get free egress up to 3× your stored volume per month — if you store 10 TB, you get 30 TB of free egress. Beyond that, egress is $0.01/GB, which is 9× cheaper than S3's standard egress rate. For most workloads, the 3× allowance covers all egress. For the CDN origin workload (10× egress-to-storage ratio), B2's effective egress cost is $0.007/GB when you average the free and paid traffic — still the cheapest non-zero-egress option. The B2 model is closest to "egress at cost" in a market where most egress pricing is pure margin.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="decision">How to Pick a Cloud Storage Provider: The Decision Framework</h2>
+            <p>After modeling every vendor against every workload, the decision tree collapses to three questions. Answer them in order, and the vendor picks itself.</p>
+
+            <p><strong>Question 1: What is your egress-to-storage ratio?</strong></p>
+            <ul style="line-height:1.9; margin-left:20px;">
+                <li><strong>Egress &gt; 2× storage (CDN origin, streaming, public datasets):</strong> R2. Zero egress at $0.015/GB is unbeatable here. Wasabi's fair-use policy excludes you.</li>
+                <li><strong>Egress 0.5–2× storage (balanced workloads):</strong> R2 or B2, depending on storage volume. At low storage volumes, the zero-egress convenience of R2 is worth the $0.009/GB storage premium over B2. At high storage volumes (50+ TB), B2's $0.006/GB base rate wins.</li>
+                <li><strong>Egress &lt; 0.5× storage (backups, archives, data lakes):</strong> B2 or Wasabi. B2 is cheapest on storage. Wasabi is simplest (zero ops fees, zero egress, single predictable bill). If your data ages predictably, hyperscaler cold tiers enter the conversation.</li>
+            </ul>
+
+            <p><strong>Question 2: Does your data age predictably?</strong></p>
+            <ul style="line-height:1.9; margin-left:20px;">
+                <li><strong>Yes (logs age out after 30 days, backups after 90 days, compliance after 7 years):</strong> Hyperscaler lifecycle policies become valuable. S3 Intelligent Tiering automatically moves data between tiers based on access patterns — at a small per-object monitoring fee. If your data ages, you can capture cold-tier savings without manual lifecycle management. B2 and R2 don't offer this.</li>
+                <li><strong>No (random access patterns, unpredictable hot/cold distribution):</strong> R2 or B2. Paying a flat rate for everything is simpler and often cheaper than trying to predict access patterns and getting hit with retrieval fees when you're wrong.</li>
+            </ul>
+
+            <p><strong>Question 3: Where does your compute live?</strong></p>
+            <ul style="line-height:1.9; margin-left:20px;">
+                <li><strong>AWS:</strong> If your application runs on EC2/Lambda and your data is queried by Athena/EMR, the S3 premium buys zero-egress access between AWS services. The premium is real, but so is the architecture cost of moving your compute to match your storage. Model both sides. Our <a href="/terabytes-egress-to-aws-cost">AWS Egress Cost Calculator</a> will show you the cross-cloud egress penalty.</li>
+                <li><strong>Cloudflare:</strong> If you're already on Cloudflare for CDN/DNS/WAF, R2's zero-egress between Cloudflare services makes it the obvious choice — data in R2 flows to Cloudflare's CDN with no bandwidth charge.</li>
+                <li><strong>Cloud-agnostic (Kubernetes, self-managed query engines):</strong> B2 or R2. You have no lock-in penalty to amortize. Pick the cheapest vendor for your workload profile.</li>
+            </ul>
+
+            <p>If the answer to all three questions points to different vendors, model it. Our <a href="/cloud-storage-cost">cloud storage cost comparison calculator</a> takes your actual storage volume, egress, and operation counts and ranks all six vendors side by side. The tool exists because the answer changes at every egress-to-storage ratio — and the only way to pick correctly is to run your numbers, not someone else's.</p>
+
+            <p>One more thing: <strong>don't optimize prematurely.</strong> At 1 TB, the monthly cost difference between the cheapest vendor (B2 at $6) and the most expensive (S3 at $23) is $17/month — $204/year. That's not worth the engineering time to migrate. Pick whatever is easiest to integrate. The cross-vendor spread only becomes material above 10 TB, and it only becomes a hiring-or-architecture decision above 50 TB. Optimize when the gap pays for the migration, and not before. The <a href="/gpu-training-cost-real">GPU training cost analysis</a> has a similar dynamic — the provider premium only matters once you're spending thousands, not hundreds.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="faq">Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">What is the cheapest cloud storage provider in 2026?</h3>
+                <p>There is no single answer — it depends on your egress-to-storage ratio. For storage-heavy, low-egress workloads (backups, archives): Backblaze B2 at $0.006/GB and Wasabi at $0.00699/GB are the clear winners, roughly 3–4× cheaper than S3 Standard. For egress-heavy workloads (CDN origin, file sharing, streaming): Cloudflare R2 at $0.015/GB with zero egress fees beats every competitor — at 50 TB monthly egress, R2 saves $4,500/mo compared to S3. For write-heavy workloads with high API operation counts: Wasabi's zero-API-fee model wins. The vendor that wins at one workload profile loses at another. Use the <a href="/cloud-storage-cost">cloud storage cost calculator</a> to model your specific numbers — don't rely on a single-variable comparison.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How does Cloudflare R2 compare to AWS S3 on cost?</h3>
+                <p>R2 charges $0.015/GB for storage with zero egress fees. S3 Standard charges $0.023/GB for storage plus $0.09/GB for egress. At 10 TB stored and 50 TB egress/month, R2 costs $163/mo and S3 costs $4,853/mo — a 30× gap. However, R2 is a single-tier product with no cold storage, no archival tiers, and no lifecycle policies. For long-term archival workloads where data is rarely accessed, S3 Glacier Deep Archive at $0.00099/GB can beat R2 by 15× on storage cost alone if egress is minimal. R2 wins on egress-heavy workloads. S3 wins on cold archival workloads. The choice is not about brand — it's about your egress-to-storage ratio and access patterns. Model both with the <a href="/cloud-storage-cost">cloud storage cost calculator</a>.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why is cloud egress so expensive?</h3>
+                <p>Cloud egress pricing ($0.05–0.12/GB at hyperscalers) is not a technical cost reflection — it's a business model. Bandwidth transit costs for large cloud providers are estimated at $0.01–0.03/GB, meaning egress is priced at 3–10× the underlying cost. The high price serves two purposes: (1) it creates vendor lock-in by making data migration expensive — moving 100 TB out of S3 costs $9,000 in egress fees, and (2) it subsidizes steep cold storage discounts that make the entry price attractive while extracting revenue on data exit. Cloudflare R2 and Wasabi broke this model with zero egress — R2 because Cloudflare's global network already carries traffic at scale, and Wasabi because they bake egress assumptions into a flat storage rate with fair-use limits. The hyperscalers maintain high egress pricing not because bandwidth is expensive but because it's their most effective retention mechanism.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">When should I use cold storage tiers vs standard storage?</h3>
+                <p>Cold storage tiers (S3 Glacier, GCP Coldline, Azure Archive) charge 5–20× less per GB than standard storage but add retrieval fees ($0.01–0.05/GB) and minimum retention periods (30–180 days). The breakeven depends on access frequency: for data accessed once per month or more, cold storage rarely saves money because retrieval fees eat the storage savings. For data accessed once per quarter, cold tiers reduce costs 2–3×. For data accessed once per year or less, cold/archive tiers reduce costs 5–15×. The trap: if you move 100 TB to Glacier Deep Archive and then need to retrieve all of it (legal hold, audit, disaster recovery), the one-time retrieval cost can exceed $10,000 — more than five months of standard storage. Cold storage is a bet that you won't need the data. If you lose the bet, it's more expensive than standard. Factor the retrieval liability into your decision. The <a href="/backup-cost">Backup Strategy Cost Calculator</a> models this tradeoff explicitly.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How much does 1 TB of cloud storage cost per month?</h3>
+                <p>For 1 TB of hot/standard storage with zero egress: AWS S3 costs $23.55/mo ($23.55 storage), GCP Cloud Storage costs $20.48/mo, Azure Blob costs $18.43/mo, Cloudflare R2 costs $15.36/mo, Backblaze B2 costs $6.14/mo, and Wasabi costs $7.16/mo. But "zero egress" is unrealistic for most workloads. If that 1 TB serves 10 TB of egress per month, the numbers shift dramatically: S3 becomes $943/mo, GCP becomes $1,220/mo, R2 stays at $15/mo, and Wasabi stays at $7/mo (within fair use). The question "how much does 1 TB cost" has no single answer — it depends on how many times that terabyte leaves the cloud. Use our <a href="/cloud-storage-cost">cloud storage cost calculator</a> to run your actual egress-to-storage ratio.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Pricing data is sourced from public provider pricing pages accessed June 2026 for US East regions (us-east-1 for AWS, us-east4 for GCP, East US for Azure, and default US regions for R2, B2, and Wasabi). All prices are list rates for pay-as-you-go customers with no committed-use discounts, volume discounts, or enterprise agreements. Hyperscaler egress rates decline at higher volume tiers (e.g., S3 egress drops from $0.09/GB to $0.085/GB after 10 TB, GCP egress drops to $0.11/GB after 1 TB, etc.) — the first-tier rates used here represent the ceiling for moderate-scale workloads. Actual bills for large-scale deployments will be lower than the hyperscaler totals shown.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">API operation estimates are simplified — real-world API costs depend on object size distribution (many small objects drive higher operation counts per GB) and specific SDK behavior (multipart uploads, paginated LIST operations, retry logic). The scenarios in this analysis assume moderate object sizes (1–10 MB) with typical SDK overhead. If your workload consists of billions of small objects, API operation costs will be higher than shown — potentially by an order of magnitude. The <a href="/cloud-storage-cost">cloud storage cost calculator</a> allows you to adjust operation counts independently to model this.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Cold storage breakeven calculations assume standard retrieval speeds; expedited retrieval (AWS) and high-priority retrieval (GCP, Azure) cost 3–5× more and are not included except where noted. Minimum retention penalty calculations use the provider's published minimum duration for each tier as of June 2026.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. We are not sponsored by any cloud provider, storage vendor, or infrastructure company. The <a href="/cloud-storage-cost">cloud storage cost comparison calculator</a> on this site was built because the author has been on both sides of the "surprise egress bill" conversation and wanted a tool that forces the full three-dimensional comparison before the invoice arrives. No affiliate links. No referral codes. No sponsored recommendations. If a vendor's pricing changes, <a href="/about">tell us</a> and we'll update the data.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>AWS (2026).</strong> "S3 Pricing — Storage Classes, Data Transfer, and Request Pricing." US East (N. Virginia) region pricing for S3 Standard, Intelligent-Tiering, Glacier, and Glacier Deep Archive. <a href="https://aws.amazon.com/s3/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-2"><strong>Cloudflare (2026).</strong> "R2 Pricing — Zero Egress Object Storage." Flat-rate storage with no egress fees, Class A/B operation definitions. <a href="https://developers.cloudflare.com/r2/pricing/" target="_blank" rel="noopener">developers.cloudflare.com</a></li>
+                <li id="ref-3"><strong>Backblaze (2026).</strong> "B2 Cloud Storage Pricing." Storage, egress (3× free allowance), and transaction pricing. <a href="https://www.backblaze.com/cloud-storage/pricing" target="_blank" rel="noopener">backblaze.com</a></li>
+                <li id="ref-4"><strong>Wasabi (2026).</strong> "Hot Cloud Storage Pricing." Flat-rate storage with no egress or API fees, fair use policy, and 90-day minimum. <a href="https://wasabi.com/cloud-storage-pricing/" target="_blank" rel="noopener">wasabi.com</a></li>
+                <li id="ref-5"><strong>Google Cloud (2026).</strong> "Cloud Storage Pricing — Storage Classes and Network Egress." Standard, Nearline, Coldline, and Archive tier pricing with Class A/B operation definitions. <a href="https://cloud.google.com/storage/pricing" target="_blank" rel="noopener">cloud.google.com</a></li>
+                <li id="ref-6"><strong>Microsoft Azure (2026).</strong> "Blob Storage Pricing — Hot, Cool, Cold, and Archive Tiers." Block blob pricing with minimum retention periods and retrieval fees. <a href="https://azure.microsoft.com/en-us/pricing/details/storage/blobs/" target="_blank" rel="noopener">azure.microsoft.com</a></li>
+                <li id="ref-7"><strong>AWS (2026).</strong> "Data Transfer Pricing — Internet Egress and Inter-Region Transfer." Tiered egress pricing structure and AWS-to-internet data transfer costs. <a href="https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-8"><strong>Cloudflare Blog (2024).</strong> "Why Cloud Storage Pricing Needs a Reset — The Bandwidth Tax and the Zero-Egress Movement." Analysis of egress pricing economics and the structural shift in the object storage market. <a href="https://blog.cloudflare.com/" target="_blank" rel="noopener">blog.cloudflare.com</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/cloud-storage-cost-real&t=Cloud+Storage+Costs:+The+Egress+Trap" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/cloud-storage-cost-real&text=S3+at+$0.023/GB+vs+R2+at+$0.015/GB+looks+like+a+1.5×+gap.+Add+egress+and+it's+31×.+The+$/GB+storage+number+is+lying+to+you.+Full+6-vendor+comparison.&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/devops/submit?url=https://www.jslet.com/cloud-storage-cost-real&title=Cloud+Storage+Costs:+The+Egress+Trap" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/devops">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/cloud-storage-cost-real&title=Cloud+Storage+Costs:+The+Egress+Trap+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <!-- ═══ Copyright & Attribution ═══ -->
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>© 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0 0 10px 0;"><strong>Preferred citation format:</strong></p>
+                <pre style="font-size:0.82rem; background:var(--bg-card); padding:10px 14px; border-radius:3px; overflow-x:auto; white-space:pre-wrap; margin:6px 0 0 0; border:1px solid var(--border);">"Cloud Storage Costs: The Egress Trap — Why Your $/GB Number Is Lying to You (2026)" &mdash; jslet Research, June 2026.<br>https://www.jslet.com/cloud-storage-cost-real</pre>
+            </div>
+        </section>
+
+        <!-- RSS CTA -->
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> Storage is $0.02/GB. Your bill is never $0.02/GB. RSS delivers one real-cost breakdown per week. No vendor pitch. No tracking. Just the line items that matter. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

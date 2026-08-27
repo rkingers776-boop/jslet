@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>API Rate Limit ↔ Cost Calculator — req/s → Monthly Cost — jslet</title>
+    <meta name="description" content="API gateway rate limit vs billing threshold — the gap is where cloud providers make margin. Convert req/s to monthly cost across AWS, GCP, Azure, and self-hosted alternatives.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="API Rate Limit ↔ Cost Calculator — req/s → Monthly Cost">
+    <meta property="og:description" content="Convert API rate limits (requests per second) into monthly cost projections across AWS, GCP, Azure, and self-hosted API gateways.">
+    <meta property="og:url" content="https://www.jslet.com/api-rate-limit-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="API Rate Limit ↔ Cost Calculator — req/s → Monthly Cost">
+    <meta name="twitter:description" content="Convert API rate limits (requests per second) into monthly cost projections across AWS, GCP, Azure, and self-hosted API gateways.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/api-rate-limit-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.5rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+        .cost-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin-top: 14px; }
+        .cost-table th { background: var(--bg-input); text-align: left; padding: 10px 14px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .cost-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+        .cost-table .num { text-align: right; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-weight: 700; }
+        .cost-table .cost-highlight { color: var(--accent); }
+        .cost-table tr.best-row { background: #ecfdf522; }
+        .cost-table tr.best-row td { border-bottom: 2px solid var(--success); font-weight: 700; }
+        [data-theme="dark"] .cost-table tr.best-row { background: #022c2233; }
+        .cost-table tr.best-row td:first-child::before { content: "★ "; color: var(--success); }
+
+        .provider-tag {
+            display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 3px; margin-right: 4px;
+        }
+        .tag-aws { background: #ff990022; color: #ff9900; }
+        .tag-gcp { background: #4285f422; color: #4285f4; }
+        .tag-azure { background: #0078d422; color: #0078d4; }
+        .tag-self { background: #10b98122; color: #10b981; }
+
+        .cost-bar-wrap { display: flex; gap: 4px; align-items: flex-end; height: 140px; margin: 16px 0 8px 0; }
+        .cost-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .cost-bar-fill {
+            width: 100%; border-radius: 4px 4px 0 0; transition: height 0.5s ease;
+            display: flex; align-items: flex-start; justify-content: center;
+            font-size: 0.7rem; font-weight: 700; color: #fff; padding-top: 6px;
+            min-height: 20px;
+        }
+        .cost-bar-label { font-size: 0.65rem; color: var(--text-muted); text-align: center; line-height: 1.2; }
+        .cost-bar-value { font-size: 0.72rem; font-weight: 700; color: var(--text-heading); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+
+        .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 12px; }
+        .preset-chip {
+            padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            cursor: pointer; transition: border-color 0.2s, background 0.2s;
+            font-size: 0.8rem; text-align: center; background: var(--bg-input);
+        }
+        .preset-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+        .preset-chip .preset-name { font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 2px; }
+        .preset-chip .preset-rate { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.76rem; color: var(--accent); }
+
+        .vol-breakdown { font-size: 0.82rem; color: var(--text-body); line-height: 1.8; }
+        .vol-breakdown .num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-weight: 700; color: var(--accent); }
+
+        .ref-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .ref-table th { background: var(--bg-input); text-align: left; padding: 8px 12px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .ref-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .ref-table .num { text-align: right; font-weight: 700; color: var(--accent); }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "API Rate Limit ↔ Cost Calculator",
+      "description": "Convert API rate limits (requests per second) into monthly cost projections across AWS API Gateway, GCP Apigee, Azure API Management, and self-hosted alternatives.",
+      "url": "https://www.jslet.com/api-rate-limit-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why is my API gateway bill so much higher than my rate limit suggests?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The rate limit you set for safety is usually far below the billing threshold the provider charges on. The gap between them — requests that pass the limit but still get billed — is where cost quietly accumulates. This calculator converts your actual req/s into monthly cost across AWS, GCP, Azure, and self-hosted options, including the data-transfer egress that most cost models forget."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do WebSocket and gRPC APIs cost the same as REST?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. WebSocket connections have different cost dynamics — idle connections can still hold billing minutes — and gRPC payloads are typically much smaller per request, changing the per-GB picture entirely. The calculator accounts for protocol-specific behavior so you can compare apples to apples, including the self-hosted alternative where you control the gateway instead of paying per request."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does the free tier math break at scale?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Free tiers look generous for a prototype — a few million requests a month cost nothing. But growth is rarely linear: as traffic scales, you cross into paid tiers, and per-request pricing compounds with egress fees. This tool projects cost at your actual scale so the decision to stay on a managed gateway or self-host is based on the real crossover point, not the free-tier headline."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>API Rate Limit <span>↔ Cost</span> Calculator</h1>
+            <p>API gateway rate limit vs billing threshold — the gap is where cloud providers make margin. Your gateway enforces 1000 req/s. AWS bills per request. The price curve is not linear. Model per-request cost, data transfer egress, TLS termination, and burst overhead across AWS, GCP, Azure, and self-hosted (NGINX/Kong).</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 API Traffic Profile</h3>
+                <p class="card-desc">Set sustained req/s, avg payload size, burst ratio. The engine computes monthly volume, then maps to per-provider pricing — tiered volume discounts included. Self-hosted vs. managed: the crossover point may surprise you.</p>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="rate-limit-rps">Sustained Rate Limit (req/s)</label>
+                        <input type="number" class="unit-input" id="rate-limit-rps" value="1000" step="any" min="0.01">
+                    </div>
+                    <div class="input-group">
+                        <label for="preset-select">Scenario Preset</label>
+                        <select class="unit-input" id="preset-select">
+                            <option value="custom">Custom Configuration</option>
+                            <option value="startup" selected>Startup API (100 req/s)</option>
+                            <option value="mid-scale">Mid-Scale SaaS (1,000 req/s)</option>
+                            <option value="high-growth">High-Growth Platform (5,000 req/s)</option>
+                            <option value="enterprise">Enterprise Gateway (25,000 req/s)</option>
+                            <option value="internet-scale">Internet-Scale (100,000 req/s)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="request-size-kb">Average Request Size (KB)</label>
+                        <input type="number" class="unit-input" id="request-size-kb" value="4" step="any" min="0.1">
+                    </div>
+                    <div class="input-group">
+                        <label for="response-size-kb">Average Response Size (KB)</label>
+                        <input type="number" class="unit-input" id="response-size-kb" value="12" step="any" min="0.1">
+                    </div>
+                    <div class="input-group">
+                        <label for="api-protocol">API Protocol</label>
+                        <select class="unit-input" id="api-protocol">
+                            <option value="rest" selected>REST (JSON, HTTPS)</option>
+                            <option value="http">HTTP (no auth, plain)</option>
+                            <option value="websocket">WebSocket (persistent)</option>
+                            <option value="grpc">gRPC (HTTP/2, Protobuf)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="burst-ratio">Peak-to-Sustained Burst Ratio</label>
+                        <select class="unit-input" id="burst-ratio">
+                            <option value="1.0">1.0× — Flat, no bursts</option>
+                            <option value="1.5" selected>1.5× — Moderate diurnal pattern</option>
+                            <option value="2.0">2.0× — Spiky (event-driven traffic)</option>
+                            <option value="5.0">5.0× — Flash-crowd / viral peaks</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="egress-region">Data Transfer Egress Region</label>
+                        <select class="unit-input" id="egress-region">
+                            <option value="same-region" selected>Same Region (no egress cost)</option>
+                            <option value="cross-region">Cross-Region / Multi-Cloud</option>
+                            <option value="internet">Internet Egress (public clients)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn-calc">Run Cost Projection Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Monthly Cost Projection</h3>
+                <p class="card-desc" id="results-params"></p>
+
+                <!-- Volume metrics -->
+                <div class="metric-grid" id="volume-metrics"></div>
+
+                <!-- Cost bar chart -->
+                <h4 style="margin-top: 20px; margin-bottom: 4px;">💰 Cost Comparison by Provider</h4>
+                <div class="cost-bar-wrap" id="cost-bar-chart"></div>
+
+                <!-- Cost table -->
+                <div class="table-scroll">
+                <table class="cost-table" id="cost-table">
+                    <thead>
+                        <tr><th>Provider</th><th class="num">Base Cost/mo</th><th class="num">+ Data Transfer</th><th class="num">Total/mo</th><th class="num">Annual</th><th class="num">$/1M Requests</th><th>Notes</th></tr>
+                    </thead>
+                    <tbody id="cost-tbody"></tbody>
+                </table>
+                </div>
+            </div>
+
+            <!-- REFERENCE CARD -->
+            <div class="calculator-card">
+                <h3>📋 Managed API Gateway Pricing Reference (US East)</h3>
+                <p class="card-desc">Published list prices as of 2026. Actual costs vary with volume commitments, reserved capacity, and enterprise agreements.</p>
+                <div class="table-scroll">
+                <table class="ref-table">
+                    <thead>
+                        <tr><th>Provider / Tier</th><th class="num">Per-Million Requests</th><th class="num">Data Transfer ($/GB)</th><th>Free Tier / Notes</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><span class="provider-tag tag-aws">AWS</span> REST API Gateway</td><td class="num">$3.50</td><td class="num">$0.09 (internet)</td><td>1M req/mo free × 12 months</td></tr>
+                        <tr><td><span class="provider-tag tag-aws">AWS</span> HTTP API Gateway</td><td class="num">$1.00</td><td class="num">$0.09 (internet)</td><td>1M req/mo free × 12 months</td></tr>
+                        <tr><td><span class="provider-tag tag-aws">AWS</span> WebSocket API</td><td class="num">$1.00 /M msgs + $0.25 /M conn-mins</td><td class="num">$0.09 (internet)</td><td>1M msgs + 750K conn-mins free</td></tr>
+                        <tr><td><span class="provider-tag tag-gcp">GCP</span> API Gateway</td><td class="num">$3.00</td><td class="num">$0.12 (internet)</td><td>2M req/mo free</td></tr>
+                        <tr><td><span class="provider-tag tag-gcp">GCP</span> Apigee X (Enterprise)</td><td class="num">$4.50+</td><td class="num">Included</td><td>Volume discounts at 100M+/mo</td></tr>
+                        <tr><td><span class="provider-tag tag-azure">Azure</span> API Management (Basic)</td><td class="num">$3.00</td><td class="num">$0.087 (internet)</td><td>1M req/mo included in tier</td></tr>
+                        <tr><td><span class="provider-tag tag-azure">Azure</span> API Management (Standard)</td><td class="num">$2.00</td><td class="num">$0.087 (internet)</td><td>Includes developer portal</td></tr>
+                        <tr><td><span class="provider-tag tag-azure">Azure</span> API Management (Premium)</td><td class="num">$1.20</td><td class="num">$0.087 (internet)</td><td>VNet injection, multi-region</td></tr>
+                        <tr><td><span class="provider-tag tag-self">Self</span> NGINX / Kong on EC2 (c5.xlarge)</td><td class="num">~$0.07</td><td class="num">$0.09 (AWS internet)</td><td>~$124/mo compute + egress only</td></tr>
+                        <tr><td><span class="provider-tag tag-self">Self</span> HAProxy / Envoy (c5.2xlarge)</td><td class="num">~$0.04</td><td class="num">$0.09 (AWS internet)</td><td>~$248/mo compute for HA pair</td></tr>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>API Rate Limiting Economics: Why "Free Tier" Math Breaks at Scale</h2>
+            <p>API gateways charge per request — a pricing model that looks cheap at low volume but becomes a dominant infrastructure cost at scale. A service handling 1,000 requests per second processes <strong>~2.6 billion requests per month</strong>. At AWS REST API Gateway pricing of $3.50 per million, that's over $9,000/month before data transfer. The same workload on a pair of self-hosted NGINX instances costs roughly $250/month in compute — a <strong>36× cost difference</strong>.</p>
+
+            <h3>How This Calculator Works</h3>
+            <p>The engine converts your sustained rate limit (req/s) into monthly request volume using <code>req/s × 86,400 × 30.4375</code> (mean days per month accounting for leap years). It then applies provider-specific pricing models:</p>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Provider</th><th>Per-Million Rate</th><th>Volume Discounts</th><th>Best For</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>AWS REST API Gateway</strong></td><td>$3.50/M</td><td>None (flat rate)</td><td>AWS-native microservices with Lambda backends</td></tr>
+                    <tr><td><strong>AWS HTTP API Gateway</strong></td><td>$1.00/M</td><td>None (flat rate)</td><td>Cost-sensitive HTTP proxies, no auth/transform needs</td></tr>
+                    <tr><td><strong>GCP API Gateway</strong></td><td>$3.00/M</td><td>None; Apigee offers volume tiers</td><td>GCP Cloud Functions / Cloud Run backends</td></tr>
+                    <tr><td><strong>Azure API Management</strong></td><td>$1.20–$3.00/M</td><td>Tier-based: higher tiers = lower per-call cost</td><td>.NET / Azure-native stacks with VNet requirements</td></tr>
+                    <tr><td><strong>Self-Hosted (NGINX/Kong)</strong></td><td>~$0.04–$0.07/M</td><td>Compute cost only, not per-request</td><td>High-volume, cost-optimized, or compliance-isolated</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3>The Hidden Cost: Data Transfer Egress</h3>
+            <p>Per-request pricing is only part of the bill. API responses consume egress bandwidth, and cloud providers charge $0.09–$0.12 per GB for internet-bound traffic. With an average 12 KB response at 1,000 req/s, that's <strong>~31 TB/month</strong> of egress data — adding roughly $2,800–$3,700/month in data transfer costs alone. This calculator includes egress estimates so the total cost projection reflects real-world billing, not just the per-request component.</p>
+            <p>Mitigation strategies: use CDN caching for cacheable API responses (CloudFront, Cloud CDN), compress payloads (gzip/Brotli reduces JSON by 60–80%), colocate services in the same region, and consider private interconnects (AWS PrivateLink, GCP Private Service Connect) for service-to-service traffic.</p>
+
+            <h3>What "Rate Limit" Actually Means for Cost Modeling</h3>
+            <p>An API rate limit expressed in requests per second is the <strong>sustained steady-state ceiling</strong>. Real-world traffic is bursty — diurnal patterns, event-driven spikes, and retry storms all create peaks above the sustained average. This calculator includes a burst ratio to model the peak capacity that your gateway must provision:</p>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Traffic Pattern</th><th>Typical Burst Ratio</th><th>Example</th></tr></thead>
+                <tbody>
+                    <tr><td>Internal tools, cron-driven</td><td>1.0–1.2×</td><td>Steady rate, predictable</td></tr>
+                    <tr><td>SaaS with diurnal users</td><td>1.5–2.0×</td><td>Peak at 9am–5pm business hours</td></tr>
+                    <tr><td>Consumer app with notifications</td><td>3.0–5.0×</td><td>Push notification triggers simultaneous opens</td></tr>
+                    <tr><td>Event-driven / flash sales</td><td>10–50×</td><td>Ticketmaster-style on-sale stampedes</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>Managed gateways handle bursts transparently (you pay per request regardless of pattern), but self-hosted gateways must be provisioned for peak capacity. A 1,000 req/s sustained rate with a 5× burst ratio needs a self-hosted tier sized for 5,000 req/s peak — which means larger instances or more replicas driving up the fixed compute cost.</p>
+
+            <h3>WebSocket and gRPC: Different Cost Dynamics</h3>
+            <p>Persistent protocols change the cost equation. WebSocket APIs are priced per message and per connection-minute, not per HTTP request. A WebSocket service with 10,000 concurrent connections exchanging 50 messages/second each generates <strong>1.3 billion messages/month</strong> — at AWS WebSocket pricing ($1.00/M messages + $0.25/M connection-minutes), that's ~$4,900/month, fundamentally different from the REST model. gRPC over HTTP/2 benefits from multiplexing and binary payloads (Protobuf), reducing both request count (fewer round trips) and data transfer volume (smaller payloads vs JSON).</p>
+
+            <h3>The Breakeven Volume: When Self-Hosting Wins</h3>
+            <p>Managed gateways trade operational simplicity for per-request pricing. There is a clear crossover point where self-hosting becomes cheaper:</p>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Managed Gateway</th><th>Breakeven req/s</th><th>Monthly Volume</th><th>Self-Hosted Alternative</th></tr></thead>
+                <tbody>
+                    <tr><td>AWS REST API Gateway ($3.50/M)</td><td class="num">~15 req/s</td><td class="num">~39M requests</td><td>Single c5.large NGINX (~$62/mo)</td></tr>
+                    <tr><td>AWS HTTP API Gateway ($1.00/M)</td><td class="num">~50 req/s</td><td class="num">~131M requests</td><td>Single c5.large NGINX (~$62/mo)</td></tr>
+                    <tr><td>Azure APIM Premium ($1.20/M)</td><td class="num">~100 req/s</td><td class="num">~263M requests</td><td>HA pair c5.xlarge (~$248/mo)</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p style="margin-top:12px;">The breakeven shifts based on team size, compliance requirements, and whether you already operate Kubernetes clusters that can absorb the self-hosted gateway workload. For organizations running their own K8s, adding an Envoy/Kong sidecar has near-zero marginal compute cost — making the breakeven effectively 0 req/s.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/api-rate-limit-cost-real">📰 The Rate Limit Racket (Full Briefing) →</a>
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/latency-budget-calculator">Latency Budget Calculator &rarr;</a>
+                <a href="/gbps-to-tb-per-day">Gbps to TB/Day Egress &rarr;</a>
+                <a href="/mbps-to-mbytes-per-sec">Mbps to MB/s Throughput &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Constants ──
+    var SECONDS_PER_DAY = 86400;
+    var MEAN_DAYS_PER_MONTH = 30.4375; // Accounting for leap years
+
+    // Provider pricing models (per-million requests, base monthly fee, egress $/GB)
+    var PROVIDERS = [
+        {
+            id: 'aws-rest',
+            name: 'AWS REST API Gateway',
+            tag: 'aws',
+            perMillion: 3.50,
+            baseMonthly: 0,
+            egressPerGb: 0.09,
+            desc: 'Full-featured REST APIs with auth, throttling, and request transformation.',
+            color: '#ff9900'
+        },
+        {
+            id: 'aws-http',
+            name: 'AWS HTTP API Gateway',
+            tag: 'aws',
+            perMillion: 1.00,
+            baseMonthly: 0,
+            egressPerGb: 0.09,
+            desc: 'Lightweight HTTP proxy. No auth/transform — lower cost, fewer features.',
+            color: '#ff9900'
+        },
+        {
+            id: 'gcp-gateway',
+            name: 'GCP API Gateway',
+            tag: 'gcp',
+            perMillion: 3.00,
+            baseMonthly: 0,
+            egressPerGb: 0.12,
+            desc: 'GCP-native gateway for Cloud Functions and Cloud Run backends.',
+            color: '#4285f4'
+        },
+        {
+            id: 'azure-std',
+            name: 'Azure APIM Standard',
+            tag: 'azure',
+            perMillion: 2.00,
+            baseMonthly: 400, // ~$400/mo base for Standard tier
+            egressPerGb: 0.087,
+            desc: 'Developer portal, VNet integration, multi-region support.',
+            color: '#0078d4'
+        },
+        {
+            id: 'azure-prem',
+            name: 'Azure APIM Premium',
+            tag: 'azure',
+            perMillion: 1.20,
+            baseMonthly: 2200, // ~$2,200/mo base for Premium
+            egressPerGb: 0.087,
+            desc: 'Enterprise-grade with VNet injection, multi-region, and SLA.',
+            color: '#0078d4'
+        },
+        {
+            id: 'self-nginx',
+            name: 'Self-Hosted NGINX (c5.xlarge)',
+            tag: 'self',
+            perMillion: 0,
+            baseMonthly: 124, // ~$0.17/hr × 730 hrs
+            egressPerGb: 0.09,
+            desc: 'Single EC2 instance. Suitable up to ~5,000 req/s with TLS termination.',
+            color: '#10b981'
+        },
+        {
+            id: 'self-kong-ha',
+            name: 'Self-Hosted Kong HA Pair (2× c5.2xlarge)',
+            tag: 'self',
+            perMillion: 0,
+            baseMonthly: 496, // ~$0.34/hr × 730 hrs × 2
+            egressPerGb: 0.09,
+            desc: 'HA NGINX/Kong pair. Scales to 50K+ req/s with plugin ecosystem.',
+            color: '#10b981'
+        }
+    ];
+
+    var PRESETS = {
+        'startup': { rps: 100, reqKb: 2, respKb: 6, protocol: 'rest', burst: 1.2, egress: 'same-region' },
+        'mid-scale': { rps: 1000, reqKb: 4, respKb: 12, protocol: 'rest', burst: 1.5, egress: 'internet' },
+        'high-growth': { rps: 5000, reqKb: 6, respKb: 20, protocol: 'rest', burst: 2.0, egress: 'internet' },
+        'enterprise': { rps: 25000, reqKb: 8, respKb: 30, protocol: 'grpc', burst: 3.0, egress: 'cross-region' },
+        'internet-scale': { rps: 100000, reqKb: 10, respKb: 50, protocol: 'grpc', burst: 5.0, egress: 'internet' }
+    };
+
+    // Protocol efficiency multipliers (relative to REST/JSON)
+    var PROTOCOL_EFFICIENCY = {
+        'rest': { overhead: 1.0, label: 'REST (JSON, HTTPS)' },
+        'http': { overhead: 0.85, label: 'HTTP (plain, no auth)' },
+        'websocket': { overhead: 0.6, label: 'WebSocket (persistent, framed)' },
+        'grpc': { overhead: 0.4, label: 'gRPC (HTTP/2, Protobuf binary)' }
+    };
+
+    function formatNum(n, decimals) {
+        if (decimals === undefined) decimals = 2;
+        return n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    function formatCurrency(n) {
+        if (Math.abs(n) < 0.01) return '$0.00';
+        return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function formatVolume(n) {
+        if (n >= 1e9) return formatNum(n / 1e9, 2) + ' B';
+        if (n >= 1e6) return formatNum(n / 1e6, 1) + ' M';
+        if (n >= 1e3) return formatNum(n / 1e3, 1) + ' K';
+        return formatNum(n, 0);
+    }
+
+    function computeCosts() {
+        var rps = parseFloat(document.getElementById('rate-limit-rps').value) || 0;
+        var reqKb = parseFloat(document.getElementById('request-size-kb').value) || 0;
+        var respKb = parseFloat(document.getElementById('response-size-kb').value) || 0;
+        var protocolKey = document.getElementById('api-protocol').value;
+        var burstRatio = parseFloat(document.getElementById('burst-ratio').value) || 1;
+        var egressRegion = document.getElementById('egress-region').value;
+
+        var protoCfg = PROTOCOL_EFFICIENCY[protocolKey] || PROTOCOL_EFFICIENCY['rest'];
+
+        // Monthly request volume
+        var monthlyRequests = rps * SECONDS_PER_DAY * MEAN_DAYS_PER_MONTH;
+        var peakRps = rps * burstRatio;
+
+        // Data transfer (response + request, factoring protocol overhead)
+        var totalKbPerRequest = (reqKb + respKb) * protoCfg.overhead;
+        var monthlyGb = (monthlyRequests * totalKbPerRequest) / (1024 * 1024); // KB → GB
+
+        // Egress cost multiplier (same-region = 0, cross-region = 0.5 of internet, internet = 1.0)
+        var egressMultiplier = egressRegion === 'same-region' ? 0 : (egressRegion === 'cross-region' ? 0.5 : 1.0);
+
+        // Results card
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-params').innerText =
+            formatNum(rps, 1) + ' sustained req/s · ' + formatNum(peakRps, 1) + ' peak req/s · ' +
+            protoCfg.label + ' · ' + reqKb + 'KB req / ' + respKb + 'KB resp · ' +
+            (egressRegion === 'same-region' ? 'Same Region' : egressRegion === 'cross-region' ? 'Cross-Region' : 'Internet Egress');
+
+        // Volume metrics
+        document.getElementById('volume-metrics').innerHTML =
+            '<div class="metric-tile"><div class="metric-val">' + formatVolume(monthlyRequests) + '</div><div class="metric-label">Monthly Requests</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + formatNum(rps, 1) + ' /s</div><div class="metric-label">Sustained Rate</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + formatNum(peakRps, 1) + ' /s</div><div class="metric-label">Peak Rate (' + burstRatio + '× burst)</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + formatNum(monthlyGb, 1) + ' GB</div><div class="metric-label">Monthly Data Transfer</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + formatNum(monthlyRequests / 1e6, 1) + ' M</div><div class="metric-label">Million Requests</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + formatNum(monthlyRequests / (SECONDS_PER_DAY * MEAN_DAYS_PER_MONTH), 1) + ' /s</div><div class="metric-label">Daily Avg Rate</div></div>';
+
+        // Compute per-provider costs
+        var results = PROVIDERS.map(function(p) {
+            var baseCost = p.baseMonthly;
+            var requestCost = (monthlyRequests / 1e6) * p.perMillion;
+            var egressCost = monthlyGb * p.egressPerGb * egressMultiplier;
+            var totalCost = baseCost + requestCost + egressCost;
+            var perMillionEffective = monthlyRequests > 0 ? (totalCost / (monthlyRequests / 1e6)) : 0;
+            return {
+                provider: p,
+                baseCost: baseCost,
+                requestCost: requestCost,
+                egressCost: egressCost,
+                totalCost: totalCost,
+                perMillionEffective: perMillionEffective
+            };
+        });
+
+        // Find the cheapest
+        var minTotal = Infinity;
+        results.forEach(function(r) { if (r.totalCost < minTotal) minTotal = r.totalCost; });
+
+        // Cost bar chart
+        var maxCost = 0;
+        results.forEach(function(r) { if (r.totalCost > maxCost) maxCost = r.totalCost; });
+        var barMax = Math.max(maxCost, 1);
+
+        var barHtml = '';
+        results.forEach(function(r) {
+            var pct = Math.max(2, (r.totalCost / barMax) * 100);
+            var isBest = r.totalCost === minTotal;
+            barHtml += '<div class="cost-bar-col">' +
+                '<div class="cost-bar-value">' + formatCurrency(r.totalCost) + '</div>' +
+                '<div class="cost-bar-fill" style="height:' + pct + '%;background:' + r.provider.color + ';' + (isBest ? 'border:2px solid var(--success);' : '') + '">' +
+                    (pct > 15 ? (isBest ? '★ BEST' : '') : '') +
+                '</div>' +
+                '<div class="cost-bar-label"><span class="provider-tag tag-' + r.provider.tag + '">' + r.provider.id.toUpperCase() + '</span></div>' +
+            '</div>';
+        });
+        document.getElementById('cost-bar-chart').innerHTML = barHtml;
+
+        // Cost table
+        var tbodyHtml = '';
+        results.forEach(function(r) {
+            var isBest = r.totalCost === minTotal;
+            tbodyHtml += '<tr class="' + (isBest ? 'best-row' : '') + '">' +
+                '<td><span class="provider-tag tag-' + r.provider.tag + '">' + r.provider.tag.toUpperCase() + '</span> ' + r.provider.name + '</td>' +
+                '<td class="num">' + formatCurrency(r.baseCost + r.requestCost) + '</td>' +
+                '<td class="num" style="color:' + (r.egressCost > 0 ? 'var(--gold)' : 'var(--text-muted)') + ';">' + (r.egressCost > 0 ? '+' + formatCurrency(r.egressCost) : '—') + '</td>' +
+                '<td class="num cost-highlight">' + formatCurrency(r.totalCost) + '</td>' +
+                '<td class="num">' + formatCurrency(r.totalCost * 12) + '</td>' +
+                '<td class="num">' + formatCurrency(r.perMillionEffective) + '</td>' +
+                '<td style="font-size:0.75rem;color:var(--text-muted);">' + r.provider.desc + '</td>' +
+            '</tr>';
+        });
+        document.getElementById('cost-tbody').innerHTML = tbodyHtml;
+
+        // Scroll to results
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function applyPreset(presetKey) {
+        var preset = PRESETS[presetKey];
+        if (!preset) return;
+        document.getElementById('rate-limit-rps').value = preset.rps;
+        document.getElementById('request-size-kb').value = preset.reqKb;
+        document.getElementById('response-size-kb').value = preset.respKb;
+        document.getElementById('api-protocol').value = preset.protocol;
+        document.getElementById('burst-ratio').value = preset.burst;
+        document.getElementById('egress-region').value = preset.egress;
+        computeCosts();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Compute on load with default preset
+        applyPreset('mid-scale');
+
+        // Preset change handler
+        document.getElementById('preset-select').addEventListener('change', function() {
+            var val = this.value;
+            if (val === 'custom') return;
+            applyPreset(val);
+        });
+
+        // Recompute button
+        document.querySelector('.btn-calc').addEventListener('click', computeCosts);
+
+        // Auto-recompute on input changes
+        var inputs = document.querySelectorAll('#rate-limit-rps, #request-size-kb, #response-size-kb');
+        inputs.forEach(function(input) {
+            input.addEventListener('input', function() {
+                document.getElementById('preset-select').value = 'custom';
+                computeCosts();
+            });
+        });
+        var selects = document.querySelectorAll('#api-protocol, #burst-ratio, #egress-region');
+        selects.forEach(function(select) {
+            select.addEventListener('change', function() {
+                document.getElementById('preset-select').value = 'custom';
+                computeCosts();
+            });
+        });
+    });
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

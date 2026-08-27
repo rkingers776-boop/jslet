@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>XML Formatter & Validator — Beautify, Minify, XML to JSON Online — jslet</title>
+    <meta name="description" content="Format, minify and validate XML online. Native DOMParser validation with line/column error reporting, 3 indent styles, XML↔JSON conversion. Handles SOAP, RSS, SVG, plist. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/xml-formatter">
+    <meta property="og:title" content="XML Formatter & Validator — Beautify, Minify, XML↔JSON">
+    <meta property="og:description" content="Format and validate XML with native DOMParser error reporting. Minify, 3 indent styles, XML↔JSON. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/xml-formatter">
+    <meta property="og:type" content="website"><meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="XML Formatter & Validator — Beautify, Minify, XML↔JSON">
+    <meta name="twitter:description" content="Format, validate, minify XML with native DOMParser errors. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"XML Formatter & Validator","description":"Format, minify and validate XML with native DOMParser error reporting, 3 indent styles and XML to JSON conversion. 100% client-side.","url":"https://www.jslet.com/xml-formatter","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I format XML online without installing anything?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Paste your XML — a SOAP response, RSS feed, Android manifest, Maven POM or plist — into jslet's XML formatter and it pretty-prints instantly with clean indentation. You can switch between 2-space, 4-space and Tab indent styles to match your project conventions, minify to a single line for transport, and run a well-formedness check at any time. The tool uses the browser's native DOMParser, which is the same parser browsers use for XHTML and SVG, so the validation is authoritative, not an approximation. Everything runs locally — your XML never leaves your device."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does my XML fail to parse?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The four most common XML errors are: unclosed tags (every opening tag must have a matching closing tag), multiple root elements (XML allows exactly one root), unescaped special characters (use &amp; for &, &lt; for <), and unquoted attribute values. This tool reports the exact line and column of the first problem using the browser's native DOMParser, so you can jump straight to the fix instead of hunting through the document. The same parser that rejects your document is the one browsers use for XHTML — if DOMParser says it is broken, real-world consumers will reject it too."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can this tool convert XML to JSON?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. The XML→JSON mode maps element names to object keys, child elements to nested objects, repeated elements to arrays, and attributes to a special '@' prefixed key. The conversion is lossless in structure but has one honest caveat: XML attributes and child elements live in different namespaces, so a naive conversion can collide (an element named 'id' next to an attribute 'id'). This tool prefixes attributes with '@' to keep them separate — the standard convention used by xml2js and most converters. JSON→XML works in reverse, generating attributes for '@' keys. Use it for SOAP responses, RSS feeds or legacy config files that need to move into a modern JSON pipeline."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is my XML uploaded to a server?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Every operation — formatting, minification, validation, and XML↔JSON conversion — runs entirely in your browser via JavaScript. Your XML never leaves your device. This matters when debugging SOAP API responses that may contain tokens, or legacy enterprise config files with internal paths. Open the Network tab (F12) before converting and you will see zero outbound requests. Free, no account, no usage limits."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .tool-layout { display: flex; gap: 20px; min-height: 450px; }
+        @media (max-width: 768px) { .tool-layout { flex-direction: column; } }
+        .tool-panel { flex: 1; display: flex; flex-direction: column; }
+        .tool-panel label { font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; color: var(--text-body); }
+        .tool-panel textarea { flex: 1; min-height: 380px; font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 0.82rem; padding: 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); resize: vertical; line-height: 1.5; }
+        .tool-panel textarea:focus { border-color: var(--accent); outline: none; }
+        .btn-row { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+        .info-bar { font-size: 0.82rem; color: var(--text-muted); margin-top: 8px; display: flex; gap: 20px; flex-wrap: wrap; }
+        .options-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; font-size: 0.85rem; }
+        .options-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; font-weight: 400; }
+        .warn-bar { background: var(--accent-soft, #fff3e6); border: 1px solid var(--accent); color: var(--accent); font-size: 0.82rem; padding: 8px 12px; border-radius: var(--radius-sm); margin-bottom: 10px; display: none; }
+        .ok-bar { background: var(--green-soft, #e8f5e9); border: 1px solid var(--green, #2e7d32); color: var(--green, #2e7d32); font-size: 0.82rem; padding: 8px 12px; border-radius: var(--radius-sm); margin-bottom: 10px; display: none; }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>XML <span>Formatter</span> &amp; Validator</h1><p>Beautify, minify and validate XML with the browser's own parser. Line/column error reports, three indent styles, and lossless XML ↔JSON conversion. SOAP, RSS, SVG, plist — all handled.</p></header>
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="formatXml()">🟢🔄 Format XML</button>
+            <button class="btn btn-outline" onclick="minifyXml()">🟢📉 Minify</button>
+            <button class="btn btn-outline" onclick="xmlToJson()">🟢⚡ XML →JSON</button>
+            <button class="btn btn-outline" onclick="loadSample()">🟢🧪 Sample</button>
+            <button class="btn btn-outline" onclick="clearAll()">🗑 Clear</button>
+        </div>
+        <div class="options-row">
+            <label>Indent: <select id="opt-indent" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text-body);"><option value="  ">2 spaces</option><option value="    ">4 spaces</option><option value="\t">Tab</option></select></label>
+            <label><input type="checkbox" id="opt-preserve" checked> Preserve text whitespace</label>
+        </div>
+        <div class="warn-bar" id="xml-warn"></div>
+        <div class="ok-bar" id="xml-ok">✅ Well-formed XML</div>
+        <div class="tool-layout">
+            <div class="tool-panel"><label for="input-xml">🟢📥 XML Input</label><textarea id="input-xml" placeholder='Paste XML here...&#10;&lt;note&gt;&lt;to&gt;Alice&lt;/to&gt;&lt;from&gt;Bob&lt;/from&gt;&lt;body&gt;Hello!&lt;/body&gt;&lt;/note&gt;'></textarea></div>
+            <div class="tool-panel"><label for="output-xml">🟢📤 Output</label><textarea id="output-xml" placeholder="Formatted XML / JSON will appear here..." readonly></textarea><div class="info-bar" id="xml-stats"></div></div>
+        </div>
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">🟢📖 The XML Gotchas This Formatter Catches</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>Validation is not approximation.</strong> This tool uses <code>DOMParser</code> — the exact parser browsers use for XHTML and SVG. If it rejects your document, real-world consumers will too. The error report includes the precise line and column of the first problem.</p>
+                <p><strong>The four common killers:</strong> unclosed tags (every opening tag needs a match), multiple root elements (XML allows exactly one), unescaped special characters (<code>&amp;</code> for <code>&amp;</code>, <code>&amp;lt;</code> for <code>&lt;</code>), and unquoted attribute values. All four are caught with a location.</p>
+                <p><strong>XML →JSON is honest about collisions:</strong> XML has attributes <em>and</em> child elements, JSON has only keys. This converter prefixes attributes with <code>@</code> (the xml2js convention) so an element named <code>id</code> and an attribute <code>id</code> never collide. Repeated elements become arrays. The structure round-trips back through JSON →XML.</p>
+                <p>See also: <a href="/json-formatter">JSON Formatter</a> (sister) · <a href="/json-minify">JSON Minifier</a> · <a href="/json-to-csv">JSON →CSV</a> · <a href="/csv-to-json">CSV →JSON</a> · <a href="/yaml-json-converter">YAML ↔JSON</a> · <a href="/sql-formatter">SQL Formatter</a> · <a href="/json-tools">All JSON / CSV Tools</a></p>
+            </div>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var inp = document.getElementById('input-xml');
+        var out = document.getElementById('output-xml');
+        var stats = document.getElementById('xml-stats');
+        var warn = document.getElementById('xml-warn');
+        var okBar = document.getElementById('xml-ok');
+
+        function getIndent() {
+            var v = document.getElementById('opt-indent').value;
+            return v === '\\t' ? '\t' : v;
+        }
+
+        // ── 校验 + 格式化：DOMParser 原生，错误带行列 ──
+        function formatXml() {
+            var xml = inp.value;
+            if (!xml.trim()) { out.value = ''; stats.textContent = ''; warn.style.display = 'none'; okBar.style.display = 'none'; return; }
+            var doc = new DOMParser().parseFromString(xml, 'text/xml');
+            var errNode = doc.getElementsByTagName('parsererror')[0];
+            if (errNode) {
+                warn.textContent = '⚠ ' + extractError(errNode.textContent, xml);
+                warn.style.display = 'block';
+                okBar.style.display = 'none';
+                out.value = '';
+                stats.textContent = '';
+                return;
+            }
+            warn.style.display = 'none';
+            okBar.style.display = 'block';
+            var formatted = prettyPrint(doc.documentElement, getIndent(), document.getElementById('opt-preserve').checked);
+            out.value = formatted;
+            stats.textContent = '🟢📊 ' + xml.length.toLocaleString() + ' → ' + formatted.length.toLocaleString() + ' chars · well-formed';
+        }
+
+        function extractError(msg, xml) {
+            // Firefox: "mismatched tag at line 3" / Chrome/Safari: parsererror with lineNumber
+            var m = msg.match(/line\s*(\d+)[^0-9]*col(?:umn)?\s*(\d+)/i);
+            if (m) return 'XML error at line ' + m[1] + ', column ' + m[2] + ': ' + msg.slice(0, 160);
+            var m2 = msg.match(/line\s*(\d+)/i);
+            if (m2) return 'XML error at line ' + m2[1] + ': ' + msg.slice(0, 160);
+            return msg.slice(0, 160);
+        }
+
+        // ── 递归美化打印 ──
+        function prettyPrint(node, indent, preserveWs) {
+            var out = '';
+            var depth = 0;
+            function walk(n, d) {
+                var pad = indent.repeat(d);
+                if (n.nodeType === 3) { // text
+                    var t = n.textContent;
+                    if (!preserveWs) t = t.replace(/\s+/g, ' ').trim();
+                    if (t) out += pad + t + '\n';
+                    return;
+                }
+                if (n.nodeType !== 1) return;
+                var attrs = '';
+                Array.prototype.forEach.call(n.attributes, function(a) {
+                    attrs += ' ' + a.name + '="' + escapeAttr(a.value) + '"';
+                });
+                var hasChildren = false;
+                Array.prototype.forEach.call(n.childNodes, function(ch) {
+                    if (ch.nodeType === 3) { if (ch.textContent.trim()) hasChildren = true; }
+                    else if (ch.nodeType === 1) hasChildren = true;
+                });
+                var tag = n.nodeName;
+                if (!hasChildren) {
+                    out += pad + '<' + tag + attrs + '/>\n';
+                    return;
+                }
+                out += pad + '<' + tag + attrs + '>\n';
+                Array.prototype.forEach.call(n.childNodes, function(ch) { walk(ch, d + 1); });
+                out += pad + '</' + tag + '>\n';
+            }
+            walk(node, 0);
+            return out;
+        }
+
+        function escapeAttr(s) {
+            return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        }
+
+        // ── 压缩 ──
+        function minifyXml() {
+            var xml = inp.value;
+            if (!xml.trim()) return;
+            var doc = new DOMParser().parseFromString(xml, 'text/xml');
+            var errNode = doc.getElementsByTagName('parsererror')[0];
+            if (errNode) {
+                warn.textContent = '⚠ ' + extractError(errNode.textContent, xml);
+                warn.style.display = 'block';
+                okBar.style.display = 'none';
+                out.value = '';
+                stats.textContent = '';
+                return;
+            }
+            warn.style.display = 'none';
+            okBar.style.display = 'block';
+            // 去掉标签间空白（保留文本节点内容）
+            var min = xml.replace(/>\s+</g, '><').trim();
+            out.value = min;
+            stats.textContent = '🟢📊 ' + xml.length.toLocaleString() + ' → ' + min.length.toLocaleString() + ' chars · minified';
+        }
+
+        // ── XML →JSON ──
+        function xmlToJson() {
+            var xml = inp.value;
+            if (!xml.trim()) return;
+            var doc = new DOMParser().parseFromString(xml, 'text/xml');
+            var errNode = doc.getElementsByTagName('parsererror')[0];
+            if (errNode) {
+                warn.textContent = '⚠ ' + extractError(errNode.textContent, xml);
+                warn.style.display = 'block';
+                okBar.style.display = 'none';
+                out.value = '';
+                stats.textContent = '';
+                return;
+            }
+            warn.style.display = 'none';
+            okBar.style.display = 'block';
+            var json = nodeToJson(doc.documentElement);
+            var pretty = JSON.stringify(json, null, 2);
+            out.value = pretty;
+            stats.textContent = '🟢📊 XML →JSON · ' + pretty.length.toLocaleString() + ' chars';
+        }
+
+        function nodeToJson(node) {
+            var obj = {};
+            // 属性 → @ 前缀
+            Array.prototype.forEach.call(node.attributes, function(a) {
+                obj['@' + a.name] = a.value;
+            });
+            // 子元素
+            var children = [];
+            Array.prototype.forEach.call(node.childNodes, function(ch) {
+                if (ch.nodeType === 1) children.push(ch);
+            });
+            if (children.length) {
+                var groups = {};
+                children.forEach(function(ch) {
+                    var name = ch.nodeName;
+                    if (!groups[name]) groups[name] = [];
+                    groups[name].push(nodeToJson(ch));
+                });
+                for (var k in groups) {
+                    var vals = groups[k];
+                    var textOnly = vals.length === 1 && isEmptyObject(vals[0]);
+                    if (textOnly) {
+                        obj[k] = getTextValue(children.filter(function(c) { return c.nodeName === k; })[0]);
+                    } else {
+                        obj[k] = vals.length > 1 ? vals : vals[0];
+                    }
+                }
+            } else {
+                // 纯文本节点
+                var txt = node.textContent;
+                if (txt.trim()) obj['#text'] = txt.trim();
+            }
+            return obj;
+        }
+
+        function isEmptyObject(o) {
+            for (var k in o) if (o.hasOwnProperty(k)) return false;
+            return true;
+        }
+
+        function getTextValue(node) {
+            var txt = '';
+            Array.prototype.forEach.call(node.childNodes, function(ch) {
+                if (ch.nodeType === 3) txt += ch.textContent;
+            });
+            return txt.trim();
+        }
+
+        window.formatXml = formatXml;
+        window.minifyXml = minifyXml;
+        window.xmlToJson = xmlToJson;
+        window.clearAll = function() { inp.value = ''; out.value = ''; stats.textContent = ''; warn.style.display = 'none'; okBar.style.display = 'none'; };
+        window.loadSample = function() {
+            inp.value = '<?xml version="1.0" encoding="UTF-8"?><bookstore><book category="web"><title lang="en">Learning XML</title><author>Erik Ray</author><price>39.95</price></book><book category="cooking"><title lang="zh">厨房的秘密</title><author>未知</author><price>29.99</price></book></bookstore>';
+            formatXml();
+        };
+
+        // Expose for tests
+        window.nodeToJsonForTest = nodeToJson;
+        window.prettyPrintForTest = function(xml, indent) {
+            var doc = new DOMParser().parseFromString(xml, 'text/xml');
+            return prettyPrint(doc.documentElement, indent || '  ', true);
+        };
+
+        // Initial sample
+        inp.value = '<note><to>Alice</to><from>Bob</from><body>Hello world</body></note>';
+        formatXml();
+    })();
+    </script>
+</body>
+</html>

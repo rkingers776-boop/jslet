@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>AWS NAT Gateway Cost Calculator — Hidden $32.85/mo Per AZ Before a Byte Moves — jslet</title>
+    <meta name="description" content="NAT Gateway costs $0.045/hr per AZ before any data transfer. At 3 AZs that's $98.55/mo idle. Add $0.045/GB data processing + cross-AZ traffic double-counting. Model your real NAT Gateway bill and compare against VPC Endpoints.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="AWS NAT Gateway Cost Calculator — Hidden $32.85/mo Per AZ Before a Byte Moves">
+    <meta property="og:description" content="NAT Gateway costs $0.045/hr per AZ before any data transfer. At 3 AZs that's $98.55/mo idle. Add $0.045/GB data processing + cross-AZ traffic double-counting — model your real bill.">
+    <meta property="og:url" content="https://www.jslet.com/nat-gateway-cost-calculator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AWS NAT Gateway Cost Calculator — Hidden $32.85/mo Per AZ Before a Byte Moves">
+    <meta name="twitter:description" content="Each NAT Gateway costs $32.85/mo in hourly charges alone. 3 AZs for HA = $98.55/mo before a single byte of data. Add $0.045/GB processing + cross-AZ data double-counting.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/nat-gateway-cost-calculator">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.5rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-val.warn { color: #e67e22; }
+        .metric-tile .metric-val.danger { color: var(--error); }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+        .cost-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin-top: 14px; }
+        .cost-table th { background: var(--bg-input); text-align: left; padding: 10px 14px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .cost-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+        .cost-table .num { text-align: right; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-weight: 700; }
+        .cost-table .cost-highlight { color: var(--accent); }
+        .cost-table tr.best-row { background: #ecfdf522; }
+        .cost-table tr.best-row td { border-bottom: 2px solid var(--success); font-weight: 700; }
+        [data-theme="dark"] .cost-table tr.best-row { background: #022c2233; }
+        .cost-table tr.best-row td:first-child::before { content: "★ "; color: var(--success); }
+
+        .cost-bar-wrap { display: flex; gap: 4px; align-items: flex-end; height: 150px; margin: 16px 0 8px 0; }
+        .cost-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .cost-bar-fill {
+            width: 100%; border-radius: 4px 4px 0 0; transition: height 0.5s ease;
+            display: flex; align-items: flex-start; justify-content: center;
+            font-size: 0.7rem; font-weight: 700; color: #fff; padding-top: 6px;
+            min-height: 22px;
+        }
+        .cost-bar-label { font-size: 0.65rem; color: var(--text-muted); text-align: center; line-height: 1.2; }
+        .cost-bar-value { font-size: 0.72rem; font-weight: 700; color: var(--text-heading); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+
+        .ref-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .ref-table th { background: var(--bg-input); text-align: left; padding: 8px 12px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .ref-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .ref-table .num { text-align: right; font-weight: 700; color: var(--accent); }
+
+        .cost-breakdown-bar { display: flex; height: 22px; border-radius: 4px; overflow: hidden; margin: 10px 0; }
+        .cost-breakdown-bar .segment { display: flex; align-items: center; justify-content: center; font-size: 0.68rem; font-weight: 700; color: #fff; white-space: nowrap; transition: width 0.5s ease; }
+        .cost-breakdown-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.78rem; margin-bottom: 12px; }
+        .cost-breakdown-legend span { display: flex; align-items: center; gap: 5px; }
+        .cost-breakdown-legend .swatch { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+
+        .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; margin-top: 12px; }
+        .preset-chip {
+            padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            cursor: pointer; transition: border-color 0.2s, background 0.2s;
+            font-size: 0.8rem; text-align: center; background: var(--bg-input);
+        }
+        .preset-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+        .preset-chip .preset-name { font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 2px; }
+        .preset-chip .preset-estimate { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.76rem; color: var(--accent); }
+
+        .callout-box {
+            background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: var(--radius-sm);
+            padding: 16px 20px; margin: 14px 0; font-size: 0.88rem; color: var(--text-body); line-height: 1.7;
+        }
+        .callout-box strong { color: var(--text-heading); }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "AWS NAT Gateway Cost Calculator",
+      "description": "Calculate AWS NAT Gateway total cost including hourly charges, data processing fees, and cross-AZ traffic double-counting. Compare against VPC Endpoint alternatives.",
+      "url": "https://www.jslet.com/nat-gateway-cost-calculator",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why is my NAT Gateway bill high even with low traffic?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A NAT Gateway costs $0.045/hour per AZ before a single byte of data — 3 AZs idle is $98.55/month. On top of that you pay $0.045/GB for data processing, and cross-AZ traffic can double-count. The calculator breaks down the fixed hourly floor, per-GB processing, and AZ spreading so the line item makes sense."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "When do VPC Endpoints save money over NAT?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "For traffic to AWS services (S3, DynamoDB, ECR), VPC Endpoints bypass NAT entirely — the per-GB processing fee disappears, and the endpoint hourly charge is usually far cheaper. The calculator compares NAT vs VPC Endpoints for your traffic profile, which is how teams cut $200+/month on a single architecture change."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is a self-managed EC2 NAT instance cheaper?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Often yes for predictable traffic — an instance-based NAT costs the instance price plus bandwidth, which can undercut NAT Gateway's hourly + per-GB model. The trade-off is availability engineering: NAT Gateways are fully managed, instances need HA design. The calculator shows the crossover point so the managed-vs-self-managed decision has a number."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>AWS NAT Gateway <span>Cost Calculator</span></h1>
+            <p>NAT Gateway is the most boring line item in the AWS bill — until it's $700. Each NAT GW costs <strong>$0.045/hr</strong> ($32.85/mo) before a single byte of data moves through it. At 3 AZs for production HA, that's <strong>$98.55/month in idle charges alone</strong>. Then the data processing meter starts running: $0.045 per GB processed — and if your traffic crosses AZs to reach the NAT GW, the same byte gets counted twice. This calculator models four scenarios side by side: single NAT GW, multi-AZ NAT GW, NAT GW with cross-AZ traffic, and VPC Endpoint replacement. No hand-waving — actual AWS us-east-1 pricing.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 NAT Gateway Traffic Profile</h3>
+                <p class="card-desc">Configure your private subnet outbound traffic volume, AZ count, and cross-AZ pattern. The engine computes the full bill: hourly charges, data processing fees, and cross-AZ double-counting where applicable. VPC Endpoint pricing is modeled alongside so you can see the replacement cost in one view.</p>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="monthly-gb">Monthly Data Through NAT Gateway (GB)</label>
+                        <input type="number" class="unit-input" id="monthly-gb" value="500" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="preset-select">Scenario Preset</label>
+                        <select class="unit-input" id="preset-select">
+                            <option value="custom">Custom Configuration</option>
+                            <option value="dev-sandbox" selected>Dev/Sandbox VPC (1 AZ, 50 GB/mo)</option>
+                            <option value="staging">Staging VPC (2 AZ, 200 GB/mo)</option>
+                            <option value="production">Production VPC (3 AZ, 500 GB/mo)</option>
+                            <option value="data-heavy">Data-Heavy SaaS (3 AZ, 5 TB/mo)</option>
+                            <option value="enterprise">Enterprise Multi-Account (3 AZ, 20 TB/mo)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="az-count">Number of AZs with NAT Gateway</label>
+                        <select class="unit-input" id="az-count">
+                            <option value="1">1 AZ (no HA)</option>
+                            <option value="2">2 AZ (basic HA)</option>
+                            <option value="3" selected>3 AZ (production HA)</option>
+                            <option value="4">4 AZ (extended deployment)</option>
+                            <option value="6">6 AZ (multi-region hub)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="cross-az-pattern">Cross-AZ Traffic Pattern</label>
+                        <select class="unit-input" id="cross-az-pattern">
+                            <option value="none" selected>No Cross-AZ — All traffic local to NAT GW's AZ</option>
+                            <option value="light">Light — 20% of traffic crosses AZs</option>
+                            <option value="moderate">Moderate — 40% of traffic crosses AZs</option>
+                            <option value="heavy">Heavy — 70% of traffic crosses AZs</option>
+                            <option value="saturated">Saturated — 100% crosses AZs (single NAT GW serving all AZs)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="region-select">AWS Region</label>
+                        <select class="unit-input" id="region-select">
+                            <option value="us-east-1" selected>us-east-1 (N. Virginia) — $0.045/hr, $0.045/GB</option>
+                            <option value="us-west-2">us-west-2 (Oregon) — $0.045/hr, $0.045/GB</option>
+                            <option value="eu-west-1">eu-west-1 (Ireland) — $0.048/hr, $0.048/GB</option>
+                            <option value="ap-southeast-1">ap-southeast-1 (Singapore) — $0.052/hr, $0.052/GB</option>
+                            <option value="ap-northeast-1">ap-northeast-1 (Tokyo) — $0.055/hr, $0.054/GB</option>
+                            <option value="sa-east-1">sa-east-1 (São Paulo) — $0.065/hr, $0.065/GB</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="vpc-endpoint-count">VPC Interface Endpoints Deployed (for comparison scenario)</label>
+                        <input type="number" class="unit-input" id="vpc-endpoint-count" value="4" step="1" min="0" max="50">
+                    </div>
+                    <div class="input-group">
+                        <label for="vpce-monthly-gb">Data Through VPC Endpoints (GB/mo, replaces NAT GW traffic)</label>
+                        <input type="number" class="unit-input" id="vpce-monthly-gb" value="400" step="any" min="0">
+                    </div>
+                </div>
+
+                <button class="btn-calc">Run NAT Gateway Cost Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Monthly NAT Gateway Cost Breakdown</h3>
+                <p class="card-desc" id="results-params"></p>
+
+                <!-- Volume metrics -->
+                <div class="metric-grid" id="volume-metrics"></div>
+
+                <!-- Cost breakdown stacked bar -->
+                <h4 style="margin-top: 20px; margin-bottom: 4px;">🧱 Cost Composition — Where Your Money Goes</h4>
+                <div id="breakdown-chart-container"></div>
+
+                <!-- Cost bar chart -->
+                <h4 style="margin-top: 20px; margin-bottom: 4px;">💰 Scenario Comparison — NAT GW vs VPC Endpoints</h4>
+                <div class="cost-bar-wrap" id="cost-bar-chart"></div>
+
+                <!-- Cost table -->
+                <div class="table-scroll">
+                <table class="cost-table" id="cost-table">
+                    <thead>
+                        <tr><th>Scenario</th><th class="num">Hourly Charges/mo</th><th class="num">Data Processing/mo</th><th class="num">Cross-AZ Tax</th><th class="num">Total/mo</th><th class="num">Annual</th><th>Notes</th></tr>
+                    </thead>
+                    <tbody id="cost-tbody"></tbody>
+                </table>
+                </div>
+            </div>
+
+            <!-- REFERENCE CARD -->
+            <div class="calculator-card">
+                <h3>📋 AWS NAT Gateway &amp; VPC Endpoint Pricing Reference (2026)</h3>
+                <p class="card-desc">Published list prices. NAT Gateway pricing has three components. VPC Endpoint pricing has two. The interaction between them — cross-AZ data transfer — is where most cost models fall apart.</p>
+                <div class="table-scroll">
+                <table class="ref-table">
+                    <thead>
+                        <tr><th>Resource</th><th class="num">Hourly ($/hr)</th><th class="num">Data Processing ($/GB)</th><th class="num">Cross-AZ Data ($/GB)</th><th>Notes</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>NAT Gateway</strong> (us-east-1)</td><td class="num">$0.045</td><td class="num">$0.045</td><td class="num">$0.01 × 2 = $0.02</td><td>Cross-AZ: data flows AZ→NAT→internet, each leg $0.01/GB</td></tr>
+                        <tr><td><strong>NAT Gateway</strong> (eu-west-1)</td><td class="num">$0.048</td><td class="num">$0.048</td><td class="num">$0.01 × 2 = $0.02</td><td>10% premium over us-east-1</td></tr>
+                        <tr><td><strong>NAT Gateway</strong> (ap-northeast-1)</td><td class="num">$0.055</td><td class="num">$0.054</td><td class="num">$0.01 × 2 = $0.02</td><td>22% premium over us-east-1</td></tr>
+                        <tr><td><strong>NAT Gateway</strong> (sa-east-1)</td><td class="num">$0.065</td><td class="num">$0.065</td><td class="num">$0.01 × 2 per dir</td><td>44% premium over us-east-1</td></tr>
+                        <tr style="background:var(--accent-soft);"><td><strong>VPC Endpoint — Gateway</strong> (S3, DynamoDB)</td><td class="num">$0.00</td><td class="num">$0.00</td><td class="num">$0.00</td><td>Free. No hourly, no processing, no cross-AZ charge. Routes in the VPC route table.</td></tr>
+                        <tr><td><strong>VPC Endpoint — Interface</strong> (all other AWS services)</td><td class="num">$0.01</td><td class="num">$0.01</td><td class="num">$0.01</td><td>Per AZ per endpoint. 1 endpoint × 3 AZs = $21.90/mo hourly + data.</td></tr>
+                        <tr><td><strong>Self-Managed NAT on EC2</strong> (t4g.medium, Amazon Linux 2 NAT AMI)</td><td class="num">$0.0336</td><td class="num">$0.00</td><td class="num">$0.01 × 2 = $0.02</td><td>~$24.53/mo per AZ. No per-GB processing fee. Throughput caps at ~5 Gbps per instance. Bandwidth burst credits apply.</td></tr>
+                    </tbody>
+                </table>
+                </div>
+                <p style="margin-top:10px; font-size:0.78rem; color:var(--text-muted);">All prices in USD. VPC Gateway Endpoints (S3, DynamoDB) are free — no hourly, no per-GB, no cross-AZ data charge. Interface Endpoints carry hourly + data charges per AZ. Cross-AZ data is $0.01/GB in each direction for all traffic types. Source: AWS Official Pricing Pages, July 2026.</p>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>The Line Item Nobody Reads Until It Crosses $500</h2>
+            <p>NAT Gateway is the most boring line item in your AWS bill — until it isn't. The pricing model has three independent cost vectors that compound silently. First: <strong>hourly charges</strong> — $0.045/hr per NAT GW, every hour of every day, whether a single packet flows through it or not. At one NAT GW that's $32.85/mo. But <em>nobody</em> runs one NAT GW in production — three AZs means three NAT Gateways, and suddenly the idle cost is $98.55/mo. Before a single byte of data.</p>
+
+            <p>Second: <strong>data processing</strong> — $0.045 per GB that passes through the NAT Gateway in either direction. This runs completely independent of the hourly charge. Your EC2 instance downloads a 1 GB container image from Docker Hub? That's $0.045. It uploads 500 MB of logs to an external service? Another $0.023. At 5 TB/month — routine for a mid-sized SaaS pulling container images, package updates, and API responses from the internet — data processing alone is $225/month. Combined with 3-AZ hourly charges: <strong>$323.55/mo</strong>. For a service whose entire job is "route private subnet packets to the internet and back."</p>
+
+            <p>Third, and most insidious: the <strong>cross-AZ data double-count</strong>. AWS charges $0.01/GB for data crossing Availability Zone boundaries in either direction. When an EC2 instance in us-east-1a sends traffic through a NAT Gateway in us-east-1c (because you deployed one NAT GW and routed all private subnets to it), that byte incurs $0.01/GB to cross from 1a→1c, then another $0.01/GB for the NAT Gateway to process it. If the destination is the public internet, there's yet another $0.01/GB for the response to cross back. The same data that would cost $0.045/GB through a local NAT GW effectively costs $0.065/GB when it crosses AZs — a <strong>44% surcharge</strong> paid entirely to AWS's internal network accounting. At multi-terabyte scale, cross-AZ data charges alone can exceed the NAT Gateway hourly cost.</p>
+
+            <div class="callout-box">
+                <strong>⚡ The Architectural Insight:</strong> One NAT Gateway per AZ is not an HA decision — it's fundamentally a <em>cost optimization</em>. Running 3 NAT Gateways costs $98.55/mo in hourly charges. But routing all traffic through 1 NAT Gateway from 3 AZs generates cross-AZ data tax that, at just 2 TB/month of cross-AZ traffic, costs $40/month — and at 8 TB/month, $160/month, exceeding the cost of the two "extra" NAT Gateways you were trying to save. <strong>One NAT Gateway per AZ is the cheaper architecture above ~2.5 TB/month of total outbound traffic.</strong>
+            </div>
+
+            <h3>How This Calculator Works</h3>
+            <p>The engine models four scenarios simultaneously, each calculating three cost vectors independently before summing:</p>
+            <ol style="color:var(--text-body); line-height:1.9; padding-left:20px;">
+                <li><strong>Single NAT GW (No HA):</strong> Hourly = 1 × region rate × 730 hrs. Data processing = total GB × region data rate. Cross-AZ = 0 (all traffic originates in the same AZ as the NAT GW).</li>
+                <li><strong>Multi-AZ NAT GW (1 per AZ, no cross-AZ traffic):</strong> Hourly = AZ count × region rate × 730. Data processing = total GB × region rate. Cross-AZ = 0 — each instance routes through its local NAT GW.</li>
+                <li><strong>Multi-AZ NAT GW with Cross-AZ Traffic:</strong> Same hourly as #2. Data processing applies to all GB regardless of origin AZ. Cross-AZ tax = (total GB × cross-AZ fraction × $0.01/GB × 2 directions). This models what happens when instances in one AZ use another AZ's NAT GW — deliberate or accidental.</li>
+                <li><strong>VPC Endpoint Replacement:</strong> Hourly = endpoint count × AZ count × $0.01/hr × 730. Data processing = GB through endpoints × $0.01/GB. Cross-AZ = 0 (Interface Endpoint traffic stays within the VPC backbone and isn't billed as cross-AZ data when routed through the endpoint in the same AZ). Models the cost of replacing NAT Gateway internet access with VPC Endpoints for AWS service access — the component of your NAT GW traffic that never needed to leave AWS in the first place.</li>
+            </ol>
+
+            <h3>The VPC Endpoint Arbitrage: When "Free" Saves $200/Month</h3>
+            <p>A meaningful fraction of NAT Gateway traffic isn't actually going to the internet — it's going to other AWS services. Private subnet EC2 instances pulling from S3, fetching from DynamoDB, writing to CloudWatch Logs, calling SQS, publishing to SNS, invoking Lambda behind API Gateway — all of this traffic routes through the NAT Gateway by default and incurs $0.045/GB processing fees. VPC Gateway Endpoints for S3 and DynamoDB are <strong>completely free</strong> — no hourly charge, no per-GB fee, no cross-AZ data cost. A single S3-heavy workload pulling 3 TB/month from S3 through a NAT Gateway costs $135/month in data processing alone. Move that traffic to a VPC Gateway Endpoint and the cost drops to $0.00. The endpoint takes about 90 seconds to configure: create the endpoint in the VPC console, attach it to the route table, done.</p>
+
+            <p>For services beyond S3 and DynamoDB — ECR, ECS, CloudWatch, Secrets Manager, KMS, SSM, STS — you need Interface Endpoints (AWS PrivateLink). Each costs $0.01/hr ($7.30/mo) per AZ plus $0.01/GB processed. At 4 Interface Endpoints × 3 AZs, that's $87.60/mo in hourly charges — close to the cost of 3 NAT Gateways. But the data processing rate drops from $0.045/GB to $0.01/GB, a 78% reduction. For workloads that pull heavily from ECR (container images) and push to CloudWatch Logs, Interface Endpoints often break even at 500–800 GB/month and save hundreds at multi-TB scale.</p>
+
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Traffic Destination</th><th>VPC Endpoint Type</th><th>Endpoint Hourly (3 AZ)</th><th>Data Rate (/GB)</th><th>vs NAT GW Data Rate</th><th>Savings at 1 TB/mo</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>S3</strong></td><td>Gateway</td><td class="num" style="color:var(--success);">$0.00</td><td class="num" style="color:var(--success);">$0.00</td><td>vs $0.045 — infinite</td><td class="num" style="color:var(--success);">+$45.00</td></tr>
+                    <tr><td><strong>DynamoDB</strong></td><td>Gateway</td><td class="num" style="color:var(--success);">$0.00</td><td class="num" style="color:var(--success);">$0.00</td><td>vs $0.045 — infinite</td><td class="num" style="color:var(--success);">+$45.00</td></tr>
+                    <tr><td><strong>ECR (Docker images)</strong></td><td>Interface</td><td class="num">$21.90 (1 ep × 3 AZ)</td><td class="num">$0.01</td><td>78% cheaper</td><td class="num">+$13.10</td></tr>
+                    <tr><td><strong>CloudWatch Logs</strong></td><td>Interface</td><td class="num">$21.90 (1 ep × 3 AZ)</td><td class="num">$0.01</td><td>78% cheaper</td><td class="num">+$13.10</td></tr>
+                    <tr><td><strong>Secrets Manager</strong></td><td>Interface</td><td class="num">$21.90 (1 ep × 3 AZ)</td><td class="num">$0.01</td><td>78% cheaper</td><td class="num">+$13.10</td></tr>
+                    <tr><td><strong>SSM (Session Manager)</strong></td><td>Interface</td><td class="num">$21.90 (1 ep × 3 AZ)</td><td class="num">$0.01</td><td>78% cheaper</td><td class="num">+$13.10</td></tr>
+                    <tr><td><strong>KMS</strong></td><td>Interface</td><td class="num">$21.90 (1 ep × 3 AZ)</td><td class="num">$0.01</td><td>78% cheaper</td><td class="num">+$13.10</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p style="margin-top:10px; font-size:0.78rem; color:var(--text-muted);">Savings calculated as: (NAT GW data processing at $0.045/GB − VPC Endpoint data processing at $0 or $0.01/GB) × 1,000 GB − endpoint hourly cost. Negative = endpoint is more expensive at this volume.</p>
+
+            <h3>The Self-Managed EC2 NAT Alternative</h3>
+            <p>Before NAT Gateway launched in 2015, everyone ran NAT instances on EC2. The pattern still works: launch an Amazon Linux 2 EC2 instance with the NAT AMI, disable source/destination check, add a route in the private subnet route table pointing 0.0.0.0/0 to the instance. A t4g.medium ($0.0336/hr, $24.53/mo) can push ~5 Gbps through its ENI — equivalent to a NAT Gateway's 5 Gbps baseline. The key difference: <strong>there is no per-GB data processing charge</strong>. Every gigabyte that passes through costs $0.00 beyond the EC2 instance hourly rate. At 5 TB/month, a single t4g.medium NAT instance costs $24.53 total vs a NAT Gateway at $257.85 ($32.85 hourly + $225 data processing). That's a 10× difference.</p>
+
+            <p>The tradeoffs are real: you manage the instance (patching, rebooting, scaling), you lose the automatic 45 Gbps burst capability of NAT Gateway, and you need to handle failover yourself (auto-scaling group of 1 with user-data to reassign the route table entry). For dev/staging environments or cost-sensitive production workloads with predictable throughput below 5 Gbps, self-managed NAT instances remain a legitimate architectural choice that AWS's documentation understates. For production workloads above 5 Gbps or requiring automatic failover without custom scripting, NAT Gateway's managed nature justifies the premium.</p>
+
+            <h3>Who Should Care Most About This Calculator</h3>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Profile</th><th>Typical NAT GW Bill</th><th>What This Calculator Reveals</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Startup running 3-AZ VPC on default</strong></td><td class="num">$100–200/mo</td><td>Hourly charges are likely 60-80% of your NAT GW bill. VPC Gateway Endpoints for S3 cost zero dollars and fifteen minutes to configure. The savings are immediate and permanent.</td></tr>
+                    <tr><td><strong>Mid-market SaaS (50+ instances)</strong></td><td class="num">$300–800/mo</td><td>Cross-AZ data tax and data processing now dominate. One NAT GW per AZ is cheaper than routing all traffic through a single NAT GW at your scale. Interface Endpoints for ECR and CloudWatch break even and start saving at ~500 GB/mo each.</td></tr>
+                    <tr><td><strong>Data-intensive platform</strong></td><td class="num">$800–3,000/mo</td><td>At 15+ TB/month, the self-managed EC2 NAT instance is saving you over $2,000/month. You need to weigh the operational burden. Interface Endpoints are saving another $300-600/month on AWS API calls that never needed to leave the VPC.</td></tr>
+                    <tr><td><strong>Enterprise multi-account (AWS Organizations)</strong></td><td class="num">$2,000–8,000/mo</td><td>Centralized egress via Transit Gateway + centralized NAT GW adds another layer of cross-AZ billing. Each hop through a TGW attachment costs $0.02/GB. The architecture diagram that looks cleanest on a whiteboard is often the most expensive in production.</td></tr>
+                </tbody>
+            </table>
+            </div>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/terabytes-egress-to-aws-cost">AWS Egress Cost Estimator →</a>
+                <a href="/api-rate-limit-cost">API Rate Limit → Cost →</a>
+                <a href="/cloud-load-balancer-rules-to-latency-overhead">ALB Rule Latency Inspector →</a>
+                <a href="/latency-budget-calculator">Latency Budget Calculator →</a>
+                <a href="/gbps-to-tb-per-day">Gbps to TB/Day Egress →</a>
+                <a href="/nat-gateway-cost-real">📰 The NAT Gateway Trap (Full Briefing) →</a>
+                <a href="/aws-egress-vs-digitalocean">AWS Egress vs DigitalOcean →</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Constants ──
+    var HOURS_PER_MONTH = 730; // 365.25 × 24 / 12
+    var CROSS_AZ_COST_PER_GB = 0.01; // $0.01/GB per direction
+    var CROSS_AZ_DIRECTIONS = 2; // ingress + egress counted independently
+    var VPCE_INTERFACE_HOURLY = 0.01; // $0.01/hr per AZ per endpoint
+    var VPCE_INTERFACE_DATA_PER_GB = 0.01; // $0.01/GB processed
+    var EC2_NAT_HOURLY = 0.0336; // t4g.medium on-demand us-east-1
+
+    // Regional NAT Gateway pricing (hourly and per-GB data processing are the same value in all regions)
+    var REGIONS = {
+        'us-east-1':      { name: 'us-east-1 (N. Virginia)',  hourly: 0.045, dataPerGb: 0.045, ec2Nat: 0.0336 },
+        'us-west-2':      { name: 'us-west-2 (Oregon)',       hourly: 0.045, dataPerGb: 0.045, ec2Nat: 0.0336 },
+        'eu-west-1':      { name: 'eu-west-1 (Ireland)',      hourly: 0.048, dataPerGb: 0.048, ec2Nat: 0.0352 },
+        'ap-southeast-1': { name: 'ap-southeast-1 (Singapore)',hourly: 0.052, dataPerGb: 0.052, ec2Nat: 0.0384 },
+        'ap-northeast-1': { name: 'ap-northeast-1 (Tokyo)',   hourly: 0.055, dataPerGb: 0.054, ec2Nat: 0.0408 },
+        'sa-east-1':      { name: 'sa-east-1 (São Paulo)',    hourly: 0.065, dataPerGb: 0.065, ec2Nat: 0.0512 }
+    };
+
+    var PRESETS = {
+        'dev-sandbox':  { gb: 50,   az: 1, crossAz: 'none' },
+        'staging':      { gb: 200,  az: 2, crossAz: 'none' },
+        'production':   { gb: 500,  az: 3, crossAz: 'none' },
+        'data-heavy':   { gb: 5000, az: 3, crossAz: 'moderate' },
+        'enterprise':   { gb: 20000, az: 3, crossAz: 'heavy' }
+    };
+
+    var CROSS_AZ_RATIOS = {
+        'none':      0.00,
+        'light':     0.20,
+        'moderate':  0.40,
+        'heavy':     0.70,
+        'saturated': 1.00
+    };
+
+    function fmtCurrency(n) {
+        if (Math.abs(n) < 0.005) return '$0.00';
+        return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function fmtNum(n, decimals) {
+        if (decimals === undefined) decimals = 1;
+        return n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    function fmtGb(n) {
+        if (n >= 1000) return fmtNum(n / 1000, 1) + ' TB';
+        return fmtNum(n, 0) + ' GB';
+    }
+
+    function compute() {
+        var monthlyGb = parseFloat(document.getElementById('monthly-gb').value) || 0;
+        var azCount = parseInt(document.getElementById('az-count').value) || 1;
+        var crossAzKey = document.getElementById('cross-az-pattern').value;
+        var regionKey = document.getElementById('region-select').value;
+        var vpceCount = parseInt(document.getElementById('vpc-endpoint-count').value) || 0;
+        var vpceGb = parseFloat(document.getElementById('vpce-monthly-gb').value) || 0;
+
+        var region = REGIONS[regionKey] || REGIONS['us-east-1'];
+        var crossAzRatio = CROSS_AZ_RATIOS[crossAzKey] !== undefined ? CROSS_AZ_RATIOS[crossAzKey] : 0;
+
+        // ── Scenario 1: Single NAT GW, no cross-AZ ──
+        var s1Hourly = region.hourly * HOURS_PER_MONTH;
+        var s1DataProc = monthlyGb * region.dataPerGb;
+        var s1CrossAz = 0;
+        var s1Total = s1Hourly + s1DataProc + s1CrossAz;
+
+        // ── Scenario 2: Multi-AZ NAT GW (1 per AZ), no cross-AZ ──
+        var s2Hourly = region.hourly * HOURS_PER_MONTH * azCount;
+        var s2DataProc = monthlyGb * region.dataPerGb;
+        var s2CrossAz = 0;
+        var s2Total = s2Hourly + s2DataProc + s2CrossAz;
+
+        // ── Scenario 3: Multi-AZ NAT GW with cross-AZ traffic ──
+        var s3Hourly = s2Hourly;
+        var s3DataProc = monthlyGb * region.dataPerGb;
+        var crossAzGb = monthlyGb * crossAzRatio;
+        var s3CrossAz = crossAzGb * CROSS_AZ_COST_PER_GB * CROSS_AZ_DIRECTIONS;
+        var s3Total = s3Hourly + s3DataProc + s3CrossAz;
+
+        // ── Scenario 4: VPC Endpoint replacement ──
+        // Interface endpoints: hourly per AZ × endpoint count
+        // Gateway endpoints (S3/DynamoDB): free — but we assume they're a subset of the interface count
+        // For simplicity, model all as interface endpoints (worst case)
+        var vpceHourly = vpceCount * VPCE_INTERFACE_HOURLY * HOURS_PER_MONTH * azCount;
+        var vpceData = vpceGb * VPCE_INTERFACE_DATA_PER_GB;
+        var vpceCrossAz = 0; // Interface Endpoints stay within VPC backbone
+        var vpceTotal = vpceHourly + vpceData + vpceCrossAz;
+
+        // ── Scenario 5: EC2 NAT instance (single instance, baseline) ──
+        var s5Hourly = EC2_NAT_HOURLY * HOURS_PER_MONTH;
+        var s5DataProc = 0; // No per-GB data processing charge
+        var s5CrossAz = monthlyGb * crossAzRatio * CROSS_AZ_COST_PER_GB * CROSS_AZ_DIRECTIONS;
+        var s5Total = s5Hourly + s5DataProc + s5CrossAz;
+
+        // ── Show results card ──
+        var card = document.getElementById('results-card');
+        card.style.display = 'block';
+
+        // Params line
+        document.getElementById('results-params').innerHTML =
+            '<strong>' + fmtGb(monthlyGb) + '/mo</strong> through NAT GW · ' +
+            azCount + ' AZ(s) · ' + region.name + ' · ' +
+            (crossAzRatio > 0 ? fmtNum(crossAzRatio * 100, 0) + '% cross-AZ traffic' : 'all traffic local to NAT GW AZ') + ' · ' +
+            vpceCount + ' VPC Interface Endpoints · ' + fmtGb(vpceGb) + '/mo through VPC Endpoints';
+
+        // Volume metrics
+        var idleDaily = region.hourly * 24;
+        var idleMonthly = region.hourly * HOURS_PER_MONTH;
+        document.getElementById('volume-metrics').innerHTML =
+            '<div class="metric-tile"><div class="metric-val">' + fmtCurrency(idleMonthly) + '</div><div class="metric-label">Per-NAT-GW Idle Cost/mo</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtCurrency(idleMonthly * azCount) + '</div><div class="metric-label">' + azCount + ' NAT GWs Idle Cost/mo</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtCurrency(s3DataProc) + '</div><div class="metric-label">Data Processing/mo</div></div>' +
+            '<div class="metric-tile"><div class="metric-val warn">' + fmtCurrency(s3CrossAz) + '</div><div class="metric-label">Cross-AZ Data Tax/mo</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtGb(crossAzGb) + '</div><div class="metric-label">Cross-AZ Traffic Volume</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtCurrency(region.dataPerGb) + '</div><div class="metric-label">Per-GB Data Rate</div></div>';
+
+        // Cost composition stacked bar (Scenario 3: multi-AZ with cross-AZ)
+        var compMax = Math.max(s3Total, 1);
+        var hPct = Math.max(1, (s3Hourly / compMax) * 100);
+        var dPct = Math.max(1, (s3DataProc / compMax) * 100);
+        var xPct = Math.max(0, (s3CrossAz / compMax) * 100);
+
+        var breakdownHtml = '<div class="cost-breakdown-legend">' +
+            '<span><span class="swatch" style="background:#16161a;"></span> Hourly Charges: ' + fmtCurrency(s3Hourly) + '</span>' +
+            '<span><span class="swatch" style="background:#c9b304;"></span> Data Processing: ' + fmtCurrency(s3DataProc) + '</span>' +
+            '<span><span class="swatch" style="background:#e67e22;"></span> Cross-AZ Tax: ' + fmtCurrency(s3CrossAz) + '</span>' +
+            '</div>' +
+            '<div class="cost-breakdown-bar">' +
+            (s3Hourly > 0 ? '<div class="segment" style="width:' + hPct + '%;background:#16161a;min-width:40px;">' + (hPct > 12 ? fmtCurrency(s3Hourly) : '') + '</div>' : '') +
+            (s3DataProc > 0 ? '<div class="segment" style="width:' + dPct + '%;background:#c9b304;min-width:40px;">' + (dPct > 12 ? fmtCurrency(s3DataProc) : '') + '</div>' : '') +
+            (s3CrossAz > 0.005 ? '<div class="segment" style="width:' + xPct + '%;background:#e67e22;min-width:40px;">' + (xPct > 12 ? fmtCurrency(s3CrossAz) : '') + '</div>' : '') +
+            '</div>';
+        document.getElementById('breakdown-chart-container').innerHTML = breakdownHtml;
+
+        // ── Scenario comparisons ──
+        var scenarios = [
+            { label: '1 NAT GW\nno HA',      hourly: s1Hourly, data: s1DataProc, crossAz: s1CrossAz, total: s1Total, color: '#90a4ae', note: 'Single AZ. No cross-AZ penalty. No HA. Dev/sandbox only.' },
+            { label: azCount + ' NAT GWs\nno cross-AZ', hourly: s2Hourly, data: s2DataProc, crossAz: s2CrossAz, total: s2Total, color: '#16161a', note: '1 NAT GW per AZ. HA achieved. Zero cross-AZ traffic. This is the target architecture.' },
+            { label: azCount + ' NAT GWs\nw/ cross-AZ', hourly: s3Hourly, data: s3DataProc, crossAz: s3CrossAz, total: s3Total, color: '#e67e22', note: 'Cross-AZ tax added. ' + fmtNum(crossAzRatio * 100, 0) + '% of traffic crosses AZs. ' + (crossAzRatio > 0.3 ? 'Architecture needs rework.' : '') },
+            { label: vpceCount + ' VPC Endpoints\n' + azCount + ' AZs', hourly: vpceHourly, data: vpceData, crossAz: vpceCrossAz, total: vpceTotal, color: '#0d9488', note: 'Replaces ' + fmtGb(vpceGb) + '/mo of NAT GW traffic with PrivateLink. If this is your S3/ECR/CloudWatch traffic, the arbitrage is real.' },
+            { label: 'EC2 NAT Instance\n(t4g.medium)', hourly: s5Hourly, data: s5DataProc, crossAz: s5CrossAz, total: s5Total, color: '#10b981', note: 'No per-GB data fee. ~5 Gbps max. You manage failover. 10× cheaper than NAT GW at 5 TB/mo.' }
+        ];
+
+        // Find cheapest
+        var minTotal = Infinity;
+        scenarios.forEach(function(s) { if (s.total < minTotal) minTotal = s.total; });
+
+        // Bar chart
+        var barMax = 0;
+        scenarios.forEach(function(s) { if (s.total > barMax) barMax = s.total; });
+        barMax = Math.max(barMax, 1);
+
+        var barHtml = '';
+        scenarios.forEach(function(s) {
+            var pct = Math.max(3, (s.total / barMax) * 100);
+            var isBest = Math.abs(s.total - minTotal) < 0.01;
+            barHtml += '<div class="cost-bar-col">' +
+                '<div class="cost-bar-value">' + fmtCurrency(s.total) + '</div>' +
+                '<div class="cost-bar-fill" style="height:' + pct + '%;background:' + s.color + ';' + (isBest ? 'border:2px solid var(--success);box-shadow: 0 0 8px rgba(13,148,136,0.3);' : '') + '">' +
+                    (pct > 20 ? (isBest ? '★ BEST' : '') : '') +
+                '</div>' +
+                '<div class="cost-bar-label">' + s.label.replace(/\n/g, '<br>') + '</div>' +
+            '</div>';
+        });
+        document.getElementById('cost-bar-chart').innerHTML = barHtml;
+
+        // Cost table
+        var tbodyHtml = '';
+        scenarios.forEach(function(s) {
+            var isBest = Math.abs(s.total - minTotal) < 0.01;
+            tbodyHtml += '<tr class="' + (isBest ? 'best-row' : '') + '">' +
+                '<td>' + s.label.replace(/\n/g, ' — ') + '</td>' +
+                '<td class="num">' + fmtCurrency(s.hourly) + '</td>' +
+                '<td class="num">' + fmtCurrency(s.data) + '</td>' +
+                '<td class="num" style="color:' + (s.crossAz > 1 ? 'var(--gold)' : 'var(--text-muted)') + ';">' + (s.crossAz > 0.005 ? fmtCurrency(s.crossAz) : '—') + '</td>' +
+                '<td class="num cost-highlight">' + fmtCurrency(s.total) + '</td>' +
+                '<td class="num">' + fmtCurrency(s.total * 12) + '</td>' +
+                '<td style="font-size:0.78rem;color:var(--text-muted);">' + s.note + '</td>' +
+            '</tr>';
+        });
+        document.getElementById('cost-tbody').innerHTML = tbodyHtml;
+    }
+
+    // ── Event binding ──
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+
+    document.getElementById('preset-select').addEventListener('change', function() {
+        var key = this.value;
+        var preset = PRESETS[key];
+        if (!preset) return;
+        document.getElementById('monthly-gb').value = preset.gb;
+        document.getElementById('az-count').value = preset.az;
+        document.getElementById('cross-az-pattern').value = preset.crossAz;
+        compute();
+    });
+
+    // Run on load with default preset
+    (function() {
+        var preset = PRESETS[document.getElementById('preset-select').value];
+        if (preset) {
+            document.getElementById('monthly-gb').value = preset.gb;
+            document.getElementById('az-count').value = preset.az;
+            document.getElementById('cross-az-pattern').value = preset.crossAz;
+        }
+        compute();
+    })();
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

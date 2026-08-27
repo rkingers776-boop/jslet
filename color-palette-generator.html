@@ -1,0 +1,377 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Color Palette Generator —Complementary, Analogous, Triadic, Tetradic, Monochromatic —jslet</title>
+    <meta name="description" content="Generate harmonious color palettes from one hex code: complementary, analogous, triadic, tetradic, monochromatic shades and tints. Click any swatch to copy the hex code. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/color-palette-generator">
+    <meta property="og:title" content="Color Palette Generator —Complementary, Analogous, Triadic">
+    <meta property="og:description" content="Generate color palettes from one hex code. Complementary, analogous, triadic, tetradic, monochromatic. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/color-palette-generator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Color Palette Generator —Complementary, Analogous, Triadic">
+    <meta name="twitter:description" content="Generate color palettes from one hex code. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Color Palette Generator","description":"Generate harmonious color palettes: complementary, analogous, triadic, tetradic, monochromatic. Click swatches to copy hex codes. 100% client-side.","url":"https://www.jslet.com/color-palette-generator","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <style>
+        .input-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 24px; }
+        .field-group { display: flex; flex-direction: column; }
+        .field-group label { font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; color: var(--text-body); }
+        .field-group input { padding: 10px 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); font-size: 0.9rem; min-width: 180px; font-family: 'Cascadia Code','Consolas',monospace; }
+        .field-group input:focus { border-color: var(--accent); outline: none; }
+        .btn-outline { padding: 10px 16px; background: transparent; border: 2px solid var(--accent); color: var(--accent); font-weight: 700; font-size: 0.85rem; cursor: pointer; border-radius: var(--radius-sm); }
+        .btn-outline:hover { background: var(--accent-soft); }
+        .scheme-section { margin-bottom: 28px; }
+        .scheme-section h3 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); margin-bottom: 10px; }
+        .swatch-row { display: flex; gap: 8px; flex-wrap: wrap; }
+        .swatch { width: 110px; border-radius: var(--radius-sm); overflow: hidden; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; border: 1px solid var(--border); }
+        .swatch:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+        .swatch-color { height: 64px; }
+        .swatch-label { padding: 8px; background: var(--bg-card); font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.78rem; color: var(--text-body); text-align: center; }
+        .swatch .copy-hint { font-size: 0.65rem; color: var(--accent); text-align: center; padding-bottom: 6px; opacity: 0; transition: opacity 0.15s; }
+        .swatch:hover .copy-hint { opacity: 1; }
+        .preview-bar { height: 12px; border-radius: 6px; margin-bottom: 24px; display: flex; overflow: hidden; border: 1px solid var(--border); }
+        .preview-bar div { flex: 1; }
+    </style>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How does the palette generator create harmonious colors?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Starting from any hex color, it applies color theory relationships — complementary, analogous, triadic, tetradic, plus monochromatic shades and tints — each derived mathematically from the hue wheel. Click any swatch to copy its hex code. The theory section explains each scheme so you learn why the palette works, not just what it is."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the difference between shades and tints?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A shade mixes the base color with black (darker), a tint mixes it with white (lighter). The generator produces both from your base color so you get a full monochromatic scale, which is what you need for UI hierarchies, hover states, and accessible contrast. All swatches are copied as hex codes for direct use in CSS."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I generate a palette from any color?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — paste or pick any hex code and the generator derives the full set of harmonic schemes from it. Everything is computed client-side, so you can iterate on brand colors as fast as you can change the input."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+    <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container">
+    <header>
+        <h1>Color Palette <span>Generator</span></h1>
+        <p>Enter one hex color and instantly generate harmonious palettes: complementary, analogous, triadic, tetradic, and monochromatic shades/tints. Click any swatch to copy the hex code.</p>
+    </header>
+
+    <div class="preview-bar" id="preview-bar"></div>
+
+    <div class="input-row">
+        <div class="field-group">
+            <label for="color-input">🟢🎨 Base Color</label>
+            <input type="text" id="color-input" placeholder="#16161a" oninput="generatePalette()">
+        </div>
+        <button class="btn-outline" onclick="randomColor()">&#x1F3B2; Random</button>
+    </div>
+
+    <div id="palettes-container"></div>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">&#x1F4D6; Color Harmony Theory</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p><strong>Complementary</strong> —colors 180&deg; apart on the color wheel. High contrast, vibrant pairings. Good for call-to-action buttons on neutral backgrounds. The classic example: blue (#2563EB) with orange (#EA580C). When designing with complementary colors, use one as the dominant color (60–70% of the visual area) and the other as an accent. A 50/50 split creates visual vibration that strains the eyes. For backgrounds, desaturate both colors by 20–30% to reduce the intensity while preserving the hue relationship.</p>
+            <p><strong>Analogous</strong> —colors 30&deg; apart. Low contrast, harmonious, often found in nature. Great for gradients and UI backgrounds. Analogous palettes are the safest choice for full-page designs: the colors sit next to each other on the wheel and create a natural flow from one section to the next. A cyan-teal-green palette feels organic and is widely used in SaaS dashboards. The risk: without enough lightness variation, analogous layouts look flat. Add a dark shade or a light tint of one color to create depth.</p>
+            <p><strong>Triadic</strong> —three colors 120&deg; apart. Balanced vibrancy. Best used with one dominant color and two accents. The classic web triadic palette: a primary brand blue for headers and buttons, a red-coral accent for warnings and highlights, and a yellow-gold accent for success states and ratings. Triadic palettes work well for data visualizations because the three hues are perceptually distinct — viewers can easily distinguish three data series at a glance. Avoid using all three at full saturation; mute two of the three to let one command attention.</p>
+            <p><strong>Tetradic (Square)</strong> —four colors 90&deg; apart. Rich and complex. Let one color dominate, use others as accents. Tetradic palettes are the hardest to balance — four fully saturated competing hues create chaos. The standard technique: pick one color as the 60% background/foundation, use a second at 30% for primary UI elements, and reserve the remaining two at 10% combined for small accents like icons, badges, and link underlines. Testing on a gray background first helps: if the four-color palette works in grayscale (distinct lightness levels), it will work in color.</p>
+            <p><strong>Monochromatic</strong> —variations in lightness and saturation of a single hue. Clean, professional look. Tints = add white, shades = add black, tones = add gray. Monochromatic design is the default for high-end editorial and luxury brand sites — it communicates restraint and lets photography or typography carry the visual interest. For developer tools and dashboards, a blue monochromatic palette (from near-white #F0F4FF to deep navy #1E3A5F) creates a calm, focused environment that doesn't compete with code or data. The key: generate at least 7 stops — 3 for backgrounds (page, card, hover), 2 for text (body, muted), 1 for borders, and 1 for the accent. Fewer than 5 stops in a monochromatic system and you will reach for another color out of necessity.</p>
+            <p>See also: <a href="/color-converter">Color Converter</a> &middot; <a href="/gradient-editor">CSS Gradient Editor</a> &middot; <a href="/box-shadow-generator">Box Shadow Generator</a></p>
+        </div>
+    </section>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<script src="nav.js"></script>
+<script>
+(function() {
+    var inp = document.getElementById('color-input');
+    var container = document.getElementById('palettes-container');
+    var previewBar = document.getElementById('preview-bar');
+
+    function hexToRgb(hex) {
+        var h = hex.replace('#','');
+        if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+        return { r: parseInt(h.substring(0,2), 16), g: parseInt(h.substring(2,4), 16), b: parseInt(h.substring(4,6), 16) };
+    }
+
+    function rgbToHex(r, g, b) {
+        var toHex = function(c) { var h = c.toString(16); return h.length === 1 ? '0'+h : h; };
+        return '#' + toHex(Math.max(0,Math.min(255,Math.round(r)))) + toHex(Math.max(0,Math.min(255,Math.round(g)))) + toHex(Math.max(0,Math.min(255,Math.round(b))));
+    }
+
+    function rgbToHsl(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        var max = Math.max(r,g,b), min = Math.min(r,g,b);
+        var h = 0, s = 0, l = (max+min)/2;
+        if (max !== min) {
+            var d = max - min;
+            s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+            if (max === r) h = ((g-b)/d + (g<b?6:0)) / 6;
+            else if (max === g) h = ((b-r)/d + 2) / 6;
+            else h = ((r-g)/d + 4) / 6;
+        }
+        return { h: h*360, s: s*100, l: l*100 };
+    }
+
+    function hslToRgb(h, s, l) {
+        h /= 360; s /= 100; l /= 100;
+        var r, g, b;
+        if (s === 0) { r = g = b = l; }
+        else {
+            var hue2rgb = function(p, q, t) {
+                if (t < 0) t += 1;
+                if (t > 1) t -= 1;
+                if (t < 1/6) return p + (q - p) * 6 * t;
+                if (t < 1/2) return q;
+                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                return p;
+            };
+            var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            var p = 2 * l - q;
+            r = hue2rgb(p, q, h + 1/3);
+            g = hue2rgb(p, q, h);
+            b = hue2rgb(p, q, h - 1/3);
+        }
+        return { r: Math.round(r*255), g: Math.round(g*255), b: Math.round(b*255) };
+    }
+
+    function complementary(hsl) {
+        return [{ h: (hsl.h + 180) % 360, s: hsl.s, l: hsl.l }];
+    }
+
+    function analogous(hsl) {
+        return [
+            { h: ((hsl.h - 30) + 360) % 360, s: hsl.s, l: hsl.l },
+            { h: hsl.h, s: hsl.s, l: hsl.l },
+            { h: (hsl.h + 30) % 360, s: hsl.s, l: hsl.l }
+        ];
+    }
+
+    function triadic(hsl) {
+        return [
+            { h: hsl.h, s: hsl.s, l: hsl.l },
+            { h: (hsl.h + 120) % 360, s: hsl.s, l: hsl.l },
+            { h: (hsl.h + 240) % 360, s: hsl.s, l: hsl.l }
+        ];
+    }
+
+    function tetradic(hsl) {
+        return [
+            { h: hsl.h, s: hsl.s, l: hsl.l },
+            { h: (hsl.h + 90) % 360, s: hsl.s, l: hsl.l },
+            { h: (hsl.h + 180) % 360, s: hsl.s, l: hsl.l },
+            { h: (hsl.h + 270) % 360, s: hsl.s, l: hsl.l }
+        ];
+    }
+
+    function monochromatic(hsl) {
+        var colors = [];
+        var steps = [15, 30, 45, 60, 75, 90];
+        for (var i = 0; i < steps.length; i++) {
+            var l = Math.max(5, Math.min(95, steps[i]));
+            colors.push({ h: hsl.h, s: hsl.s, l: l });
+        }
+        return colors;
+    }
+
+    function hslArrayToHex(arr) {
+        return arr.map(function(hsl) {
+            var rgb = hslToRgb(hsl.h, hsl.s, hsl.l);
+            return rgbToHex(rgb.r, rgb.g, rgb.b);
+        });
+    }
+
+    function renderSwatches(title, hexes) {
+        var html = '<div class="scheme-section"><h3>' + title + '</h3><div class="swatch-row">';
+        for (var i = 0; i < hexes.length; i++) {
+            var hex = hexes[i];
+            var textColor = getContrastColor(hex);
+            html += '<div class="swatch" onclick="copySwatch(this)" data-hex="' + hex + '">';
+            html += '<div class="swatch-color" style="background:' + hex + ';"></div>';
+            html += '<div class="swatch-label" style="background:' + hex + ';color:' + textColor + ';">' + hex + '</div>';
+            html += '<div class="copy-hint">Click to copy</div>';
+            html += '</div>';
+        }
+        html += '</div></div>';
+        return html;
+    }
+
+    function getContrastColor(hex) {
+        var rgb = hexToRgb(hex);
+        var luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+        return luminance > 0.55 ? '#18181b' : '#ffffff';
+    }
+
+    window.generatePalette = function() {
+        var val = inp.value.trim();
+        if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(val)) {
+            container.innerHTML = '<p style="color:var(--text-muted);">Enter a valid hex color like #16161a to generate palettes.</p>';
+            previewBar.innerHTML = '';
+            return;
+        }
+        var rgb = hexToRgb(val);
+        var hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+
+        var schemes = [
+            { name: 'Complementary', fn: complementary },
+            { name: 'Analogous', fn: analogous },
+            { name: 'Triadic', fn: triadic },
+            { name: 'Tetradic (Square)', fn: tetradic },
+            { name: 'Monochromatic (Tints to Shades)', fn: monochromatic }
+        ];
+
+        var allHexes = [];
+        var html = '';
+        for (var i = 0; i < schemes.length; i++) {
+            var hslColors = schemes[i].fn(hsl);
+            var hexes = hslArrayToHex(hslColors);
+            html += renderSwatches(schemes[i].name, hexes);
+            for (var j = 0; j < hexes.length; j++) {
+                allHexes.push(hexes[j]);
+            }
+        }
+        container.innerHTML = html;
+
+        // Preview bar
+        var barHtml = '';
+        for (var k = 0; k < Math.min(allHexes.length, 18); k++) {
+            barHtml += '<div style="background:' + allHexes[k] + ';" title="' + allHexes[k] + '"></div>';
+        }
+        previewBar.innerHTML = barHtml;
+    };
+
+    window.copySwatch = function(el) {
+        var hex = el.getAttribute('data-hex');
+        navigator.clipboard.writeText(hex);
+        var hint = el.querySelector('.copy-hint');
+        if (hint) {
+            hint.textContent = 'Copied!';
+            hint.style.opacity = '1';
+            setTimeout(function(){ hint.textContent = 'Click to copy'; hint.style.opacity = '0'; }, 1200);
+        }
+    };
+
+    window.randomColor = function() {
+        var r = Math.floor(Math.random() * 256);
+        var g = Math.floor(Math.random() * 256);
+        var b = Math.floor(Math.random() * 256);
+        inp.value = rgbToHex(r, g, b);
+        window.generatePalette();
+    };
+
+    // Auto-run with default
+    inp.value = '#16161a';
+    window.generatePalette();
+})();
+</script>
+</body>
+</html>

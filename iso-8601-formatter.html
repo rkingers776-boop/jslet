@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>ISO 8601 Timestamp Formatter &#8212; Generate ISO 8601 / RFC 3339 Dates Online &#8212; jslet</title>
+    <meta name="description" content="Free online ISO 8601 / RFC 3339 timestamp formatter with live clock. Generate UTC timestamps, Unix epoch seconds, RFC 2822 dates, and custom ISO 8601 formats. Copy instantly. No server, all client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="ISO 8601 Timestamp Formatter &#8212; Generate ISO 8601 / RFC 3339 Dates Online &#8212; jslet">
+    <meta property="og:description" content="Free online ISO 8601 / RFC 3339 timestamp formatter with live clock. Generate UTC timestamps, Unix epoch seconds, RFC 2822 dates, and custom formats. Copy instantly.">
+    <meta property="og:url" content="https://www.jslet.com/iso-8601-formatter">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ISO 8601 Timestamp Formatter &#8212; Generate ISO 8601 / RFC 3339 Dates Online &#8212; jslet">
+    <meta name="twitter:description" content="Free online ISO 8601 / RFC 3339 timestamp formatter with live clock. Generate UTC timestamps, Unix epoch seconds, RFC 2822 dates, and custom formats. Copy instantly.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/iso-8601-formatter">
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "ISO 8601 Timestamp Formatter",
+      "description": "Free online ISO 8601 / RFC 3339 timestamp formatter with live clock. Generate UTC timestamps, Unix epoch seconds, RFC 2822 dates, and custom ISO 8601 formats.",
+      "url": "https://www.jslet.com/iso-8601-formatter",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+    <style>
+        :root {
+            --accent: #E60023;
+            --accent-hover: #c4001f;
+            --accent-soft: rgba(230, 0, 35, 0.08);
+            --border: #e6e6e6;
+            --bg-card: #ffffff;
+            --bg-input: #ffffff;
+            --text-body: #2b2b2b;
+            --text-muted: #8a8a8a;
+            --radius-sm: 8px;
+        }
+
+        /* ── Live Clock Card ── */
+        .live-clock-card {
+            background: linear-gradient(135deg, #15303a 0%, #264653 50%, #0f2530 100%);
+            border-radius: 10px;
+            padding: 36px 32px;
+            margin-bottom: 28px;
+            text-align: center;
+            color: #ffffff;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15);
+        }
+
+        .live-clock-card::before {
+            content: '';
+            position: absolute;
+            top: -50px;
+            right: -50px;
+            width: 200px;
+            height: 200px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .live-clock-card .clock-label {
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: rgba(255,255,255,0.5);
+            margin-bottom: 12px;
+        }
+
+        .live-clock-card .clock-value {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 2.4rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            word-break: break-all;
+            line-height: 1.3;
+            color: #f0f0ec;
+            transition: color 0.3s;
+        }
+
+        .live-clock-card .clock-tick-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #4caf50;
+            border-radius: 50%;
+            margin-left: 10px;
+            vertical-align: middle;
+            animation: pulse-dot 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.35; transform: scale(0.7); }
+        }
+
+        .live-clock-card .clock-sub {
+            margin-top: 10px;
+            font-size: 0.82rem;
+            color: rgba(255,255,255,0.55);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+        }
+
+        /* ── Format Card Grid ── */
+        .format-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .format-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 18px 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .format-card:hover {
+            border-color: rgba(234, 88, 12, 0.4);
+            box-shadow: 0 0 0 1px rgba(234, 88, 12, 0.12), 0 4px 16px rgba(0,0,0,0.06);
+        }
+
+        .format-card .fmt-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        .format-card .fmt-value {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 0.93rem;
+            color: #18181b;
+            word-break: break-all;
+            line-height: 1.5;
+            background: var(--bg-input);
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+        }
+
+        .format-card .fmt-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .format-card .fmt-row .fmt-value {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .btn-copy {
+            flex-shrink: 0;
+            padding: 6px 14px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-card);
+            color: var(--text-body);
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+
+        .btn-copy:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(234, 88, 12, 0.06);
+        }
+
+        .btn-copy.copied {
+            background: #0d9488;
+            color: #fff;
+            border-color: #0d9488;
+        }
+
+        /* ── Custom Builder ── */
+        .custom-builder-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 28px 32px;
+            margin-bottom: 32px;
+        }
+
+        .custom-builder-card h2 {
+            color: #18181b;
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .custom-builder-card h2::before {
+            content: '';
+            display: inline-block;
+            width: 3px;
+            height: 20px;
+            background: var(--accent);
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .custom-builder-card .builder-desc {
+            font-size: 0.85rem;
+            color: var(--text-body);
+            margin-bottom: 22px;
+            line-height: 1.55;
+        }
+
+        .builder-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px 24px;
+        }
+
+        @media (max-width: 600px) {
+            .builder-form {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .builder-form .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .builder-form .form-group label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        .builder-form .radio-group {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+
+        .builder-form .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.85rem;
+            color: var(--text-body);
+            cursor: pointer;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 500;
+        }
+
+        .builder-form .radio-group input[type="radio"] {
+            accent-color: var(--accent);
+        }
+
+        .builder-form select {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 0.88rem;
+            color: #18181b;
+            background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+        }
+
+        .builder-form select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.18);
+        }
+
+        .builder-form .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .builder-form .checkbox-group input[type="checkbox"] {
+            accent-color: var(--accent);
+            width: 16px;
+            height: 16px;
+        }
+
+        .builder-form .checkbox-group label {
+            font-size: 0.85rem;
+            color: var(--text-body);
+            cursor: pointer;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 500;
+        }
+
+        .custom-preview {
+            margin-top: 20px;
+            padding: 16px 20px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .custom-preview .preview-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            flex-shrink: 0;
+        }
+
+        .custom-preview .preview-value {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1rem;
+            color: #18181b;
+            flex: 1;
+            min-width: 0;
+            word-break: break-all;
+        }
+
+        /* ── Section heading ── */
+        .section-heading {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            margin-bottom: 20px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-heading::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+            opacity: 0.6;
+        }
+
+        /* ── SEO Section ── */
+        .seo-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 32px 36px;
+            margin-bottom: 40px;
+        }
+
+        .seo-section h2 {
+            color: #18181b;
+            font-size: 1.25rem;
+            margin-bottom: 14px;
+            font-weight: 700;
+        }
+
+        .seo-section h3 {
+            color: #18181b;
+            font-size: 1.05rem;
+            margin-bottom: 8px;
+            margin-top: 20px;
+        }
+
+        .seo-section p {
+            margin-bottom: 14px;
+            color: var(--text-body);
+            font-size: 0.93rem;
+            line-height: 1.7;
+        }
+
+        .seo-section a {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .seo-section a:hover {
+            text-decoration: underline;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 700px) {
+            .live-clock-card .clock-value {
+                font-size: 1.4rem;
+            }
+            .format-grid {
+                grid-template-columns: 1fr;
+            }
+            .custom-builder-card {
+                padding: 20px 18px;
+            }
+            .seo-section {
+                padding: 22px 20px;
+            }
+        }
+    </style>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is ISO 8601 and why use it?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "ISO 8601 is the international standard for date and time representation — the 2026-08-23T13:45:00Z form — and it is unambiguous across timezones and locales, unlike 08/23/26. RFC 3339 is the profile of ISO 8601 used by most APIs. This tool generates UTC timestamps, Unix epoch seconds, RFC 2822 dates, and custom ISO formats from a live clock or your own input."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why should I use ISO 8601 over other date formats?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "ISO 8601 sorts correctly as a string (chronological order equals lexicographic order), is timezone-explicit with the Z suffix or offset, and is locale-independent — the same string parses identically everywhere. Formats like MM/DD/YYYY or DD/MM/YYYY are ambiguous between regions. The formatter lets you build the exact ISO string your API contract expects."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is the timestamp formatter accurate to the current time?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — it runs from a live clock in your browser and updates in real time, so you can copy a current UTC ISO 8601 timestamp, Unix epoch value, or custom-formatted date without needing a second tool. Everything is generated client-side from your device's clock."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+    <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+    <header>
+        <h1>ISO 8601 <span>Timestamp Formatter</span></h1>
+        <p>Generate ISO 8601 / RFC 3339 dates, Unix timestamps, and RFC 2822 email dates in real time. Live UTC clock, seven format cards with one-click copy, and a custom format builder. Everything runs client-side &mdash; no server round-trips.</p>
+    </header>
+
+    <!-- ── Live ISO 8601 Clock ── -->
+    <div class="live-clock-card" id="live-clock-card">
+        <div class="clock-label">Now <span class="clock-tick-indicator" id="clock-tick-dot"></span></div>
+        <div class="clock-value" id="live-clock-value">2026-07-27T00:00:00Z</div>
+        <div class="clock-sub" id="live-clock-sub">UTC &middot; Updates every second</div>
+    </div>
+
+    <!-- ── Format Cards ── -->
+    <div class="section-heading">Format Cards</div>
+    <div class="format-grid" id="format-grid">
+        <div class="format-card" id="card-iso8601">
+            <div class="fmt-label">ISO 8601</div>
+            <div class="fmt-row">
+                <div class="fmt-value" id="val-iso8601">2026-07-27T00:00:00Z</div>
+                <button class="btn-copy" data-target="val-iso8601">Copy</button>
+            </div>
+        </div>
+        <div class="format-card" id="card-iso8601ms">
+            <div class="fmt-label">ISO 8601 (ms)</div>
+            <div class="fmt-row">
+                <div class="fmt-value" id="val-iso8601ms">2026-07-27T00:00:00.000Z</div>
+                <button class="btn-copy" data-target="val-iso8601ms">Copy</button>
+            </div>
+        </div>
+        <div class="format-card" id="card-iso8601basic">
+            <div class="fmt-label">ISO 8601 (basic)</div>
+            <div class="fmt-row">
+                <div class="fmt-value" id="val-iso8601basic">20260727T000000Z</div>
+                <button class="btn-copy" data-target="val-iso8601basic">Copy</button>
+            </div>
+        </div>
+        <div class="format-card" id="card-rfc2822">
+            <div class="fmt-label">RFC 2822</div>
+            <div class="fmt-row">
+                <div class="fmt-value" id="val-rfc2822">Mon, 27 Jul 2026 00:00:00 +0000</div>
+                <button class="btn-copy" data-target="val-rfc2822">Copy</button>
+            </div>
+        </div>
+        <div class="format-card" id="card-unixs">
+            <div class="fmt-label">Unix Timestamp (s)</div>
+            <div class="fmt-row">
+                <div class="fmt-value" id="val-unixs">1753624200</div>
+                <button class="btn-copy" data-target="val-unixs">Copy</button>
+            </div>
+        </div>
+        <div class="format-card" id="card-unixms">
+            <div class="fmt-label">Unix Timestamp (ms)</div>
+            <div class="fmt-row">
+                <div class="fmt-value" id="val-unixms">1753624200123</div>
+                <button class="btn-copy" data-target="val-unixms">Copy</button>
+            </div>
+        </div>
+        <div class="format-card" id="card-localiso">
+            <div class="fmt-label">Local ISO</div>
+            <div class="fmt-row">
+                <div class="fmt-value" id="val-localiso">2026-07-27T00:00:00-07:00</div>
+                <button class="btn-copy" data-target="val-localiso">Copy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Custom Format Builder ── -->
+    <div class="custom-builder-card">
+        <h2>Custom Format Builder</h2>
+        <p class="builder-desc">Configure the date order, time precision, timezone representation, and separator to generate a custom timestamp format. The preview updates live as you change options.</p>
+
+        <div class="builder-form">
+            <!-- Date order -->
+            <div class="form-group">
+                <label for="date-order-yyyy-mm-dd">Date Order</label>
+                <div class="radio-group" id="radio-date-order">
+                    <label><input type="radio" name="date-order" value="YYYY-MM-DD" checked id="date-order-yyyy-mm-dd"> YYYY-MM-DD</label>
+                    <label><input type="radio" name="date-order" value="DD/MM/YYYY" id="date-order-dd-mm-yyyy"> DD/MM/YYYY</label>
+                    <label><input type="radio" name="date-order" value="MM/DD/YYYY" id="date-order-mm-dd-yyyy"> MM/DD/YYYY</label>
+                </div>
+            </div>
+
+            <!-- Separator -->
+            <div class="form-group">
+                <label for="select-separator">Separator</label>
+                <select id="select-separator">
+                    <option value="T" selected>T (standard ISO)</option>
+                    <option value=" ">Space</option>
+                    <option value="_">Underscore</option>
+                </select>
+            </div>
+
+            <!-- Include time -->
+            <div class="form-group">
+                <div class="group-title" style="font-weight:600;margin-bottom:4px;">Time Options</div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="chk-include-time" checked>
+                    <label for="chk-include-time">Include time</label>
+                </div>
+            </div>
+
+            <!-- Include seconds -->
+            <div class="form-group">
+                <div class="group-title" style="font-weight:600;margin-bottom:4px;">Seconds</div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="chk-include-seconds" checked>
+                    <label for="chk-include-seconds">Include seconds</label>
+                </div>
+            </div>
+
+            <!-- Timezone -->
+            <div class="form-group" style="grid-column: 1 / -1;">
+                <label for="select-timezone">Timezone</label>
+                <select id="select-timezone">
+                    <option value="none">None</option>
+                    <option value="Z" selected>UTC suffix (Z)</option>
+                    <option value="offset">Offset (+HH:MM)</option>
+                    <option value="name">Timezone name (e.g. America/Los_Angeles)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="custom-preview">
+            <span class="preview-label">Preview</span>
+            <span class="preview-value" id="custom-preview-value">2026-07-27T00:00:00Z</span>
+            <button class="btn-copy" data-target="custom-preview-value">Copy</button>
+        </div>
+    </div>
+
+    <!-- ── SEO / Explanation Section ── -->
+    <div class="seo-section">
+        <h2>What Is ISO 8601? The Standard Timestamp Format</h2>
+        <p>ISO 8601 is the international standard for date and time representation, published by the International Organization for Standardization. It defines an unambiguous format like <code>2026-07-27T14:30:00Z</code> &mdash; year-month-day, then a <code>T</code> separator, then hours:minutes:seconds in 24-hour time, and optionally a timezone designator. <strong>RFC 3339</strong> is the IETF profile of ISO 8601 used on the internet; the two are effectively interchangeable for most engineering purposes.</p>
+
+        <h3>Why use ISO 8601 over other date formats?</h3>
+        <p>ISO 8601 sorts chronologically when dates are compared as strings (lexicographic order equals temporal order). This property makes it the standard for log files, API payloads, database timestamps, and serialization. Formats like MM/DD/YYYY and DD/MM/YYYY are ambiguous across locales &mdash; 03/04/2026 is March 4th in the US but April 3rd in the UK. ISO 8601 eliminates that ambiguity entirely.</p>
+
+        <h3>Related Timestamp Tools on jslet</h3>
+        <p>If you need to convert between epoch timestamps and human-readable dates, try the <a href="/unix-timestamp-converter">Unix Timestamp Converter</a>. This tool handles 32-bit and 64-bit epoch values, both seconds and milliseconds since 1970-01-01. For batch conversions and Unix epoch day calculations, use the <a href="/unix-timestamp-to-days">Unix Timestamp to Epoch Days</a> calculator.</p>
+        <p>We also recommend the <strong>timezone-converter</strong> for converting timestamps between time zones &mdash; useful when you have UTC times but need to display them in local Pacific, Eastern, or Central European time. Browse the full <a href="/timestamp-tools">Timestamp Tools</a> collection for all time-related utilities.</p>
+
+        <h3>How this tool works</h3>
+        <p>All formatting runs entirely in your browser using the JavaScript <code>Date</code> object. The live clock queries the system clock via <code>new Date()</code> every second and formats the output with zero-padded UTC fields. No data leaves your machine. The format cards and custom builder use the same UTC date parts to guarantee consistency across all seven output formats.</p>
+    </div>
+
+    <!-- ── Footer ── -->
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<script src="nav.js"></script>
+
+<script>
+(function() {
+    'use strict';
+
+    // ── Utility helpers ──
+    function pad(n) {
+        return (n < 10 ? '0' : '') + n;
+    }
+
+    function pad3(n) {
+        if (n < 10) return '00' + n;
+        if (n < 100) return '0' + n;
+        return '' + n;
+    }
+
+    function getUTCDateParts(d) {
+        return {
+            year: d.getUTCFullYear(),
+            month: d.getUTCMonth() + 1,
+            day: d.getUTCDate(),
+            hours: d.getUTCHours(),
+            minutes: d.getUTCMinutes(),
+            seconds: d.getUTCSeconds(),
+            milliseconds: d.getUTCMilliseconds()
+        };
+    }
+
+    // ── Format functions ──
+    function formatISO8601(d) {
+        var p = getUTCDateParts(d);
+        return p.year + '-' + pad(p.month) + '-' + pad(p.day) +
+            'T' + pad(p.hours) + ':' + pad(p.minutes) + ':' + pad(p.seconds) + 'Z';
+    }
+
+    function formatISO8601MS(d) {
+        var p = getUTCDateParts(d);
+        return p.year + '-' + pad(p.month) + '-' + pad(p.day) +
+            'T' + pad(p.hours) + ':' + pad(p.minutes) + ':' + pad(p.seconds) +
+            '.' + pad3(p.milliseconds) + 'Z';
+    }
+
+    function formatISO8601Basic(d) {
+        var p = getUTCDateParts(d);
+        return '' + p.year + pad(p.month) + pad(p.day) +
+            'T' + pad(p.hours) + pad(p.minutes) + pad(p.seconds) + 'Z';
+    }
+
+    function formatRFC2822(d) {
+        var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var p = getUTCDateParts(d);
+        return days[d.getUTCDay()] + ', ' + pad(p.day) + ' ' + months[p.month - 1] +
+            ' ' + p.year + ' ' + pad(p.hours) + ':' + pad(p.minutes) +
+            ':' + pad(p.seconds) + ' +0000';
+    }
+
+    function formatUnixSeconds(d) {
+        return '' + Math.floor(d.getTime() / 1000);
+    }
+
+    function formatUnixMillis(d) {
+        return '' + d.getTime();
+    }
+
+    function formatLocalISO(d) {
+        var year = d.getFullYear();
+        var month = pad(d.getMonth() + 1);
+        var day = pad(d.getDate());
+        var hours = pad(d.getHours());
+        var minutes = pad(d.getMinutes());
+        var seconds = pad(d.getSeconds());
+        var offset = -d.getTimezoneOffset();
+        var sign = offset >= 0 ? '+' : '-';
+        var absOffset = Math.abs(offset);
+        var offHours = pad(Math.floor(absOffset / 60));
+        var offMins = pad(absOffset % 60);
+        return year + '-' + month + '-' + day +
+            'T' + hours + ':' + minutes + ':' + seconds +
+            sign + offHours + ':' + offMins;
+    }
+
+    // ── Custom format builder ──
+    function buildCustom(d) {
+        var dateOrder = getRadioValue('date-order');
+        var separator = document.getElementById('select-separator').value;
+        var includeTime = document.getElementById('chk-include-time').checked;
+        var includeSeconds = document.getElementById('chk-include-seconds').checked;
+        var timezoneOption = document.getElementById('select-timezone').value;
+
+        var p = getUTCDateParts(d);
+
+        // Build date part
+        var dateStr;
+        if (dateOrder === 'DD/MM/YYYY') {
+            dateStr = pad(p.day) + '/' + pad(p.month) + '/' + p.year;
+        } else if (dateOrder === 'MM/DD/YYYY') {
+            dateStr = pad(p.month) + '/' + pad(p.day) + '/' + p.year;
+        } else {
+            dateStr = p.year + '-' + pad(p.month) + '-' + pad(p.day);
+        }
+
+        if (!includeTime) {
+            // Build timezone suffix for date-only
+            if (timezoneOption === 'Z') return dateStr + 'Z';
+            if (timezoneOption === 'offset') {
+                var off = -d.getTimezoneOffset();
+                var sgn = off >= 0 ? '+' : '-';
+                var aOff = Math.abs(off);
+                return dateStr + sgn + pad(Math.floor(aOff / 60)) + ':' + pad(aOff % 60);
+            }
+            if (timezoneOption === 'name') {
+                try {
+                    return dateStr + ' ' + Intl.DateTimeFormat().resolvedOptions().timeZone;
+                } catch (e) {
+                    return dateStr;
+                }
+            }
+            return dateStr;
+        }
+
+        // Build time part
+        var timeStr;
+        if (includeSeconds) {
+            timeStr = pad(p.hours) + ':' + pad(p.minutes) + ':' + pad(p.seconds);
+        } else {
+            timeStr = pad(p.hours) + ':' + pad(p.minutes);
+        }
+
+        var full = dateStr + separator + timeStr;
+
+        // Timezone
+        if (timezoneOption === 'Z') {
+            full += 'Z';
+        } else if (timezoneOption === 'offset') {
+            var tzOff = -d.getTimezoneOffset();
+            var tzSign = tzOff >= 0 ? '+' : '-';
+            var tzAbs = Math.abs(tzOff);
+            full += tzSign + pad(Math.floor(tzAbs / 60)) + ':' + pad(tzAbs % 60);
+        } else if (timezoneOption === 'name') {
+            try {
+                full += ' ' + Intl.DateTimeFormat().resolvedOptions().timeZone;
+            } catch (e) {
+                // Fallback: no timezone name
+            }
+        }
+
+        return full;
+    }
+
+    // ── Helper: get selected radio value ──
+    function getRadioValue(name) {
+        var radios = document.getElementsByName(name);
+        for (var i = 0; i < radios.length; i++) {
+            if (radios[i].checked) return radios[i].value;
+        }
+        return '';
+    }
+
+    // ── Update all displays ──
+    function updateAll() {
+        var now = new Date();
+
+        // Live clock
+        var clockEl = document.getElementById('live-clock-value');
+        if (clockEl) {
+            clockEl.textContent = formatISO8601(now);
+        }
+
+        // Format cards
+        setText('val-iso8601', formatISO8601(now));
+        setText('val-iso8601ms', formatISO8601MS(now));
+        setText('val-iso8601basic', formatISO8601Basic(now));
+        setText('val-rfc2822', formatRFC2822(now));
+        setText('val-unixs', formatUnixSeconds(now));
+        setText('val-unixms', formatUnixMillis(now));
+        setText('val-localiso', formatLocalISO(now));
+
+        // Custom preview
+        var previewEl = document.getElementById('custom-preview-value');
+        if (previewEl) {
+            previewEl.textContent = buildCustom(now);
+        }
+    }
+
+    function setText(id, text) {
+        var el = document.getElementById(id);
+        if (el) {
+            el.textContent = text;
+        }
+    }
+
+    // ── Copy button handling ──
+    function initCopyButtons() {
+        var buttons = document.querySelectorAll('.btn-copy');
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].addEventListener('click', function() {
+                var targetId = this.getAttribute('data-target');
+                var targetEl = document.getElementById(targetId);
+                if (!targetEl) return;
+                var text = targetEl.textContent || '';
+                copyToClipboard(text, this);
+            });
+        }
+    }
+
+    function copyToClipboard(text, btn) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function() {
+                showCopied(btn);
+            }).catch(function() {
+                fallbackCopy(text, btn);
+            });
+        } else {
+            fallbackCopy(text, btn);
+        }
+    }
+
+    function fallbackCopy(text, btn) {
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showCopied(btn);
+        } catch (e) {
+            // Copy failed silently
+        }
+        document.body.removeChild(textarea);
+    }
+
+    function showCopied(btn) {
+        var originalText = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(function() {
+            btn.textContent = originalText;
+            btn.classList.remove('copied');
+        }, 1500);
+    }
+
+    // ── Bind custom builder changes ──
+    function initCustomBuilder() {
+        var dateRadios = document.getElementsByName('date-order');
+        for (var i = 0; i < dateRadios.length; i++) {
+            dateRadios[i].addEventListener('change', updateAll);
+        }
+
+        var separatorSelect = document.getElementById('select-separator');
+        if (separatorSelect) separatorSelect.addEventListener('change', updateAll);
+
+        var chkTime = document.getElementById('chk-include-time');
+        if (chkTime) chkTime.addEventListener('change', updateAll);
+
+        var chkSeconds = document.getElementById('chk-include-seconds');
+        if (chkSeconds) chkSeconds.addEventListener('change', updateAll);
+
+        var tzSelect = document.getElementById('select-timezone');
+        if (tzSelect) tzSelect.addEventListener('change', updateAll);
+    }
+
+    // ── Init ──
+    function init() {
+        updateAll();
+        initCopyButtons();
+        initCustomBuilder();
+        setInterval(updateAll, 1000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>
+
+</body>
+</html>

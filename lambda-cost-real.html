@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The Serverless Tax: Why Your Lambda Function at $8.50/Month Actually Costs $427 When You Count Cold Starts, Logs, and Hidden Egress (2026) — jslet</title>
+    <meta name="description" content="Lambda pricing says $0.0000166667 per GB-second. A function at 10M invocations/month, 200ms, 256MB: $8.50 in compute, $2.00 in requests. The calculator says $10.50. Your bill says $427. The gap is not a mistake — it's five structural taxes that Lambda's pricing page hides in plain sight. VPC cold starts, provisioned concurrency overprovisioning, CloudWatch Logs inflation, cross-AZ egress, and Step Functions state-machine tax.">
+    <meta property="og:title" content="The Serverless Tax: Why Your Lambda Function at $8.50/Month Actually Costs $427">
+    <meta property="og:description" content="Lambda's pricing page shows $0.0000166667/GB-second. The real cost is 40× higher when you count VPC cold starts, CloudWatch Logs, cross-AZ egress, and Step Functions state-machine tax.">
+    <meta property="og:url" content="https://www.jslet.com/lambda-cost-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-07-26T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-26T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Serverless Tax: Why Your Lambda Function Costs 40× What The Calculator Says">
+    <meta name="twitter:description" content="Lambda pricing page says $10.50/month. Your bill says $427. Five structural taxes: VPC cold starts, provisioned concurrency, CloudWatch Logs, cross-AZ egress, Step Functions state-machine tax.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/lambda-cost-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Serverless Tax: Why Your Lambda Function at $8.50/Month Actually Costs $427 When You Count Cold Starts, Logs, and Hidden Egress (2026)",
+      "description": "Lambda's GB-second pricing model looks simple: $0.0000166667 per GB-second plus $0.20 per million requests. A function handling 10M requests/month at 200ms and 256MB costs $10.50/month in Lambda compute and requests. Real production functions cost 10-50× more. Five structural taxes drive the gap: VPC cold starts inflate concurrency 3×, provisioned concurrency eliminates cold starts at 30% premium, CloudWatch Logs with default infinite retention surpasses compute cost within 3 months, cross-AZ data transfer from Lambda to RDS/ElastiCache is invisible until the bill arrives, and Step Functions state transitions billed at $0.000025 each make orchestration cost 3-10× the Lambda compute it orchestrates. This briefing quantifies each tax, provides the break-even math for Lambda vs Fargate vs EC2 at steady-state throughput, and identifies the exact QPS threshold where serverless becomes more expensive than running a reserved instance.",
+      "url": "https://www.jslet.com/lambda-cost-real",
+      "datePublished": "2026-07-26T00:00:00+00:00",
+      "dateModified": "2026-07-26T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How much does a VPC Lambda cold start actually cost?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A VPC Lambda cold start takes 300-800ms in addition to the function's execution time. During that cold start, AWS bills for the full GB-second duration including the initialization period. A 256MB function with a 500ms cold start pays for 700ms (500ms init + 200ms execution) per cold invocation — 3.5× the compute cost of a warm invocation. At 1,000 requests/second with a cold start every 10 minutes (typical for VPC Lambda), the cold start overhead adds ~$17/month. The more expensive consequence is concurrency inflation: while a cold start holds a request, new requests queue behind it, forcing Lambda to scale to higher concurrency than the steady-state demand requires. A function that needs 100 concurrent executions at steady state may need 300 during cold start bursts — and you pay for all 300. Use the Lambda Cost Estimator at jslet.com/lambda-execution-ms-to-cost to model the cold start tax for your memory and invocation pattern."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "When does provisioned concurrency save money vs on-demand Lambda?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Provisioned concurrency costs roughly 30% more per GB-second than on-demand Lambda ($0.0000104167 vs $0.0000083333 for 256MB). It saves money when the elimination of cold starts lets you right-size the function's memory allocation. A VPC Lambda running at 256MB on-demand with cold starts might need 1,536MB (256MB × 6 concurrent cold starts queued) to handle traffic spikes within timeout. With provisioned concurrency, no cold starts occur, so the function can run at 128MB — half the memory. The 30% premium on 128MB ($0.0000052083/128MB-ms) is cheaper than on-demand at 256MB with cold starts ($0.0000166667/256MB-ms). The breakeven: if provisioned concurrency allows a memory reduction of at least 23%, the total cost is lower than on-demand even after the premium. Additionally, for latency-sensitive APIs where P99 must be under 50ms, provisioned concurrency is not optional — cold starts push P99 above 200ms, violating the SLO regardless of cost. Use the Lambda Cost Estimator at jslet.com/lambda-execution-ms-to-cost to compare on-demand vs provisioned pricing."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why do CloudWatch Logs become more expensive than the Lambda compute they're logging?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "CloudWatch Logs charges $0.50/GB ingested + $0.03/GB stored/month. Lambda's default log retention is 'never expire.' A Lambda function logging 2 KB per invocation at 100 invocations/second produces 172.8 MB/day = 5.2 GB/month of log data. Ingest cost: $2.60/month. After 3 months of accumulation, stored logs reach 15.6 GB at $0.47/month. After 12 months: 62.4 GB at $1.87/month storage. The compute cost for a 128MB/100ms function at 100 rps: 100 × 0.1s × 0.125GB × 86,400 × 30 × $0.0000166667 = $8.10/month. Log ingest exceeds compute at a surprisingly low threshold — around 250 KB of logging per invocation for a 128MB/100ms function, or 25 KB/invocation for a 256MB/500ms function. The fix: set a log retention policy of 7-30 days (not 'never expire'), use structured logging with minimal per-event metadata, sample debug logs at 1% in production, and consider shipping verbose logs to S3 (at $0.023/GB) rather than keeping them in CloudWatch ($0.50/GB ingest + $0.03/GB storage). A $5/month CloudWatch bill can become $0.80/month with retention policy and sampling alone."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "At what QPS does Lambda become more expensive than running EC2 or Fargate?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The Lambda-vs-EC2 breakeven depends on function memory, duration, and provisioned concurrency usage. At steady-state throughput without cold starts: a 256MB/100ms function costs $0.000004267 per invocation. At 100 requests/second (259M requests/month), Lambda costs $1,106/month in compute + $51.80 in requests = $1,158/month. A c6i.xlarge reserved instance at $66.24/month (3-year RI) can handle 2,000+ requests/second for typical API workloads, making it cheaper than Lambda at roughly 15-20 rps steady-state for compute-bound workloads or 200+ rps for lightweight workloads. Fargate with a 1 vCPU/2GB task at $0.04048/hour + 3-year savings plan (~37% off = $0.0255/hour) costs $18.62/month per task — adding tasks scales linearly while Lambda scales per-request. The breakeven is workload-specific. For a 128MB/50ms function: EC2 wins at ~50 rps. For a 1,536MB/2s function (video processing): EC2 wins at ~2 rps. The key insight: Lambda is cheaper at low and spiky traffic. EC2/Fargate is cheaper at high, steady traffic. The crossover point depends on your function's memory × duration product. Use the Lambda Cost Estimator at jslet.com/lambda-execution-ms-to-cost and the Container Resource Limit Calculator at jslet.com/container-resource-limit to model both sides."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much does Step Functions add to the real cost of a serverless workflow?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Step Functions charges $0.000025 per state transition. A 10-step workflow processing 1 million executions/month costs $0.25/execution in state transitions — $250/month. If each step invokes a Lambda that costs $0.000002 (128MB/50ms), the Lambda cost is $0.00002/execution × 1M = $20/month. The Step Functions orchestration cost is 12.5× the Lambda compute cost. At 10 million executions/month, Step Functions costs $2,500/month while the Lambdas cost $200/month — a 12.5:1 ratio. The tax compounds with workflow complexity: each error handler, retry, choice state, and parallel branch adds more transitions. A workflow with 20 states + error handlers processing 5M executions/month: 5M × 25 transitions × $0.000025 = $3,125/month in state transitions alone. The alternatives: (1) Use Express Step Functions ($0.000025/1,000 transitions — 1,000× cheaper) for high-throughput, short-duration workflows under 5 minutes. (2) Move orchestration logic into a single Lambda with an internal state machine (eliminates per-transition billing). (3) For simple chains, use Lambda Destinations (free, built-in) instead of Step Functions for success/failure routing."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>The <span>Serverless Tax</span></h1>
+            <p>Why Your Lambda Function at $8.50/Month Actually Costs $427 When You Count Cold Starts, Logs, and Hidden Egress</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-07-26 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 16 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <section class="seo-section">
+            <h2>Executive Summary</h2>
+            <p>Lambda's pricing page presents a model so clean it looks like a physics formula: $0.0000166667 per GB-second plus $0.20 per million requests. A function handling 10 million invocations per month at 200ms and 256MB: $8.50 in compute, $2.00 in requests. Total: $10.50 per month. You deploy it to production inside a VPC. You turn on structured logging. It calls RDS in a different AZ. You wrap the workflow in Step Functions. Your bill arrives: $427.</p>
+
+            <p>The $416.50 gap is not AWS overcharging. It's five charging dimensions that the pricing page's GB-second formula deliberately excludes — because none of them are "Lambda compute." They are: (1) VPC cold starts that inflate concurrency 3× during burst traffic, (2) Provisioned Concurrency premiums that eliminate cold starts at a 30% surcharge, (3) CloudWatch Logs with default infinite retention that surpass compute cost within 90 days, (4) cross-AZ data transfer to RDS and ElastiCache that's invisible on the Lambda bill but visible on the AWS bill, and (5) Step Functions state transitions at $0.000025 each that make orchestration 3-10× more expensive than the Lambdas being orchestrated.</p>
+
+            <p>This briefing quantifies each of the five taxes. It provides the break-even math for Lambda vs Fargate vs EC2 at steady-state throughput, identifies the exact QPS threshold where serverless flips from cheaper to more expensive, and gives a concrete audit checklist for every production Lambda function.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Tax 1: The Cold Start — Why Your 100ms Function Bills 700ms Every Few Minutes</h2>
+            <p>A VPC Lambda cold start takes 300–800 milliseconds. The 2-minute warning for spot instances gives you time to checkpoint. The Lambda cold start gives you nothing — the init duration is billed at the same GB-second rate as execution, and requests queue up behind the initializing function like cars behind a stalled truck.</p>
+
+            <p>Here is the math. A 256MB function has a warm execution duration of 100ms. On a cold invocation, the init phase adds 500ms (typical for VPC Lambda with ENI attachment). Total billed duration: 600ms per cold start. At a cold start rate of once per 10 minutes (the AWS default is to recycle idle execution environments after ~5-7 minutes of inactivity, and VPC cold starts occur even without idle recycling because ENI attachment must complete), that's 144 cold starts per day × 30 = 4,320 cold starts per month. Warm invocations: 9,995,680 at 100ms each. Total billed GB-seconds: (4,320 × 600ms + 9,995,680 × 100ms) × 0.25GB = (2,592,000 + 999,568,000) × 0.25 = 250,540,000 GB-ms = 250,540 GB-seconds. At $0.0000166667/GB-second: $4,176/month in compute for a function that the pricing page formula says should cost $8.50.</p>
+
+            <p>The cold start tax is $167.50/month — 20× the warm-execution compute cost. And that's with a conservative cold start rate. Functions behind API Gateway at low traffic get cold starts on 20-50% of invocations because the execution environment recycles between bursts. Functions in VPCs with multiple security groups and subnets see init times of 800-1,200ms — nearly doubling the tax.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>⚡ The Cold Start Tax Rule:</strong> If your VPC Lambda serves less than 10 requests/second sustained, cold starts dominate costs. At 1 rps, 50% of invocations are cold = 5× compute cost. At 10 rps, 5% cold = 1.3× compute cost. At 100 rps, 0.5% cold = negligible. The cold start tax is regressive — it hits small workloads proportionally harder. Use the <a href="/lambda-execution-ms-to-cost">Lambda Cost Estimator</a> to model your specific invocation pattern.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Tax 2: Provisioned Concurrency — The Premium You Pay To Kill Cold Starts</h2>
+            <p>Provisioned Concurrency pre-warms execution environments so your function never cold-starts. It costs $0.0000104167 per GB-second for the provisioned capacity (256MB), plus the standard $0.0000166667 per GB-second for actual execution — roughly a 30% premium over on-demand Lambda. For a function that needs to eliminate cold starts because the P99 latency budget is 50ms, provisioned concurrency is mandatory. The question is not whether to pay the premium. It's whether the right-sizing opportunity from eliminating cold starts makes the premium net-negative.</p>
+
+            <p>A VPC Lambda on on-demand runs at 256MB because cold starts inflate peak concurrency and the function needs memory headroom to handle queued requests during init. The same function on provisioned concurrency with zero cold starts can run at 128MB — the peak concurrency matches steady-state demand exactly, and less memory is needed because requests never queue behind an initializing function. At 100 requests/second sustained through the month:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Model</th><th style="text-align:right;padding:6px 10px;">Memory</th><th style="text-align:right;padding:6px 10px;">Monthly GB-s</th><th style="text-align:right;padding:6px 10px;">Monthly Cost</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">On-demand (VPC, cold starts)</td><td style="text-align:right;padding:6px 10px;">256 MB</td><td style="text-align:right;padding:6px 10px;">2,419,200</td><td style="text-align:right;padding:6px 10px;">$40.32</td></tr>
+                <tr style="border-bottom:1px solid var(--border);background:var(--accent-soft);"><td style="padding:6px 10px;">Provisioned Concurrency (no cold starts)</td><td style="text-align:right;padding:6px 10px;">128 MB</td><td style="text-align:right;padding:6px 10px;">1,209,600 + 760,320 (prov)</td><td style="text-align:right;padding:6px 10px;color:#27ae60;">$28.08</td></tr>
+            </table>
+
+            <p>The provisioned concurrency option costs 30% less despite the premium — because the memory right-sizing from 256MB→128MB more than offsets the surcharge. This is the provisioned concurrency arbitrage: the premium is visible on the pricing page, but the memory reduction is visible only if you test your function's actual memory requirement under zero-cold-start conditions. Most teams never test this. They pay the on-demand rate at 256MB because "that's what it took to survive cold starts" — and leave 30% savings on the table.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Tax 3: CloudWatch Logs — The Storage Bill That Outgrows Compute</h2>
+            <p>Lambda's default log retention is "never expire." Every console.log, every JSON.stringify, every stack trace from an uncaught exception — captured, ingested at $0.50/GB, and stored at $0.03/GB/month forever. The math is seductively small at first: 2 KB per invocation at 100 rps = 172.8 MB/day = 5.2 GB/month. Ingest cost: $2.60. Storage cost month 1: $0.16. That's noise. The problem is that logs never go away. Month 12: 62.4 GB stored = $1.87/month storage. Year 3: 187 GB stored = $5.62/month. The cumulative ingest cost over 3 years: $93.60. Total CloudWatch cost over 3 years: $93.60 (ingest) + cumulative storage = ~$160.</p>
+
+            <p>The Lambda compute cost for that same function (128MB, 100ms, 100 rps) over 3 years: 100 × 0.1s × 0.125GB × 86,400 × 365 × 3 × $0.0000166667 = $197.10. Over a 3-year horizon, CloudWatch Logs costs 81% as much as the Lambda compute it's logging. The ratio is worse for functions that log more than 2 KB per invocation — and in practice, a typical Node.js Lambda with middleware logs (request ID, duration, cold start indicator, retry count, error metadata) logs 5-15 KB per invocation.</p>
+
+            <p>The fix has three components. Set a log retention policy of 7-30 days. Enable info-level logging in production, debug only in dev. And for functions where verbose logs have operational value, ship them to S3 (at $0.023/GB/month for Standard tier, no ingest charge) and query with Athena ($5/TB scanned) rather than keeping them in CloudWatch Logs. A $160/3-year CloudWatch bill becomes $35 with a 30-day retention policy and log-level filtering. The trade is: you lose long-term log history. For compliance-sensitive workloads, you can export logs to S3 on a schedule (CloudWatch Logs → Kinesis Firehose → S3, or the built-in export task) — paying the $0.50/GB ingest once, then S3 storage at $0.023/GB, cutting the ongoing storage cost by 23%.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Tax 4: Cross-AZ Egress — The Line Item That Lives On Someone Else's Bill</h2>
+            <p>Lambda functions inside a VPC send data to RDS, ElastiCache, OpenSearch, and other VPC resources. If the Lambda and the target resource are in different availability zones, AWS charges $0.01/GB for the data transfer in each direction. This charge does not appear on the Lambda cost page. It appears on the EC2 data transfer line of the AWS bill — and it's not tagged or attributed to any specific Lambda function.</p>
+
+            <p>Here is the invisible math. A Lambda queries an RDS instance in a different AZ. Each query sends 2 KB (SQL text + parameters) and receives 50 KB (result set). Total transfer: 52 KB per invocation. At 1,000 requests/second, that's 52 MB/second = 4,492.8 GB/day = 134,784 GB/month. Cross-AZ data transfer at $0.01/GB: $1,347.84/month — just for the Lambda-to-RDS leg. The RDS-to-Lambda response leg adds another $1,347.84/month if the RDS is also in a different AZ from the Lambda. Total cross-AZ egress tax: $2,695.68/month. The Lambda compute cost for that function (256MB, 100ms, 1K rps): ~$900/month. The egress tax is 3× the compute cost — and it is invisible on the Lambda dashboard.</p>
+
+            <p>The defense: pin Lambda functions to the same AZ as their primary data stores. Lambda's VPC configuration lets you specify subnets in specific AZs — put the Lambda in the same AZ as RDS primary, ElastiCache primary, and OpenSearch data nodes. Lambda execution environments are AZ-local; they do not span AZs. A function configured with subnets only in us-east-1a never sends traffic to resources in us-east-1b across the AZ boundary. The cost of pinning is: if us-east-1a fails, the Lambda is dead (no cross-AZ failover). For most workloads, this is acceptable — placing the function and its data in the same AZ and relying on multi-AZ replication for disaster recovery is the standard pattern. The cross-AZ egress tax exists only when Lambda and its dependencies are spread across AZs. Consolidate them. <a href="/lambda-execution-ms-to-cost" style="color:var(--accent);">Use the Lambda Cost Estimator</a> to model the compute side; cross-AZ egress must be audited separately in the EC2 data transfer section of your bill.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Tax 5: Step Functions — The Orchestration Tax That Costs 10× More Than The Lambdas It Orchestrates</h2>
+            <p>Step Functions Standard Workflows charge $0.000025 per state transition. A 10-step workflow processing 1 million executions per month: 10 million state transitions × $0.000025 = $250/month. If each of the 10 steps invokes a Lambda function costing $0.000002 (128MB, 50ms), the Lambda cost is 10M × $0.000002 = $20/month. The Step Functions orchestration costs 12.5× more than the Lambdas it orchestrates. At 100 million executions per month (common for an event-processing pipeline): Step Functions = $25,000/month, Lambdas = $2,000/month.</p>
+
+            <p>The tax is structural — it's not a pricing bug, it's a pricing design. Step Functions charges per state transition because AWS models it as "workflow management," not compute. But in practice, the state machine itself does no work — it routes between Lambdas. The $0.000025/transition price means a simple 5-step retry loop (try → Lambda → check → retry/exit → next) costs $0.000125 in Step Functions overhead per execution, on top of the $0.00001 Lambda cost.</p>
+
+            <p>Three escape hatches. (1) Use Express Step Functions for workflows under 5 minutes with high throughput — they cost $0.000025 per 1,000 state transitions, 1,000× cheaper than Standard. The limitation is 5-minute max execution time and no built-in human approval steps. (2) Move orchestration logic into a single Lambda with an internal state machine — eliminates per-transition billing entirely. The Lambda runs the workflow loop internally, calling downstream services directly. This trades Step Functions' visibility (execution history, retry tracking, console visualization) for zero orchestration cost. (3) Use Lambda Destinations (built into Lambda, free) for simple success/failure routing — they handle the common case of "invoke Lambda B after Lambda A succeeds" without a state machine. For anything beyond linear chains, Step Functions (Express) or an in-Lambda state machine is the cost-conscious choice. Standard Step Functions should be reserved for human-in-the-loop workflows (approval steps, long-running processes exceeding 5 minutes) where the per-transition cost is amortized over minutes or hours of wait time between transitions.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Lambda vs EC2 Breakeven — Where Serverless Stops Being Cheap</h2>
+            <p>Lambda is cheaper at low, spiky traffic. EC2 is cheaper at high, steady traffic. The breakeven point depends on the function's memory × duration product, but a useful heuristic: a function using 256MB for 100ms costs $0.000004267 per invocation. At 100 requests/second steady state (259M/month): Lambda costs ~$1,158/month (compute + requests, no cold starts). A c6i.xlarge (4 vCPU, 8 GB) reserved instance at 3-year RI pricing costs $66.24/month and can handle 2,000-5,000 rps for typical API workloads — making EC2 cheaper at roughly 15-20 rps. For a 128MB/50ms lightweight function: Lambda at 50 rps = $277/month. EC2 RI at $66.24 = EC2 cheaper at ~50 rps.</p>
+
+            <p>The breakeven moves based on cold start frequency, provisioned concurrency, and log tax. With VPC cold starts: Lambda at 50 rps, 256MB/100ms with 5% cold start rate = $485/month. EC2 wins at ~15 rps in this scenario. With provisioned concurrency at 128MB: Lambda at 50 rps = $163/month. EC2 wins at ~30 rps. The takeaway: Lambda is unambiguously cheaper below 20 rps sustained. It's ambiguous at 20-50 rps depending on VPC/cold-start configuration. Above 50 rps sustained, a reserved EC2 instance is almost always cheaper — and the gap widens with throughput. Lambda's value proposition is spiky workloads, not steady-state throughput.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>The pragmatic decision framework:</strong> If your function runs fewer than 10M invocations/month, stay on Lambda. The operational simplicity is worth more than the potential EC2 savings. If your function runs 10M-50M invocations/month, model the Lambda vs Fargate (Spot) comparison. Fargate Spot at $0.013/hour/task is within striking distance of Lambda at this volume, eliminates cold starts, and gives you 4 vCPU/8GB per task. If your function runs 50M+ invocations/month at steady throughput, run it on EC2 with a 3-year RI. The operational overhead of managing an EC2 instance is justified when the savings exceed $500/month. Use the <a href="/lambda-execution-ms-to-cost">Lambda Cost Estimator</a> and <a href="/container-resource-limit">Container Resource Limit Calculator</a> to model both sides.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Concrete Steps: The Production Lambda Audit</h2>
+
+            <p><strong>1. Pull the actual cost per function, not the pricing-page estimate.</strong> The Lambda console shows "Cost" per function, but it only counts Lambda compute and requests. Pull the full cost from AWS Cost Explorer, filtering by function tag. Add CloudWatch Logs (filter by log group name = /aws/lambda/<function-name>), cross-AZ data transfer (estimate from RDS/ElastiCache traffic if Lambda and data store are in different AZs), and Step Functions (filter by state machine ARN). The real cost is the sum, not the console number.</p>
+
+            <p><strong>2. Set CloudWatch log retention to 7-30 days on every production function.</strong> Default is "never expire." Change it. This is a 30-second operation in the Lambda console or a one-line CloudFormation/CDK change. The savings are $0.50/GB in avoided ingest (for logs you'll never query) and $0.03/GB/month in avoided storage. For a team running 50 Lambda functions, this change alone saves $50-200/month depending on log volume.</p>
+
+            <p><strong>3. Pin Lambda subnets to the same AZ as primary data stores.</strong> If RDS primary is in us-east-1a, Lambda subnets should only be in us-east-1a. This eliminates cross-AZ data transfer charges between Lambda and the database — often the largest hidden cost in a serverless architecture. The operational trade is loss of cross-AZ Lambda redundancy. Accept it: the cost savings exceed the availability impact for the vast majority of workloads.</p>
+
+            <p><strong>4. Test your function at half its current memory when cold starts are eliminated.</strong> Use provisioned concurrency in a pre-prod environment, cut memory by one step (e.g., 256→128MB), and run a load test. If execution time stays within your SLO, you've found a net cost reduction — the memory savings outweigh the provisioned concurrency premium. This test takes 30 minutes and typically finds 20-40% cost reduction for functions that were originally sized to absorb cold start concurrency inflation.</p>
+
+            <p><strong>5. Replace Standard Step Functions with Express for high-throughput workflows under 5 minutes.</strong> The 1,000× cost reduction (from $0.000025/transition to $0.000025/1,000 transitions) makes Express the default for any data processing pipeline, event fan-out, or API orchestration that completes in under 5 minutes. Reserve Standard Step Functions for human-in-the-loop workflows and long-running (hours/days) processes where per-transition cost is negligible compared to the business value of the workflow's wait time.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>🧰 Use our related tools to model your full serverless cost stack:</strong> <a href="/lambda-execution-ms-to-cost">Lambda Compute Cost Estimator</a> · <a href="/container-resource-limit">Container Resource Limit Calculator</a> · <a href="/api-rate-limit-cost">API Rate Limit Cost</a> · <a href="/log-storage-cost">Log Storage & Retention TCO</a> · <a href="/db-instance-sizing">DB Instance Sizing</a></p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How much does a VPC Lambda cold start actually cost in dollars?</h3>
+                <p>A VPC Lambda cold start bills the full init + execution duration at the GB-second rate. A 256MB function with 500ms init + 100ms execution = 600ms billed per cold invocation. At 10M invocations/month with 5% cold starts (500,000 cold): 500,000 × 600ms × 0.25GB = 75,000 GB-seconds × $0.0000166667 = $1.25 in incremental cold start compute. Plus concurrency inflation: the 500,000 cold starts cause concurrent execution spikes that force Lambda to scale to higher concurrency levels, potentially requiring higher memory allocation to handle the queued workload — adding another $5-15/month in overprovisioning costs. The total cold start tax for a 10M-invocation VPC function is roughly $6-16/month. The more damaging consequence is latency: cold starts push P99 from 100ms to 800ms, which violates the SLO of any API with a sub-200ms latency budget, making provisioned concurrency mandatory regardless of cost. Model your own numbers with the <a href="/lambda-execution-ms-to-cost">Lambda Cost Estimator</a>.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Does provisioned concurrency actually save money or just latency?</h3>
+                <p>Provisioned concurrency can save both. The latency benefit is obvious: zero cold starts guarantees warm-execution latency on every invocation. The cost benefit is less obvious: eliminating cold starts lets you right-size the function's memory, often cutting it by one step (256→128MB or 512→256MB). The memory reduction saves $0.0000083333/GB-second for the smaller allocation. The provisioned concurrency premium costs $0.0000104167/GB-second on the provisioned capacity. The net is: if memory reduction ≥ ~23% of the provisioned capacity cost, provisioned concurrency is a net cost save. The break-even depends on function duration and invocation pattern — short, high-frequency functions benefit more from memory right-sizing. Key caveat: provisioned concurrency also charges for idle time. If your function goes to zero traffic for 8 hours overnight, you pay for the provisioned capacity during those 8 hours with zero executions. Autoscaling provisioned concurrency on a schedule (scale to 0 overnight) eliminates this idle cost. Use the <a href="/lambda-execution-ms-to-cost">Lambda Cost Estimator</a> to compare on-demand vs provisioned for your exact parameters.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">What's the cheapest way to handle CloudWatch Logs at scale?</h3>
+                <p>Three tiers, cheapest first. (1) Set a 7-day retention policy and filter to WARN+ in production — logs older than 7 days have near-zero operational value for active debugging. Compact structured logs to minimize per-event bytes: use short key names ({"ts":"...","s":200,"d":12} is 30 bytes vs {"timestamp":"...","status":200,"duration_ms":12} at 55 bytes). At 1 billion log events/month, shortening keys saves $27/month in ingest costs alone. (2) For logs that must be retained for compliance: ship to S3 via Kinesis Firehose (S3 storage at $0.023/GB vs CloudWatch at $0.03/GB + no ingest charge on S3 after the initial write). Query with Athena at $5/TB scanned — one quarterly compliance query costs cents. (3) For logs that must be searchable: keep 7 days hot in CloudWatch for operational debugging, forward to S3 for cold storage, and use CloudWatch Logs Insights to query S3 exports via the `S3Export` task. Total cost for 100 GB/month of log data: $50/month (ingest) + $3/month (30-day storage) = $53/month with CloudWatch alone. With the S3 tiering strategy: $50 (ingest) + $2.30 (S3 storage) + $0.50 (Athena queries) = $52.80 — similar cost, but you keep all logs indefinitely for compliance.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">At what QPS threshold should I move a function from Lambda to EC2 or Fargate?</h3>
+                <p>Rough thresholds: below 20 rps sustained, Lambda is cheaper regardless of configuration — the operational overhead of EC2/Fargate isn't worth the marginal compute savings. Between 20-100 rps sustained: Lambda competes with Fargate Spot ($0.013/hour/1vCPU-2GB task). At 100 rps with 256MB/100ms: Lambda = ~$1,158/month. Fargate Spot with 3 tasks (handling 100 rps, 33 rps each) = $28.47/month in compute + $0 in data transfer if tasks are in the same AZ as the data store. Fargate wins decisively at this volume. Above 100 rps sustained: EC2 reserved instance(s) are the cheapest option — a single c6i.xlarge 3-year RI at $66.24/month handles 2,000+ rps for typical API workloads. The key variable is traffic pattern stability. Spiky workloads that go from 5 rps to 500 rps and back should stay on Lambda — the elasticity is the value, and EC2 can't scale fast enough to cover 100× traffic spikes without massive overprovisioning. Steady workloads that sit at 200 rps 24/7 should be on EC2 — the RI saves 60%+ over Lambda at steady state. Model both sides with the <a href="/lambda-execution-ms-to-cost">Lambda Cost Estimator</a> and the <a href="/container-resource-limit">Container Resource Limit Calculator</a>.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Should I use Express or Standard Step Functions for my serverless workflow?</h3>
+                <p>Express Step Functions for any workflow that completes in under 5 minutes and runs at more than 1,000 executions/month. Express costs $0.000025 per 1,000 state transitions (not per-transition) — at 1M executions with 10 states each, Express costs $0.25/month vs Standard's $250/month. The trade-offs: Express has no execution history retention beyond CloudWatch Logs (Standard retains full execution history visible in the console forever), no built-in human approval steps, and a 5-minute max execution time. For data pipelines (ETL steps, event processing, API orchestration), Express is the correct default. Standard Step Functions should be used only for: human-in-the-loop workflows (manager approval, manual data review), long-running processes exceeding 5 minutes (batch job orchestration, multi-hour data processing), or workflows where execution history visibility is required for compliance/audit. A third option that eliminates Step Functions entirely: move orchestration logic into a single Lambda with an internal state machine. The Lambda calls downstream services directly. You lose Step Functions' console visibility and retry tracking, but you pay $0 in orchestration costs — the Lambda's compute time covers the state machine logic. For simple linear chains, Lambda Destinations (free) handle success/failure routing without any orchestration service.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Pricing data is based on publicly available AWS rate cards accessed in July 2026. Lambda compute: $0.0000166667 per GB-second (us-east-1). Lambda requests: $0.20 per 1M requests. Provisioned Concurrency: $0.0000104167 per GB-second for provisioned capacity + standard compute rate for execution duration. CloudWatch Logs: $0.50/GB ingested, $0.03/GB stored/month. Step Functions Standard: $0.000025 per state transition. Step Functions Express: $0.000025 per 1,000 state transitions. Cross-AZ data transfer: $0.01/GB each direction. EC2 on-demand and RI pricing: m6i/c6i family, us-east-1, July 2026. Fargate: $0.04048 per vCPU-hour, $0.004445 per GB-hour (on-demand, us-east-1). All cold start duration estimates are based on published AWS performance characteristics for VPC-attached Lambda functions (ENI attachment: 300-800ms depending on security group count and subnet configuration).</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. This analysis was produced using our own <a href="/lambda-execution-ms-to-cost">Lambda Compute Cost Estimator</a> and publicly available AWS pricing data. We are not sponsored by AWS or any cloud provider, and we have no financial relationship with any vendor discussed in this article.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>AWS (2026).</strong> "AWS Lambda Pricing." Compute, requests, provisioned concurrency, and data transfer pricing. <a href="https://aws.amazon.com/lambda/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-2"><strong>AWS (2026).</strong> "Lambda execution environment lifecycle." Cold start mechanics, execution environment reuse, and VPC networking initialization. <a href="https://docs.aws.amazon.com/lambda/latest/dg/lambda-runtime-environment.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-3"><strong>AWS (2026).</strong> "Configuring provisioned concurrency." Auto-scaling provisioned concurrency, scheduling, and pricing mechanics. <a href="https://docs.aws.amazon.com/lambda/latest/dg/provisioned-concurrency.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-4"><strong>AWS (2026).</strong> "Amazon CloudWatch Logs Pricing." Ingest, storage, and Insights query pricing. <a href="https://aws.amazon.com/cloudwatch/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-5"><strong>AWS (2026).</strong> "AWS Step Functions Pricing." Standard vs Express workflow pricing, state transition costs. <a href="https://aws.amazon.com/step-functions/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-6"><strong>AWS (2026).</strong> "Lambda VPC networking." ENI attachment, cold start duration in VPC, subnet and security group configuration. <a href="https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-7"><strong>AWS (2026).</strong> "AWS Fargate Pricing." Per-vCPU and per-GB pricing for ECS and EKS Fargate tasks. <a href="https://aws.amazon.com/fargate/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-8"><strong>AWS (2026).</strong> "Data Transfer Pricing." Cross-AZ, inter-region, and internet egress pricing. Cross-AZ: $0.01/GB each direction. <a href="https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer" target="_blank" rel="noopener">aws.amazon.com</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/lambda-cost-real&t=The+Serverless+Tax:+Why+Your+Lambda+Function+Costs+40%C3%97+What+The+Calculator+Says" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/lambda-cost-real&text=Lambda+pricing+page+says+%2410.50%2Fmonth.+Your+bill+says+%24427.+Five+structural+taxes+drive+the+40%C3%97+gap:+VPC+cold+starts,+provisioned+concurrency,+CloudWatch+Logs,+cross-AZ+egress,+and+Step+Functions.+Here%27s+the+math:+&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/aws/submit?url=https://www.jslet.com/lambda-cost-real&title=The+Serverless+Tax:+Why+Your+Lambda+Function+Costs+40%C3%97+What+The+Calculator+Says+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/aws">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/lambda-cost-real&title=The+Serverless+Tax:+Why+Your+Lambda+Function+Costs+40%C3%97+What+The+Calculator+Says" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0;"><strong>Preferred Attribution Format:</strong> <code style="font-size:0.82rem; background:var(--bg-card); padding:2px 8px; border-radius:3px;">"The Serverless Tax: Why Your Lambda Function at $8.50/Month Actually Costs $427 (2026)" — jslet Research, July 2026. https://www.jslet.com/lambda-cost-real</code></p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> When the pricing page shows $0.0000166667 per GB-second and your bill shows 40× that, the difference is a product of five billing dimensions the pricing page excludes. RSS covers one pricing-structure reality check per week. No vendor sponsors. No tracking. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

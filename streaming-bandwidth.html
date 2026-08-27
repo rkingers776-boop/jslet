@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Streaming Media Bandwidth Calculator — Live &amp; VOD CDN Egress Cost — jslet</title>
+    <meta name="description" content="Concurrent viewers, multi-bitrate ladder (4K/1080p/720p/480p/360p), HLS/DASH/WebRTC protocol overhead, peak factor, monthly egress cost across 5 CDNs. Free, client-side, no signup.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <meta property="og:title" content="Streaming Media Bandwidth Calculator — Live &amp; VOD CDN Egress Cost">
+    <meta property="og:description" content="Model multi-bitrate streaming bandwidth and monthly egress cost across CloudFront, Cloudflare, Fastly, BunnyCDN, and KeyCDN. HLS, DASH, WebRTC overhead included.">
+    <meta property="og:url" content="https://www.jslet.com/streaming-bandwidth">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Streaming Media Bandwidth Calculator — Live &amp; VOD CDN Cost">
+    <meta name="twitter:description" content="Multi-bitrate bandwidth modeling with HLS/DASH overhead. Compare egress cost across 5 CDNs. Free, client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/streaming-bandwidth">
+    <style>
+        .tier-row { display: grid; grid-template-columns: 1fr 110px 90px 40px; gap: 10px; align-items: end; margin-bottom: 10px; }
+        @media (max-width: 600px) { .tier-row { grid-template-columns: 1fr 80px 70px 32px; gap: 6px; } }
+        .tier-row .remove-btn {
+            background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer;
+            color: #ef4444; font-size: 1.1rem; padding: 8px 0; text-align: center; transition: background 0.2s;
+        }
+        .tier-row .remove-btn:hover { background: #fef2f2; }
+        [data-theme="dark"] .tier-row .remove-btn:hover { background: #3b1111; }
+        .add-tier-btn {
+            display: inline-block; padding: 8px 18px; border: 1px dashed var(--accent); border-radius: var(--radius-sm);
+            cursor: pointer; font-size: 0.82rem; color: var(--accent); font-weight: 600;
+            background: transparent; transition: background 0.2s; margin-top: 4px;
+        }
+        .add-tier-btn:hover { background: var(--accent-soft); }
+
+        .input-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) { .input-row-2, .input-row-3 { grid-template-columns: 1fr; } }
+
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono","Cascadia Code",Consolas,monospace; transition: border-color 0.2s,box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+        input[type="range"] {
+            width: 100%; -webkit-appearance: none; appearance: none;
+            height: 8px; border-radius: 4px; background: var(--border); outline: none; margin: 8px 0; cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%;
+            background: var(--accent); cursor: pointer; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        }
+        [data-theme="dark"] input[type="range"]::-webkit-slider-thumb { border-color: #161b22; }
+
+        .peak-display {
+            font-family: "SF Mono","Cascadia Code",Consolas,monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent); text-align: center; margin: 4px 0;
+        }
+
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-val.accent-warn { color: #f59e0b; }
+        .metric-tile .metric-val.accent-good { color: #059669; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+        .cost-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin-top: 14px; }
+        .cost-table th { background: var(--bg-input); text-align: left; padding: 10px 14px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .cost-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+        .cost-table .num { text-align: right; font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-weight: 700; }
+        .cost-table tr.best-row td { border-bottom: 2px solid var(--success); font-weight: 700; }
+        .cost-table tr.best-row td:first-child::before { content: "★ "; color: var(--success); }
+        [data-theme="dark"] .cost-table tr.best-row { background: #022c2233; }
+
+        .bar-wrap {
+            background: var(--bg-input); border-radius: var(--radius-sm);
+            height: 28px; position: relative; overflow: hidden; margin: 8px 0;
+        }
+        .bar-fill {
+            position: absolute; left: 0; top: 0; height: 100%;
+            background: linear-gradient(90deg, #2563eb, #3b82f6);
+            border-radius: var(--radius-sm); transition: width 0.5s ease;
+            display: flex; align-items: center; padding-left: 10px;
+            font-size: 0.72rem; font-weight: 700; color: #fff; white-space: nowrap;
+        }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Streaming Media Bandwidth Calculator",
+      "description": "Model multi-bitrate streaming bandwidth and monthly egress cost. Concurrent viewers, HLS/DASH/WebRTC overhead, CDN cost comparison. Free, client-side.",
+      "url": "https://www.jslet.com/streaming-bandwidth",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much bandwidth does streaming with a multi-bitrate ladder use?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Each viewer receives one rung of the ladder — 4K, 1080p, 720p, 480p, or 360p — so total bandwidth depends on viewer distribution, not just average bitrate. With protocol overhead (HLS/DASH segments, WebRTC) and peak factors, the calculator computes the full egress and compares monthly CDN cost across 5 providers."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does protocol overhead matter in streaming cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "HLS/DASH add segment manifests and frequent small requests, while WebRTC has its own header overhead — together they inflate delivered bytes beyond the video bitrate. The calculator applies protocol-specific overhead factors so the egress number matches what the CDN bills, not the codec spec."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How should I plan for peak vs average concurrency?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Streaming is spikey — launch events and primetime push concurrency far above the average. The calculator applies a peak factor to your concurrent viewer count, so the CDN egress estimate covers the peak hour where most of the cost and most of the failures happen."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>Streaming <span>Bandwidth</span> Calculator</h1>
+            <p>Every viewer costs egress. A 1080p HLS stream at 5 Mbps to 10,000 concurrent viewers is 50 Gbps of peak throughput — roughly $13,000/month in CDN egress before you pay for encoding or storage. This calculator models the multi-bitrate ladder (each viewer gets the tier their connection can handle), protocol overhead tax, peak concurrency factor, and monthly CDN egress cost across five providers.</p>
+        </header>
+        <main class="matrix-grid">
+
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🎬 Bitrate Ladder Configuration</h3>
+                <p class="card-desc">Each quality tier serves viewers whose connection can sustain that bitrate. Viewers auto-select the best tier their bandwidth allows. The weighted average bitrate determines total egress. Add or remove tiers to match your encoding ladder.</p>
+                <div id="tier-container">
+                    <!-- JS-populated -->
+                </div>
+                <button class="add-tier-btn" id="add-tier-btn">+ Add Quality Tier</button>
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">Typical ladder: 4K 15–25 Mbps, 1080p 5–8 Mbps, 720p 2.5–4 Mbps, 480p 1–2 Mbps, 360p 0.7–1 Mbps</div>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📡 Deployment Parameters</h3>
+                <p class="card-desc">Stream type and protocol choice determine overhead and egress pattern. Live streaming sustains continuous bandwidth; VOD bursts on play.</p>
+                <div class="input-row-3">
+                    <div class="input-group"><label for="stream-type">Stream Type</label><select class="unit-input" id="stream-type"><option value="live">Live Streaming</option><option value="vod">Video on Demand (VOD)</option><option value="mixed">Mixed (Live + VOD)</option></select></div>
+                    <div class="input-group"><label for="protocol">Streaming Protocol</label><select class="unit-input" id="protocol"><option value="hls">HLS (fMP4 segments)</option><option value="dash">MPEG-DASH</option><option value="webrtc">WebRTC (ultra-low latency)</option><option value="rtmp">RTMP (ingest only)</option></select></div>
+                    <div class="input-group"><label for="viewers">Concurrent Viewers (peak)</label><input type="number" class="unit-input" id="viewers" value="10000" min="1" max="50000000"></div>
+                </div>
+                <div class="input-row-2" style="margin-top:14px;">
+                    <div class="input-group"><label for="peak-factor-slider">Peak Concurrency Factor (avg → peak multiplier)</label><div style="display:flex;align-items:center;gap:12px;"><input type="range" id="peak-factor-slider" min="1" max="5" step="0.1" value="2.5" style="flex:1;"><span id="peak-factor-display" style="font-family:monospace;font-weight:700;color:var(--accent);min-width:36px;">2.5×</span></div></div>
+                    <div class="input-group"><label for="watch-time">Average Watch Time (minutes, VOD only)</label><input type="number" class="unit-input" id="watch-time" value="15" min="1" max="480"></div>
+                </div>
+                <div class="input-row-2" style="margin-top:14px;">
+                    <div class="input-group"><label for="stream-hours">Monthly Streaming Hours (live, per 24h-day equivalent)</label><input type="number" class="unit-input" id="stream-hours" value="720" min="1" max="8760"></div>
+                    <div class="input-group"><label for="vod-plays">VOD Plays per Month</label><input type="number" class="unit-input" id="vod-plays" value="2000000" min="1" max="10000000000"></div>
+                </div>
+                <button class="btn-calc">Calculate Bandwidth &amp; Cost</button>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Bandwidth &amp; Egress Breakdown</h3>
+                <p class="card-desc" id="results-summary"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-avg-bw"></div><div class="metric-label">Avg Bitrate (weighted + overhead)</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-peak-gbps"></div><div class="metric-label">Peak Throughput</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-monthly-tb"></div><div class="metric-label">Monthly Egress Volume</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-overhead-pct"></div><div class="metric-label">Protocol Overhead Tax</div></div>
+                </div>
+                <div style="margin-top:12px;font-size:0.8rem;color:var(--text-muted);">
+                    <span id="results-math"></span>
+                </div>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="cost-card">
+                <h3>💰 Monthly CDN Egress Cost Comparison</h3>
+                <p class="card-desc">CDN egress pricing as of July 2026. Regional averages (North America / Europe). Enterprise volume discounts not reflected — at scale, negotiate directly.</p>
+                <div class="table-scroll">
+                <table class="cost-table" id="cost-table">
+                    <thead><tr><th>CDN Provider</th><th style="text-align:right;">Egress Volume</th><th style="text-align:right;">Monthly Cost</th><th style="text-align:right;">Annual Cost</th><th style="text-align:right;">$/GB Effective</th></tr></thead>
+                    <tbody id="cost-tbody"></tbody>
+                </table>
+                </div>
+                <p style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">Rates: CloudFront $0.02–0.085/GB (tiered), Cloudflare $0.005–0.02/GB (Enterprise/Free), Fastly $0.08–0.12/GB, BunnyCDN $0.005–0.03/GB, KeyCDN $0.01–0.04/GB. All prices approximate; check vendor rate cards for your region.</p>
+            </div>
+
+        </main>
+
+        <section class="seo-section">
+            <h2>How Streaming Bandwidth Actually Works</h2>
+            <p>Streaming bandwidth is not a simple <strong>bitrate × viewers</strong> multiplication. Three structural factors make the real number different from the napkin math.</p>
+
+            <h3>1. The Multi-Bitrate Ladder: Not All Viewers Get the Same Stream</h3>
+            <p>Modern streaming uses adaptive bitrate (ABR): the encoder produces 4–6 quality tiers (e.g., 4K at 18 Mbps, 1080p at 6 Mbps, 720p at 3 Mbps, 480p at 1.5 Mbps, 360p at 0.8 Mbps), and each viewer's player selects the highest tier their connection can sustain. Mobile viewers on cellular typically get 480p or 720p. Desktop viewers on fiber get 1080p or 4K. The <strong>weighted average bitrate</strong> across your viewer distribution is often 40–60% of the top-tier bitrate. If you budget for every viewer at 4K, you'll over-provision by 2–3×.</p>
+
+            <h3>2. Protocol Overhead: The Bits You Don't See</h3>
+            <p>Every streaming protocol wraps video frames in containers, manifests, and network headers. HLS adds roughly <strong>12–18%</strong> overhead from segment indexing (m3u8 playlists, fMP4 headers, TCP retransmission buffers). DASH adds <strong>8–12%</strong> (more efficient manifest format). WebRTC adds <strong>3–8%</strong> overhead (SRTP encryption with header compression) but is designed for real-time — different tradeoffs. RTMP adds <strong>5–8%</strong> but is deprecated for delivery (still used for ingest). A 6 Mbps video stream is actually consuming 6.7–7.0 Mbps of egress after overhead. At scale — 10,000 concurrent viewers — that 12% overhead means paying for an extra 7 Mbps × 10,000 = 70 Gbps of phantom bandwidth.</p>
+
+            <h3>3. Peak vs Average: The Concurrency Multiplier</h3>
+            <p>Your average concurrent viewership is not your peak. A typical live event has a peak-to-average ratio of <strong>2×–4×</strong> (a 100K average audience peaks at 250K–400K during key moments). CDNs bill on the 95th percentile of peak throughput, not the average. If you provision for average, you'll be congested for 30–60% of the event. If you provision for peak, you're paying for capacity that's idle most of the time. The peak concurrency factor in this calculator lets you model both — set it to 1× for steady-state VOD delivery, or 2.5× for a live sports event.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Live vs VOD: Different Math</h2>
+            <div class="table-scroll">
+            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:8px 12px;">Dimension</th><th style="text-align:left;padding:8px 12px;">Live Streaming</th><th style="text-align:left;padding:8px 12px;">VOD</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;"><strong>Egress formula</strong></td><td style="padding:8px 12px;font-family:monospace;font-size:0.82rem;">peak_viewers × weighted_bitrate × hours × 3600</td><td style="padding:8px 12px;font-family:monospace;font-size:0.82rem;">plays × avg_watch_sec × weighted_bitrate</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;"><strong>Bandwidth pattern</strong></td><td style="padding:8px 12px;">Continuous, spikey (event-driven)</td><td style="padding:8px 12px;">Burst on play, idle between</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;"><strong>Cost driver</strong></td><td style="padding:8px 12px;">Peak throughput (95th percentile)</td><td style="padding:8px 12px;">Total bytes transferred</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;"><strong>Protocol choice</strong></td><td style="padding:8px 12px;">HLS or DASH (5–30s latency OK)</td><td style="padding:8px 12px;">HLS, DASH, or progressive download</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;"><strong>CDN recommendation</strong></td><td style="padding:8px 12px;">Cloudflare or Fastly (high peak capacity)</td><td style="padding:8px 12px;">BunnyCDN or CloudFront (low $/GB)</td></tr>
+            </table>
+            </div>
+            <p style="margin-top:12px;">For mixed deployments (live events + VOD library), model each separately and sum the costs. A platform that streams 4 live events per month at 50K peak viewers plus a VOD library with 2M monthly plays has fundamentally different economics from a pure-VOD Netflix clone or a pure-live Twitch competitor. Use the stream type selector above to switch modes and compare.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>CDN Egress Pricing Reality</h2>
+            <p>CDN egress is the dominant cost in streaming — often 80–90% of the total bill. Storage is cheap (pennies per GB per month). Encoding is a fixed per-minute cost. Egress scales linearly with every viewer and every second of watch time. Here's the effective per-GB cost at two volume tiers:</p>
+            <div class="table-scroll">
+            <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:8px 12px;">Provider</th><th style="text-align:right;padding:8px 12px;">~50 TB/mo</th><th style="text-align:right;padding:8px 12px;">~500 TB/mo</th><th style="text-align:right;padding:8px 12px;">~2 PB/mo</th><th style="text-align:left;padding:8px 12px;">Notes</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;">CloudFront</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.085/GB</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.06/GB</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.02/GB</td><td style="padding:8px 12px;font-size:0.78rem;">Tiers by region. NA/EU listed. Free tier: 1 TB/mo × 12 months.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;">Cloudflare</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.00–0.01</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">~$0.005</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">~$0.003</td><td style="padding:8px 12px;font-size:0.78rem;">Free plan: unlimited egress (within ToS). Enterprise: negotiated.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;">Fastly</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.12/GB</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.08/GB</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.04/GB</td><td style="padding:8px 12px;font-size:0.78rem;">Premium. Low latency. WASM@Edge. Worth it at scale for live.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;">BunnyCDN</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.01/GB</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.005/GB</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.002/GB</td><td style="padding:8px 12px;font-size:0.78rem;">Volume tiers: Standard ($0.01) → Volume ($0.005) → High Volume.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px 12px;">KeyCDN</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.04/GB</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.02/GB</td><td style="text-align:right;padding:8px 12px;font-family:monospace;">$0.01/GB</td><td style="padding:8px 12px;font-size:0.78rem;">Pay-as-you-go. No commit. 33 PoPs (fewer than competitors).</td></tr>
+            </table>
+            </div>
+            <p style="font-size:0.78rem;color:var(--text-muted);">Sources: Vendor public pricing pages accessed July 2026. Volume tiers are approximate — actual pricing depends on region mix, commit level, and negotiation. Cloudflare's free-tier unlimited egress has a fair-use clause; at non-streaming volumes it's rarely enforced, but streaming workloads should clarify directly with Cloudflare.</p>
+        </section>
+
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/streaming-bandwidth-real">📰 The Bitrate Ladder Racket (Full Briefing) →</a>
+                <a href="/cdn-cache-hit-ratio-impact">CDN Cache Hit Ratio Impact &rarr;</a>
+                <a href="/cdn-cached-ratio-to-bandwidth-saving">CDN Cache Ratio to Bandwidth Saving &rarr;</a>
+                <a href="/terabytes-egress-to-aws-cost">TB Egress to AWS Cost &rarr;</a>
+                <a href="/gbps-to-tb-per-day">Gbps to TB per Day Converter &rarr;</a>
+                <a href="/video-encoding-calculator">Video Encoding Parameter Calculator &rarr;</a>
+                <a href="/concurrent-users-to-bandwidth">Concurrent Users to Bandwidth &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Quality Tier Defaults ──
+    var DEFAULT_TIERS = [
+        { label: '1080p (Full HD)', bitrate: 6, pct: 35 },
+        { label: '720p (HD)',       bitrate: 3, pct: 35 },
+        { label: '480p (SD)',       bitrate: 1.5, pct: 20 },
+        { label: '360p (Low)',      bitrate: 0.8, pct: 10 }
+    ];
+
+    var PROTOCOL_OVERHEAD = { hls: 1.15, dash: 1.10, webrtc: 1.06, rtmp: 1.07 };
+
+    // CDN pricing matrix — rate per GB at three volume tiers (TB/month)
+    var CDN_TIERS = [
+        { name: 'BunnyCDN',       rates: [0.01, 0.005, 0.0025], css: 'tag-bunny' },
+        { name: 'Cloudflare CDN', rates: [0.005, 0.003, 0.002],  css: 'tag-flare' },
+        { name: 'KeyCDN',         rates: [0.04, 0.02, 0.01],     css: 'tag-key' },
+        { name: 'AWS CloudFront', rates: [0.085, 0.06, 0.02],    css: 'tag-cf' },
+        { name: 'Fastly',         rates: [0.12, 0.08, 0.04],     css: 'tag-fastly' }
+    ];
+
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function collectTiers() {
+        var rows = document.querySelectorAll('#tier-container .tier-row');
+        var tiers = [];
+        for (var i = 0; i < rows.length; i++) {
+            var label = rows[i].querySelector('.tier-label').value || ('Tier ' + (i+1));
+            var bitrate = parseFloat(rows[i].querySelector('.tier-bitrate').value) || 0;
+            var pct = parseFloat(rows[i].querySelector('.tier-pct').value) || 0;
+            if (bitrate > 0 && pct > 0) tiers.push({ label: label, bitrate: bitrate, pct: pct });
+        }
+        return tiers;
+    }
+
+    function renderTierRow(tier) {
+        return '<div class="tier-row">' +
+            '<div class="input-group"><label style="font-size:0.72rem;">Quality Label</label><input type="text" class="unit-input tier-label" value="' + tier.label + '" style="font-size:0.85rem;"></div>' +
+            '<div class="input-group"><label style="font-size:0.72rem;">Bitrate (Mbps)</label><input type="number" class="unit-input tier-bitrate" value="' + tier.bitrate + '" min="0.1" max="100" step="0.1"></div>' +
+            '<div class="input-group"><label style="font-size:0.72rem;">Viewer %</label><input type="number" class="unit-input tier-pct" value="' + tier.pct + '" min="0" max="100" step="1"></div>' +
+            '<button class="remove-btn" title="Remove tier" onclick="this.parentElement.remove(); compute();">&times;</button>' +
+        '</div>';
+    }
+
+    function renderAllTiers() {
+        var container = document.getElementById('tier-container');
+        var tiers = collectTiers();
+        if (tiers.length === 0) tiers = DEFAULT_TIERS;
+        var html = '';
+        for (var i = 0; i < tiers.length; i++) {
+            html += renderTierRow(tiers[i]);
+        }
+        container.innerHTML = html;
+    }
+
+    document.getElementById('add-tier-btn').addEventListener('click', function(){
+        var container = document.getElementById('tier-container');
+        var row = document.createElement('div');
+        row.className = 'tier-row';
+        row.innerHTML = renderTierRow({ label: 'Custom', bitrate: 2, pct: 10 });
+        // Replace the outer div with the inner content
+        var inner = row.querySelector('.tier-row');
+        container.appendChild(inner || row.firstElementChild);
+        compute();
+    });
+
+    document.getElementById('peak-factor-slider').addEventListener('input', function(){
+        document.getElementById('peak-factor-display').textContent = parseFloat(this.value).toFixed(1) + '×';
+        compute();
+    });
+
+    function formatGbps(val) { return val >= 1 ? val.toFixed(2) + ' Gbps' : (val * 1000).toFixed(0) + ' Mbps'; }
+    function formatTB(val) { return val >= 1000 ? (val/1000).toFixed(2) + ' PB' : val.toFixed(1) + ' TB'; }
+    function formatCurrency(val) { return val >= 1000000 ? '$' + (val/1e6).toFixed(2) + 'M' : val >= 1000 ? '$' + (val/1000).toFixed(1) + 'K' : '$' + val.toFixed(0); }
+
+    function compute() {
+        var tiers = collectTiers();
+        if (tiers.length === 0) { tiers = DEFAULT_TIERS; renderAllTiers(); }
+        var totalPct = tiers.reduce(function(s,t){ return s + t.pct; }, 0);
+        var weightedBitrate = tiers.reduce(function(s,t){ return s + (t.bitrate * t.pct / 100); }, 0);
+
+        var protocol = document.getElementById('protocol').value;
+        var overhead = PROTOCOL_OVERHEAD[protocol] || 1.15;
+        var effectiveBitrate = weightedBitrate * overhead;
+
+        var streamType = document.getElementById('stream-type').value;
+        var viewers = v('viewers');
+        var peakFactor = parseFloat(document.getElementById('peak-factor-slider').value);
+        var peakViewers = viewers * peakFactor;
+        var watchMinutes = Math.max(1, v('watch-time'));
+        var streamHours = v('stream-hours');
+        var vodPlays = v('vod-plays');
+
+        // Calculate total egress in GB
+        var peakThroughputMbps = peakViewers * effectiveBitrate; // Mbps
+        var peakThroughputGbps = peakThroughputMbps / 1000;
+
+        var monthlyEgressGB = 0;
+        if (streamType === 'live') {
+            monthlyEgressGB = (peakViewers * effectiveBitrate / 8) * streamHours * 3600 / 1000; // GB
+        } else if (streamType === 'vod') {
+            monthlyEgressGB = vodPlays * (effectiveBitrate / 8) * watchMinutes * 60 / 1000; // GB
+        } else {
+            // Mixed: live portion + VOD portion
+            var liveGB = (peakViewers * effectiveBitrate / 8) * streamHours * 3600 / 1000;
+            var vodGB = vodPlays * (effectiveBitrate / 8) * watchMinutes * 60 / 1000;
+            monthlyEgressGB = liveGB + vodGB;
+        }
+
+        var monthlyEgressTB = monthlyEgressGB / 1000;
+
+        document.getElementById('val-avg-bw').textContent = effectiveBitrate.toFixed(2) + ' Mbps';
+        document.getElementById('val-peak-gbps').textContent = formatGbps(peakThroughputGbps);
+        document.getElementById('val-monthly-tb').textContent = formatTB(monthlyEgressTB);
+        document.getElementById('val-overhead-pct').textContent = '+' + ((overhead - 1) * 100).toFixed(0) + '%';
+
+        document.getElementById('results-summary').textContent =
+            'Weighted avg bitrate ' + weightedBitrate.toFixed(2) + ' Mbps × ' + protocol.toUpperCase() + ' overhead (' + ((overhead-1)*100).toFixed(0) + '%) = ' + effectiveBitrate.toFixed(2) + ' Mbps effective. ' +
+            viewers.toLocaleString() + ' avg viewers × ' + peakFactor.toFixed(1) + '× peak = ' + peakViewers.toLocaleString() + ' peak viewers.';
+
+        document.getElementById('results-math').textContent =
+            'Effective per-viewer: ' + effectiveBitrate.toFixed(2) + ' Mbps ÷ 8 = ' + (effectiveBitrate/8).toFixed(2) + ' MB/s. ' +
+            'Peak throughput: ' + peakViewers.toLocaleString() + ' viewers × ' + effectiveBitrate.toFixed(2) + ' Mbps = ' + formatGbps(peakThroughputGbps) + '. ' +
+            'Monthly egress: ' + formatTB(monthlyEgressTB) + '.';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('cost-card').style.display = 'block';
+
+        // Build CDN cost table
+        var tbody = document.getElementById('cost-tbody');
+        var html = '';
+        var bestCost = Infinity;
+        for (var i = 0; i < CDN_TIERS.length; i++) {
+            var cdn = CDN_TIERS[i];
+            var rate;
+            if (monthlyEgressTB <= 50) rate = cdn.rates[0];
+            else if (monthlyEgressTB <= 500) rate = cdn.rates[1];
+            else rate = cdn.rates[2];
+            var monthlyCost = monthlyEgressGB * rate;
+            if (monthlyCost < bestCost) bestCost = monthlyCost;
+            html += '<tr data-cost="' + monthlyCost.toFixed(0) + '">' +
+                '<td><span class="provider-tag ' + cdn.css + '">' + cdn.name + '</span></td>' +
+                '<td class="num">' + formatTB(monthlyEgressTB) + '</td>' +
+                '<td class="num">' + formatCurrency(monthlyCost) + '</td>' +
+                '<td class="num">' + formatCurrency(monthlyCost * 12) + '</td>' +
+                '<td class="num">$' + rate.toFixed(4) + '/GB</td>' +
+            '</tr>';
+        }
+        tbody.innerHTML = html;
+
+        // Highlight cheapest row
+        var rows = tbody.querySelectorAll('tr');
+        for (var j = 0; j < rows.length; j++) {
+            rows[j].classList.remove('best-row');
+            if (parseFloat(rows[j].getAttribute('data-cost')) === bestCost) {
+                rows[j].classList.add('best-row');
+            }
+        }
+
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        renderAllTiers();
+        compute();
+    });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+
+    // Recompute on any input change
+    document.getElementById('tier-container').addEventListener('input', compute);
+    document.getElementById('protocol').addEventListener('change', compute);
+    document.getElementById('stream-type').addEventListener('change', compute);
+    document.getElementById('viewers').addEventListener('input', compute);
+    document.getElementById('watch-time').addEventListener('input', compute);
+    document.getElementById('stream-hours').addEventListener('input', compute);
+    document.getElementById('vod-plays').addEventListener('input', compute);
+    </script>
+    <script src="nav.js"></script>
+</body>
+</html>

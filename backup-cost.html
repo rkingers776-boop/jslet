@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Backup Strategy Cost Calculator — 3-2-1 Rule TCO Estimator — jslet</title>
+    <meta name="description" content="Full + incremental backup cost with retention math. S3 Glacier vs Standard — $3K/year difference on a single 10 TB workload. Compare local, cloud, and hybrid 3-2-1 strategies over 1/3/5-year horizons.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) { .multi-input-row { grid-template-columns: 1fr; } }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .strategy-card {
+            border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 24px;
+            margin-bottom: 14px; background: var(--bg-card); transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .strategy-card:hover { border-color: rgba(37,99,235,0.4); box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+        .strategy-card.best { border-color: var(--success); border-width: 2px; background: var(--success-bg); }
+        .strategy-card h4 { font-size: 1rem; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+        .cost-breakdown { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px; font-size: 0.82rem; }
+        @media (max-width: 500px) { .cost-breakdown { grid-template-columns: 1fr; } }
+        .cost-item { text-align: center; padding: 10px; background: var(--bg-input); border-radius: var(--radius-sm); }
+        .cost-item .val { font-size: 1.1rem; font-weight: 700; color: var(--text-heading); }
+        .cost-item .lbl { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
+        .timeline-bar { display: flex; gap: 2px; margin-top: 12px; align-items: flex-end; height: 100px; }
+        .timeline-month { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-width: 4px; transition: height 0.3s; opacity: 0.7; }
+        .timeline-month:nth-child(odd) { opacity: 0.85; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Backup Cost",
+      "description": "Calculate the total cost of backup strategies including the 3-2-1 rule. Compare local, cloud, and hybrid approaches with long-term cost curves, snapshot retention modeling, and cross-region replicatio",
+      "url": "https://www.jslet.com/backup-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <link rel="canonical" href="https://www.jslet.com/backup-cost">
+    <meta property="og:title" content="Backup Strategy Cost Calculator — 3-2-1 Rule TCO Estimator — jslet">
+    <meta property="og:description" content="Calculate the total cost of backup strategies including the 3-2-1 rule. Compare local, cloud, and hybrid approaches with long-term cost curves, snapshot retention modeling, and cross-region replication costs.">
+    <meta property="og:url" content="https://www.jslet.com/backup-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Backup Strategy Cost Calculator — 3-2-1 Rule TCO Estimator — jslet">
+    <meta name="twitter:description" content="Calculate the total cost of backup strategies including the 3-2-1 rule. Compare local, cloud, and hybrid approaches with long-term cost curves, snapshot retention modeling, and cross-region replicatio">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why is Glacier cheaper than Standard for backups?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Glacier storage is dramatically cheaper per GB than Standard, which matters when retention spans years. On a 10 TB workload the difference between S3 Glacier and Standard can exceed $3,000/year. The trade-off is retrieval: you pay a per-GB retrieval fee and wait for restore. This calculator models full + incremental backup schedules with retention math so you can compare strategies over 1, 3, and 5 years, including the 3-2-1 rule as a cost lens."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do full vs incremental backups change my storage cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Full backups store everything every time; incremental backups only store what changed since the last one. Incremental dramatically reduces storage volume and cost, but increases restore complexity and can extend recovery time. The calculator shows both strategies side by side across local, cloud, and hybrid setups, so you can see the storage/cost trade-off with your actual dataset size and retention window."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the 3-2-1 backup rule in cost terms?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "3 copies of your data, on 2 different media, with 1 copy offsite. It is the resilience standard, but it triples your storage footprint — which is exactly why the cost calculator exists. By modeling the 3-2-1 configuration across storage tiers, you can see what the resilience standard actually costs and where lifecycle tiers (Standard → Glacier) reduce the bill while keeping the rule intact."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>Backup Strategy <span>→ Cost Calculator</span></h1>
+            <p>Full + incremental backup cost with retention math. 10 TB source, 3% daily delta, weekly fulls, 90-day retention: S3 Standard = $X, S3 Glacier = $Y. That tier choice alone is a $3K/year difference. Compare local NAS, cloud object storage, and hybrid 3-2-1 strategies with real cumulative cost curves over 1/3/5-year horizons.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Backup Workload Profile</h3>
+                <p class="card-desc">Set source data size, daily delta %, snapshot frequency, retention, and storage class. The engine projects cumulative storage growth and TCO across local, cloud, and hybrid strategies.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="data-tb">Source Data Size (TB)</label>
+                        <input type="number" class="unit-input" id="data-tb" value="10" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="daily-delta-pct">Daily Data Change Rate (%)</label>
+                        <input type="number" class="unit-input" id="daily-delta-pct" value="3" step="any" min="0" max="100">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="full-freq">Full Snapshot Frequency</label>
+                        <select class="unit-input" id="full-freq">
+                            <option value="7" selected>Weekly (every 7 days)</option>
+                            <option value="1">Daily</option>
+                            <option value="14">Bi-Weekly (every 14 days)</option>
+                            <option value="30">Monthly (every 30 days)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="incr-freq">Incremental Snapshot Frequency</label>
+                        <select class="unit-input" id="incr-freq">
+                            <option value="1" selected>Daily</option>
+                            <option value="0.25">Every 4 hours</option>
+                            <option value="0.5">Every 12 hours</option>
+                            <option value="7">Weekly</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="full-retention">Full Snapshot Retention (days)</label>
+                        <input type="number" class="unit-input" id="full-retention" value="90" step="1" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="incr-retention">Incremental Snapshot Retention (days)</label>
+                        <input type="number" class="unit-input" id="incr-retention" value="30" step="1" min="1">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="cross-region">Cross-Region Replicas</label>
+                        <select class="unit-input" id="cross-region">
+                            <option value="0">None (Single Region)</option>
+                            <option value="1" selected>1 Extra Region (3-2-1 Rule)</option>
+                            <option value="2">2 Extra Regions (Multi-Continent)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="compression">Compression Ratio</label>
+                        <select class="unit-input" id="compression">
+                            <option value="0.5">2:1 (Typical gzip / zstd)</option>
+                            <option value="0.35" selected>~3:1 (Dedupe + Compression)</option>
+                            <option value="0.2">5:1 (Highly Redundant Data)</option>
+                            <option value="1.0">None (Raw)</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Strategy Comparison</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Strategy Cost Comparison</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div id="strategy-results"></div>
+                <div style="margin-top:20px;" id="timeline-viz"></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>The 3-2-1 Backup Rule: Cost vs. Resilience</h2>
+            <p>The 3-2-1 rule — <strong>3</strong> copies of data, on <strong>2</strong> different media types, with <strong>1</strong> offsite copy — is the gold standard for disaster recovery. But what does it actually cost? The answer depends on your data size, change rate, snapshot frequency, and retention policy.</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Strategy</th><th>Storage Medium</th><th>Approx. $/TB/mo</th><th>Retrieval Speed</th><th>Best For</th></tr></thead>
+                <tbody>
+                    <tr><td>Local NAS (RAID 6)</td><td>Enterprise HDD</td><td>~$15–25</td><td>Instant</td><td>Operational recovery (RTO &lt; 1h)</td></tr>
+                    <tr><td>Cloud Object (Hot Tier)</td><td>S3 Standard / GCS Standard</td><td>~$18–23</td><td>Immediate</td><td>Recent snapshots, frequent restores</td></tr>
+                    <tr><td>Cloud Object (Cold Tier)</td><td>S3 Glacier / Azure Archive</td><td>~$1–4</td><td>Hours</td><td>Long-term retention, compliance</td></tr>
+                    <tr><td>Hybrid (NAS + Cloud Cold)</td><td>NAS + Archive Tier</td><td>~$8–14 blended</td><td>Mixed</td><td>Balanced cost/resilience</td></tr>
+                    <tr><td>Tape / LTO</td><td>LTO-9 Tape Library</td><td>~$3–5</td><td>Hours–Days</td><td>Air-gapped compliance archives</td></tr>
+                </tbody>
+            </table>
+</div>
+            <p style="margin-top:16px;"><strong>Why this tool matters:</strong> Most teams either over-spend on backup (daily fulls to S3 with infinite retention) or under-protect (one local copy, no offsite). This calculator quantifies the cost of each tier so you can design a defensible backup budget and justify it to finance.</p>
+        </section>
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/raid-calculator">RAID Calculator &rarr;</a>
+                <a href="/log-storage-cost">Log Storage & Retention &rarr;</a>
+            </div>
+        </div>
+
+
+                <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function computeBackupCost() {
+        var dataTB = parseFloat(document.getElementById('data-tb').value) || 0;
+        var dailyDeltaPct = parseFloat(document.getElementById('daily-delta-pct').value) / 100 || 0;
+        var fullFreqDays = parseInt(document.getElementById('full-freq').value);
+        var incrFreqDays = parseFloat(document.getElementById('incr-freq').value);
+        var fullRetDays = parseInt(document.getElementById('full-retention').value);
+        var incrRetDays = parseInt(document.getElementById('incr-retention').value);
+        var crossRegion = parseInt(document.getElementById('cross-region').value);
+        var compression = parseFloat(document.getElementById('compression').value);
+
+        var dataGB = dataTB * 1024;
+        var dailyDeltaGB = dataGB * dailyDeltaPct;
+
+        // Compute total stored backup volume over retention window
+        var fullSnapshots = Math.floor(fullRetDays / fullFreqDays);
+        var incrSnapshots = Math.floor(incrRetDays / incrFreqDays);
+
+        // Each full snapshot = dataGB (compressed), each incremental ≈ dailyDeltaGB × daysSinceLastFull (compressed)
+        var totalFullStorage = 0;
+        for (var i = 0; i < fullSnapshots; i++) {
+            var age = i * fullFreqDays;
+            totalFullStorage += dataGB * Math.pow(1 + dailyDeltaPct, age / 30); // monthly growth
+        }
+        totalFullStorage *= compression;
+
+        var totalIncrStorage = 0;
+        for (var i = 0; i < incrSnapshots; i++) {
+            var age = i * incrFreqDays;
+            var avgIncrSize = dailyDeltaGB * fullFreqDays * 0.5; // avg half of full period delta
+            totalIncrStorage += avgIncrSize * Math.pow(1 + dailyDeltaPct, age / 30);
+        }
+        totalIncrStorage *= compression;
+
+        var totalStoredTB = (totalFullStorage + totalIncrStorage) / 1024;
+        var totalStoredTBwithReplicas = totalStoredTB * (1 + crossRegion);
+
+        // Strategy definitions
+        var strategies = [
+            {
+                name: 'Local NAS Only',
+                desc: 'Single on-prem NAS, RAID 6. No offsite copy.',
+                rule321: '❌ (1 copy)',
+                storageCostPerTB: 20,
+                retrievalCost: 0,
+                transferCost: 0,
+                resilience: '⚠️ Single site failure = total loss'
+            },
+            {
+                name: 'Cloud Object (Hot Tier)',
+                desc: 'S3 Standard / GCS Standard. Daily snapshots, no local copy.',
+                rule321: '⚠️ (2 media types, offsite ✓)',
+                storageCostPerTB: 21,
+                retrievalCost: 0,
+                transferCost: totalStoredTB * 1024 * 0.09 / 12, // egress amortized
+                resilience: '✅ Durable but no local copy for fast restores'
+            },
+            {
+                name: 'Hybrid: NAS + Cloud Cold',
+                desc: 'Local NAS for recent (30d) + S3 Glacier for long-term retention.',
+                rule321: '✅ (3 copies, 2 media, 1 offsite)',
+                storageCostPerTB: 12, // blended
+                retrievalCost: totalStoredTB * 1024 * 0.01 * 0.1, // occasional cold retrieval
+                transferCost: totalStoredTB * 1024 * 0.09 * 0.3 / 12,
+                resilience: '✅ Best practice: fast local + durable offsite'
+            },
+            {
+                name: 'Cloud-Only (Lifecycle Tiered)',
+                desc: 'Hot tier (7d) → Warm (30d) → Cold (90d) → Archive (1yr+). Fully managed.',
+                rule321: '⚠️ (Single media type, cross-region depends on config)',
+                storageCostPerTB: 8, // heavily blended
+                retrievalCost: totalStoredTB * 1024 * 0.015 * 0.05,
+                transferCost: totalStoredTB * 1024 * 0.09 / 12,
+                resilience: '✅ Durable but restore latency increases with tier depth'
+            }
+        ];
+
+        // Find best (lowest 3yr TCO)
+        var bestStrategy = strategies.reduce((best, s) => {
+            var cost = totalStoredTBwithReplicas * s.storageCostPerTB + s.retrievalCost + s.transferCost;
+            var bestCost = totalStoredTBwithReplicas * best.storageCostPerTB + best.retrievalCost + best.transferCost;
+            return cost < bestCost ? s : best;
+        }, strategies[0]);
+
+        document.getElementById('results-params').innerText =
+            `${dataTB} TB source · ${(dailyDeltaPct*100).toFixed(1)}% daily change · Full every ${fullFreqDays}d (retain ${fullRetDays}d) · Incr every ${incrFreqDays}d (retain ${incrRetDays}d) · ${crossRegion} extra region(s) · ${compression === 1 ? 'No' : Math.round(1/compression)+':1'} compression`;
+
+        var stratDiv = document.getElementById('strategy-results');
+        stratDiv.innerHTML = strategies.map(s => {
+            var monthlyStorageCost = totalStoredTBwithReplicas * s.storageCostPerTB;
+            var monthlyTotal = monthlyStorageCost + s.retrievalCost + s.transferCost;
+            var isBest = s === bestStrategy;
+            return `<div class="strategy-card${isBest ? ' best' : ''}">
+                <h4>${isBest ? '🏆 ' : ''}${s.name} ${isBest ? '— Lowest 3-Year TCO' : ''}</h4>
+                <p style="font-size:0.85rem;color:var(--text-secondary);">${s.desc}</p>
+                <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;">3-2-1 Compliance: ${s.rule321} · ${s.resilience}</p>
+                <div class="cost-breakdown">
+                    <div class="cost-item">
+                        <div class="val">$${monthlyStorageCost.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+                        <div class="lbl">Storage / mo</div>
+                    </div>
+                    <div class="cost-item">
+                        <div class="val">$${monthlyTotal.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+                        <div class="lbl">Total / mo</div>
+                    </div>
+                    <div class="cost-item">
+                        <div class="val">$${(monthlyTotal*12).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+                        <div class="lbl">Annual</div>
+                    </div>
+                </div>
+                <p style="font-size:0.78rem;color:var(--text-muted);margin-top:8px;">Stored volume: ${totalStoredTBwithReplicas.toFixed(1)} TB · 3-Year TCO: $${(monthlyTotal*36).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})}</p>
+            </div>`;
+        }).join('');
+
+        // Timeline visualization (monthly storage growth over 3 years)
+        var months = 36;
+        var timelineHTML = '<h4 style="margin-bottom:8px;">📈 3-Year Cumulative Storage Growth (TB)</h4><div class="timeline-bar" style="height:80px;">';
+        var cumulativeTB = totalStoredTBwithReplicas;
+        var maxTB = cumulativeTB * Math.pow(1 + dailyDeltaPct * 30, months);
+        for (var m = 0; m < months; m++) {
+            var tbAtMonth = totalStoredTBwithReplicas * Math.pow(1 + dailyDeltaPct * 30, m);
+            var heightPct = maxTB > 0 ? (tbAtMonth / maxTB) * 100 : 0;
+            timelineHTML += `<div class="timeline-month" style="height:${heightPct}%;" title="Month ${m+1}: ${tbAtMonth.toFixed(1)} TB"></div>`;
+        }
+        timelineHTML += `</div><div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text-muted);margin-top:4px;"><span>Month 0</span><span>Year 1</span><span>Year 2</span><span>Year 3</span></div>`;
+        document.getElementById('timeline-viz').innerHTML = timelineHTML;
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { computeBackupCost(); });
+    document.querySelector('.btn-calc').addEventListener('click', computeBackupCost);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

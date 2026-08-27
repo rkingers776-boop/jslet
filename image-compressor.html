@@ -1,0 +1,513 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Image Compressor — Compress JPG, PNG, WebP Online, 100% Local &amp; Batch — jslet</title>
+    <meta name="description" content="Free online image compressor that runs 100% in your browser. Batch-compress JPG, PNG, and WebP images, adjust quality with live before/after preview, and download instantly. No upload, no watermark, no size limits. Reduce image file size in seconds.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/image-compressor">
+    <meta property="og:title" content="Image Compressor — Batch Compress JPG, PNG, WebP in Your Browser">
+    <meta property="og:description" content="Compress images free, 100% client-side. Batch processing, live quality slider, before/after preview, no upload. JPG, PNG, WebP supported.">
+    <meta property="og:url" content="https://www.jslet.com/image-compressor">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Image Compressor — Compress Images Online, No Upload, No Limits">
+    <meta name="twitter:description" content="Batch compress JPG, PNG, WebP images free. 100% local processing. Live quality preview. No upload, no watermark.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Image Compressor — Batch JPG, PNG, WebP Compression",
+      "description": "Compress JPG, PNG, and WebP images entirely in your browser using the Canvas API. Batch processing with a live quality slider, before/after size comparison, and per-image or full-batch download. Files never leave your device — no upload, no server, no size limits.",
+      "url": "https://www.jslet.com/image-compressor",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Any",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Is this image compressor really free and private?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes — completely free and completely private. The entire compression pipeline runs in your browser using the HTML5 Canvas API. Your images are read as local files, processed with JavaScript, and compressed to Blob objects in memory. Nothing is uploaded to any server, so there is no file size limit, no queue, and no risk of your images ending up in someone else's storage. You can verify this yourself: disconnect your network after loading the page and compression still works."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which image formats can I compress, and what quality should I use?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "This tool accepts JPG/JPEG, PNG, and WebP images. For JPG and WebP sources, quality levels between 70-85% are the sweet spot: visually indistinguishable from the original for most photos while cutting file size by 50-80%. PNG images use lossless compression, so they rarely shrink — for PNG files we recommend switching the output format to WebP, which can reduce photo-style and illustration PNGs by 60-90% while staying visually identical. A quality of 75% is the conventional default used by most compression services."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much can I compress an image without visible quality loss?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Typical results for photographic images: a 5 MB JPG from a modern smartphone compresses to 600-900 KB at quality 75% (roughly 80-88% smaller) with no visible difference at normal viewing sizes. Screenshots with lots of flat color and text compress even better — often 90%+ smaller when converted to WebP. The exact ratio depends on image content: noisy photos (high ISO, film grain, night shots) compress less because the noise is high-frequency detail that compression must preserve to stay clean. That is why this tool shows a live before/after size comparison — you can drag the quality slider and watch the byte count change until the visual trade-off feels right for your use case."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is the compressed image quality the same as TinyPNG or other online compressors?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "For JPG and WebP, browser-native encoding (what this tool uses) produces results comparable to most online services — typically within a few percent of file size at the same quality setting. The main difference is transparency: TinyPNG's advanced PNG quantization can shrink PNGs more aggressively than the browser's native PNG encoder, which is lossless and won't reduce PNG size much. The workaround is simple: convert PNGs to WebP instead, which gives transparency support plus compression that beats TinyPNG's PNG output in most cases. This tool runs locally, has no upload queue, and imposes no file count or size restrictions — unlike free tiers of online services."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .ic-hero { margin-bottom: 22px; }
+        .ic-hero h1 { font-size: 1.7rem; margin-bottom: 8px; }
+        .ic-hero h1 span { color: var(--accent); }
+        .ic-hero p { color: var(--text-body); font-size: 0.95rem; line-height: 1.7; max-width: 760px; }
+        .ic-dropzone { border: 2px dashed var(--accent); border-radius: var(--radius); background: var(--accent-soft); padding: 42px 24px; text-align: center; cursor: pointer; transition: background 0.2s; }
+        .ic-dropzone.dragover { background: var(--accent); color: #fff; }
+        .ic-dropzone .dz-icon { font-size: 2.2rem; line-height: 1; }
+        .ic-dropzone .dz-title { font-weight: 700; font-size: 1.05rem; margin-top: 10px; }
+        .ic-dropzone .dz-sub { font-size: 0.82rem; color: var(--text-muted); margin-top: 6px; }
+        .ic-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin: 18px 0 4px; padding: 14px 16px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+        .ic-ctl { display: flex; flex-direction: column; gap: 5px; }
+        .ic-ctl label { font-size: 0.78rem; font-weight: 700; color: var(--text-body); }
+        .ic-ctl input[type=range] { width: 180px; accent-color: var(--accent); }
+        .ic-ctl select { padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); font-size: 0.85rem; }
+        .ic-ctl .qlabel { font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.85rem; font-weight: 700; color: var(--accent); }
+        .ic-actions { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn { padding: 10px 20px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .ic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 20px; }
+        .ic-card { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+        .ic-card .card-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 0.78rem; }
+        .ic-card .card-name { font-family: 'Cascadia Code','Consolas',monospace; font-weight: 700; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ic-card .card-badge { font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: 20px; }
+        .badge-wait { background: var(--bg-tertiary); color: var(--text-muted); }
+        .badge-done { background: var(--success-soft, #e6f7e6); color: #2e7d32; }
+        .ic-card .card-imgs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 14px 6px; }
+        .ic-card .img-box { position: relative; }
+        .ic-card .img-box img { width: 100%; height: 140px; object-fit: contain; background: repeating-conic-gradient(#f2f2f2 0% 25%, #fff 0% 50%) 0 0/16px 16px; border: 1px solid var(--border); border-radius: 6px; }
+        .ic-card .img-tag { position: absolute; top: 6px; left: 6px; font-size: 0.65rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: rgba(0,0,0,0.65); color: #fff; }
+        .ic-card .card-stats { display: flex; justify-content: space-around; text-align: center; padding: 10px 8px 12px; }
+        .ic-card .stat-num { font-size: 1.02rem; font-weight: 700; font-family: 'Cascadia Code','Consolas',monospace; }
+        .ic-card .stat-lbl { font-size: 0.68rem; color: var(--text-muted); }
+        .ic-card .stat-save { color: #2e7d32; }
+        .ic-card .stat-larger { color: #c62828; }
+        .ic-card .card-bar { height: 5px; background: var(--border); margin: 0 14px; border-radius: 3px; overflow: hidden; }
+        .ic-card .card-bar .fill { height: 100%; background: var(--accent); border-radius: 3px; }
+        .ic-card .card-foot { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-top: 1px solid var(--border); }
+        .ic-card .card-note { font-size: 0.72rem; color: var(--text-muted); }
+        .ic-empty { text-align: center; color: var(--text-muted); font-size: 0.88rem; padding: 26px 10px; }
+        .ic-info { margin-top: 34px; border-top: 2px solid var(--border); padding-top: 20px; }
+        .ic-info h2 { font-size: 1.05rem; margin-bottom: 10px; }
+        .ic-info .ic-para { font-size: 0.9rem; color: var(--text-body); line-height: 1.85; max-width: 800px; }
+        .claims-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+        .claims-table td { padding: 9px 12px; border: 1px solid var(--border); vertical-align: top; line-height: 1.7; }
+        .claims-table td:first-child { white-space: nowrap; font-weight: 700; color: var(--accent); width: 150px; }
+        .ic-compare-tip { background: var(--bg-input); border-left: 3px solid var(--accent); padding: 12px 16px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 0.85rem; line-height: 1.7; margin: 18px 0; color: var(--text-body); }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header class="ic-hero">
+            <h1>Image <span>Compressor</span></h1>
+            <p>Batch-compress JPG, PNG, and WebP images directly in your browser. Drag in as many files as you like, drag the quality slider, and watch the byte count drop — with a live before/after comparison for every image. Nothing is uploaded, so there is no file limit, no queue, and no watermark. Files never leave your device.</p>
+        </header>
+
+        <div class="ic-dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload or drop images to compress">
+            <div class="dz-icon">🖼️</div>
+            <div class="dz-title">Drop images here or click to browse</div>
+            <div class="dz-sub">JPG · PNG · WebP — multiple files supported, no size limit</div>
+            <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" multiple style="display:none" aria-hidden="true">
+        </div>
+
+        <div class="ic-controls">
+            <div class="ic-ctl">
+                <label for="quality-range">Quality</label>
+                <input type="range" id="quality-range" min="10" max="100" value="75" aria-label="Compression quality">
+            </div>
+            <div class="ic-ctl">
+                <label for="quality-num">Value</label>
+                <span class="qlabel" id="quality-num">75%</span>
+            </div>
+            <div class="ic-ctl">
+                <label for="format-select">Output format</label>
+                <select id="format-select" aria-label="Output format">
+                    <option value="auto">Auto (keep original)</option>
+                    <option value="webp">WebP (recommended)</option>
+                    <option value="jpeg">JPEG</option>
+                </select>
+            </div>
+            <div class="ic-actions">
+                <button class="btn btn-outline" id="btn-clear" disabled onclick="icClear()">🗑️ Clear All</button>
+                <button class="btn btn-primary" id="btn-download" disabled onclick="icDownloadAll()">⬇️ Download All</button>
+            </div>
+        </div>
+
+        <div id="ic-grid" class="ic-grid"></div>
+
+        <section class="ic-info">
+            <h2>How the compression works — and why it beats uploading to a service</h2>
+            <div class="ic-compare-tip">
+                <strong>Tip:</strong> drag the quality slider after adding images — every card re-compresses instantly and the before/after numbers update in real time. This live comparison is the honest way to compress: you see the exact byte trade-off instead of trusting a generic "best quality" preset.
+            </div>
+            <p class="ic-para">Most "free" image compressors ask you to upload files to their server, which means your photo lands on someone else's disk, the free tier caps you at 5 MB or 20 images, and you wait in a queue. This tool inverts the model: the browser is the compressor. Your images are decoded by the Canvas API, re-encoded with a quality level you control, and handed back to you as files — all inside this tab. The practical consequences are worth stating explicitly:</p>
+            <table class="claims-table">
+                <tr><td>No upload</td><td>Images are processed as local <code>File</code> objects via the Canvas API and never sent over the network. You can compress sensitive screenshots, design assets under NDA, or client photos without a second thought.</td></tr>
+                <tr><td>No limits</td><td>Because nothing reaches a server, there is no file-size cap and no image-count quota. Compress 200 screenshots in one batch if you need to.</td></tr>
+                <tr><td>Honest comparison</td><td>Every card shows original size, compressed size, and the exact percentage saved — recomputed live as you move the quality slider. You never compress blind.</td></tr>
+                <tr><td>Transparency</td><td>JPG and WebP use lossy compression at your chosen quality; PNG stays lossless (which is why PNGs shrink only when you switch output to WebP). The recommended path for screenshots and illustrations is WebP output.</td></tr>
+                <tr><td>Batch workflow</td><td>Drop a folder of assets, set quality once, download the whole batch as individually named files with a single click.</td></tr>
+            </table>
+
+            <h2 style="margin-top:28px;">What quality setting should you use?</h2>
+            <p class="ic-para">The conventional default is 75%, and for good reason — at 75% most photographic images look identical to the original to the human eye while dropping 60-85% of their file size. If you are compressing for a blog, email newsletter, or portfolio, start at 75% and only go lower (60-70%) if the file still feels heavy. If you are prepping a hero image for a retina display, keep 80-85% to preserve fine gradients. Screenshots with flat UI colors compress exceptionally well in WebP — often 90%+ smaller — because solid-color regions are cheap to encode. The live preview exists precisely so you can make this trade-off with your eyes, not a formula.</p>
+
+            <h2 style="margin-top:28px;">Frequently asked questions</h2>
+            <p class="ic-para">For format choices, quality defaults, and how this tool compares to upload-based services like TinyPNG, see the structured FAQ at the top of this page — or the short version: <strong>WebP output for screenshots and illustrations, JPG at 75% for photos, and never upload anything when the browser can do it locally.</strong></p>
+
+            <p style="margin-top:18px; font-size:0.88rem;">Related tools: <a href="/favicon-generator">Favicon Generator</a> · <a href="/base64-image-encoder">Base64 Image Encoder</a> · <a href="/html-to-jsx">HTML to JSX</a> · <a href="/markdown-preview">Markdown Preview</a> · <a href="/char-counter">Character Counter</a> · <a href="/dev-tools">More Developer Tools</a></p>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        'use strict';
+
+        var grid = document.getElementById('ic-grid');
+        var fileInput = document.getElementById('file-input');
+        var dropzone = document.getElementById('dropzone');
+        var qualityRange = document.getElementById('quality-range');
+        var qualityNum = document.getElementById('quality-num');
+        var formatSelect = document.getElementById('format-select');
+        var btnClear = document.getElementById('btn-clear');
+        var btnDownload = document.getElementById('btn-download');
+
+        // Queue of image items: { name, file, originalSize, originalDataUrl, img, canvas }
+        var queue = [];
+        var MAX_DIMENSION = 4096;
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1048576).toFixed(2) + ' MB';
+        }
+
+        function detectType(name, mime) {
+            var lower = (name || '').toLowerCase();
+            if (lower.indexOf('.webp') !== -1) return 'image/webp';
+            if (lower.indexOf('.png') !== -1) return 'image/png';
+            return mime || 'image/jpeg';
+        }
+
+        function outputMime(item) {
+            var sel = formatSelect.value;
+            if (sel === 'webp') return 'image/webp';
+            if (sel === 'jpeg') return 'image/jpeg';
+            return item.sourceType === 'image/png' && sel === 'auto' ? 'image/png' : (item.sourceType === 'image/webp' ? 'image/webp' : 'image/jpeg');
+        }
+
+        function outputExtension(mime) {
+            if (mime === 'image/png') return '.png';
+            if (mime === 'image/webp') return '.webp';
+            return '.jpg';
+        }
+
+        function outputName(item, mime) {
+            var base = item.name.replace(/\.(jpe?g|png|webp)$/i, '');
+            return base + '-compressed' + outputExtension(mime);
+        }
+
+        // ── Load a file: read metadata, keep original bytes for honest comparison ──
+        function addFiles(fileList) {
+            var files = Array.prototype.slice.call(fileList || []);
+            if (!files.length) return;
+            for (var i = 0; i < files.length; i++) {
+                var f = files[i];
+                if (f.type.indexOf('image/') !== 0) continue;
+                var reader = new FileReader();
+                reader.onload = (function(file) {
+                    return function(e) {
+                        var img = new Image();
+                        img.onload = function() {
+                            var item = {
+                                name: file.name,
+                                sourceType: detectType(file.name, file.type),
+                                originalSize: file.size,
+                                originalDataUrl: e.target.result,
+                                width: img.naturalWidth,
+                                height: img.naturalHeight,
+                                canvas: null,
+                                compressedSize: null,
+                                status: 'ready'
+                            };
+                            item.canvas = buildCanvas(img);
+                            queue.push(item);
+                            renderItem(item);
+                            updateControls();
+                            // 立即执行首次压缩（不等待用户操作）
+                            compressItem(item, outputMime(item));
+                        };
+                        img.src = e.target.result;
+                    };
+                })(f);
+                reader.readAsDataURL(f);
+            }
+        }
+
+        function buildCanvas(img) {
+            var scale = Math.min(1, MAX_DIMENSION / Math.max(img.naturalWidth, img.naturalHeight));
+            var w = Math.max(1, Math.round(img.naturalWidth * scale));
+            var h = Math.max(1, Math.round(img.naturalHeight * scale));
+            var canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            var ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, w, h);
+                ctx.drawImage(img, 0, 0, w, h);
+            }
+            return canvas;
+        }
+
+        // ── Compress one item at the current quality → update its card ──
+        function compressItem(item, mime) {
+            if (!item.canvas) return;
+            var q = parseInt(qualityRange.value, 10) / 100;
+            item.canvas.toBlob(function(blob) {
+                item.compressedSize = blob ? blob.size : 0;
+                item.compressedMime = mime;
+                // Build a data URL for the compressed preview (CSP allows data: in img-src)
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    item.compressedDataUrl = e.target.result;
+                    renderItem(item);
+                };
+                reader.readAsDataURL(blob);
+            }, mime, q);
+        }
+
+        function recompressAll() {
+            for (var i = 0; i < queue.length; i++) {
+                var mime = outputMime(queue[i]);
+                compressItem(queue[i], mime);
+            }
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function renderItem(item) {
+            var idx = queue.indexOf(item);
+            if (idx === -1) return;
+            var card = document.getElementById('ic-card-' + idx);
+            if (!card) {
+                card = document.createElement('div');
+                card.className = 'ic-card';
+                card.id = 'ic-card-' + queue.indexOf(item);
+                grid.appendChild(card);
+            }
+            var mime = outputMime(item);
+            var outName = outputName(item, mime);
+            var save = (item.originalSize > 0 && item.compressedSize !== null) ?
+                Math.round((1 - item.compressedSize / item.originalSize) * 100) : 0;
+            var isPngAuto = (mime === 'image/png');
+            var badge = item.compressedSize !== null ? 'done' : 'wait';
+            var badgeText = item.compressedSize !== null ? '✓ ' + formatBytes(item.compressedSize) : 'Compressing…';
+            var saveHtml;
+            if (item.compressedSize === null) {
+                saveHtml = '<span class="stat-num" style="color:var(--text-muted)">—</span>';
+            } else if (save >= 0) {
+                saveHtml = '<span class="stat-num stat-save">-' + save + '%</span>';
+            } else {
+                saveHtml = '<span class="stat-num stat-larger">+' + Math.abs(save) + '%</span>';
+            }
+            var previewSrc = item.compressedSize !== null ? (item.compressedDataUrl || item.originalDataUrl) : item.originalDataUrl;
+            var barWidth = item.compressedSize !== null ? Math.min(100, Math.max(2, 100 - save)) : 0;
+            var note = isPngAuto ?
+                'PNG is lossless — switch output to WebP to actually shrink it.' :
+                (item.compressedSize !== null ? 'Click preview to open original in a new tab' : '');
+
+            var safeName = escapeHtml(item.name);
+            card.innerHTML =
+                '<div class="card-head"><span class="card-name" title="' + safeName + '">' + safeName + '</span>' +
+                '<span class="card-badge badge-' + badge + '">' + badgeText + '</span></div>' +
+                '<div class="card-imgs">' +
+                    '<div class="img-box"><span class="img-tag">Original</span><img src="' + item.originalDataUrl + '" alt="Original ' + safeName + '"></div>' +
+                    '<div class="img-box"><span class="img-tag">Compressed</span><img src="' + previewSrc + '" alt="Compressed ' + safeName + '"></div>' +
+                '</div>' +
+                '<div class="card-stats">' +
+                    '<div><div class="stat-num">' + formatBytes(item.originalSize) + '</div><div class="stat-lbl">Original</div></div>' +
+                    '<div><div class="stat-num">' + (item.compressedSize !== null ? formatBytes(item.compressedSize) : '…') + '</div><div class="stat-lbl">Compressed</div></div>' +
+                    '<div>' + saveHtml + '<div class="stat-lbl">Saved</div></div>' +
+                '</div>' +
+                '<div class="card-bar"><div class="fill" style="width:' + barWidth + '%"></div></div>' +
+                '<div class="card-foot">' +
+                    '<span class="card-note">' + note + '</span>' +
+                    '<button class="btn btn-outline" style="padding:6px 14px;font-size:0.78rem" onclick="icDownloadOne(' + idx + ')">⬇️ Save</button>' +
+                '</div>';
+        }
+
+        // ── Wire-up ──
+        window.icDownloadOne = function(idx) {
+            var item = queue[idx];
+            if (!item || item.compressedSize === null) return;
+            var mime = outputMime(item);
+            var name = outputName(item, mime);
+            item.canvas.toBlob(function(blob) {
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(function() { URL.revokeObjectURL(url); }, 3000);
+            }, mime, parseInt(qualityRange.value, 10) / 100);
+        };
+
+        window.icDownloadAll = function() {
+            for (var i = 0; i < queue.length; i++) {
+                if (queue[i].compressedSize !== null) icDownloadOne(i);
+            }
+        };
+
+        window.icClear = function() {
+            queue = [];
+            grid.innerHTML = '';
+            updateControls();
+        };
+
+        function updateControls() {
+            var has = queue.length > 0;
+            btnClear.disabled = !has;
+            btnDownload.disabled = !has;
+        }
+
+        dropzone.addEventListener('click', function() { fileInput.click(); });
+        dropzone.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+        });
+        dropzone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+        dropzone.addEventListener('dragleave', function() { dropzone.classList.remove('dragover'); });
+        dropzone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            addFiles(e.dataTransfer.files);
+        });
+        fileInput.addEventListener('change', function() {
+            addFiles(fileInput.files);
+            fileInput.value = '';
+        });
+
+        qualityRange.addEventListener('input', function() {
+            qualityNum.textContent = qualityRange.value + '%';
+            recompressAll();
+        });
+        formatSelect.addEventListener('change', recompressAll);
+    })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>LLM Parameters to INT4 Quant VRAM Calculator — jslet</title>
+    <meta name="description" content="70B at INT4: ~35 GB — fits one A100. At FP16: 140 GB — needs two. Quantization stopped being about accuracy tradeoffs. Now it is whether your model fits on a GPU at all. Model INT4/INT8 footprints. Free, client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="LLM Parameters to INT4 Quant VRAM Calculator — jslet">
+    <meta property="og:description" content="70B at INT4: ~35 GB — barely fits on a single A100-80GB. At FP16 the same model needs 140 GB: two A100s at $6/hr each. Quantization stopped being about accuracy tradeoffs. Now it is about whether your model fits on a GPU at all.">
+    <meta property="og:url" content="https://www.jslet.com/parameters-to-vram-int4">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="LLM Parameters to INT4 Quant VRAM Calculator — jslet">
+    <meta name="twitter:description" content="70B at INT4: ~35 GB — barely fits on a single A100-80GB. At FP16 the same model needs 140 GB: two A100s at $6/hr each. Quantization stopped being about accuracy tradeoffs. Now it is about whether your model fits on a GPU at all.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/parameters-to-vram-int4">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "LLM Parameters to INT4 Quant VRAM Calculator",
+      "description": "70B at INT4: ~35 GB — barely fits on a single A100-80GB. At FP16 the same model needs 140 GB: two A100s at $6/hr each. Quantization stopped being about accuracy tradeoffs. Now it is about whether your model fits on a GPU at all.",
+      "url": "https://www.jslet.com/parameters-to-vram-int4",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much VRAM does an INT4-quantized LLM need?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "INT4 stores each weight in 4 bits (0.5 bytes), so a 70B model needs roughly 35 GB — fitting on one A100. The same model at FP16 needs ~140 GB and two GPUs. The calculator models INT4/INT8 footprints from parameter count, including group-size trade-offs and quantization formats (GPTQ, AWQ, GGUF)."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the accuracy-vs-memory trade-off of quantization?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Smaller group sizes (e.g. 32 vs 128) preserve more accuracy per weight but add memory overhead; larger groups compress more but degrade precision. The calculator shows how group size changes the total footprint, so you can find the setting that fits your GPU while keeping quality acceptable."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which quantization format should I use?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "GPTQ is common for GPU inference with good speed, AWQ optimizes activation-aware quantization for less accuracy loss, and GGUF is the format used by llama.cpp on CPU/edge. The calculator's format section explains the trade-offs so the choice matches your serving stack rather than a default."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>LLM Parameters <span>to INT4 Quant VRAM</span> Calculator</h1>
+            <p>70B at INT4: ~35 GB — barely fits on a single A100-80GB. At FP16 the same model needs 140 GB: two A100s at $6/hr each. Quantization stopped being about accuracy tradeoffs. Now it is about whether your model fits on a GPU at all.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🗜️ Quantization Configuration</h3>
+                <p class="card-desc">Specify your model and quantization parameters. The engine computes compressed weights, scale factor overhead, and compares against the FP16 baseline.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="params">Model Parameter Size (Billion)</label>
+                        <input type="number" class="unit-input" id="params" value="70" step="any" min="0.01">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">e.g. Llama-2-70B → 70</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="bits">Quantization Precision (Bits)</label>
+                        <input type="number" class="unit-input" id="bits" value="4" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">INT4=4, INT8=8</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="group">Group Size</label>
+                        <input type="number" class="unit-input" id="group" value="128" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">GPTQ/AWQ group size</span>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Quant VRAM Estimation Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Quantized VRAM Estimation Results</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div id="recommendations"></div>
+            </div>
+        </main>
+
+        <!-- REFERENCE SECTION -->
+        <section class="seo-section">
+            <h2>INT4 Quantization: How 4-Bit Compression Shrinks LLM VRAM Footprints</h2>
+            <p>Post-training quantization (PTQ) at 4-bit precision is the dominant strategy for running large language models on consumer and prosumer GPUs. Techniques like <strong>GPTQ</strong> (Generative Pre-Trained Transformer Quantization) and <strong>AWQ</strong> (Activation-Aware Weight Quantization) compress model weights from 16 bits to 4 bits — a 4× reduction — with minimal perplexity degradation. However, quantization introduces a second memory cost: <strong>scale factors</strong> stored at higher precision that grow as group size decreases.</p>
+
+            <h3>How This Calculator Works</h3>
+            <p>This tool models the two-component memory footprint of a group-wise quantized model:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Component</th><th>Formula</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Quantized Weights</strong></td><td><code>Parameters × Precision Bits ÷ 8</code></td><td>The compressed weight matrix. At 4 bits, a 70B model stores weights in 35 GiB instead of 140 GiB at FP16 — a 75% reduction.</td></tr>
+                    <tr><td><strong>Scale Overhead</strong></td><td><code>(Parameters ÷ Group Size) × 2 bytes</code></td><td>Each group of weights shares a 16-bit floating-point scale factor. Smaller group sizes improve accuracy but increase scale memory. At group size 128, a 70B model has ~546 million scale factors consuming ~1.02 GiB. At group size 32, that jumps to ~4.07 GiB.</td></tr>
+                    <tr><td><strong>Total VRAM</strong></td><td><code>(Quantized Weights + Scale Overhead) × 1.15</code></td><td>A 15% overhead buffer accounts for activation memory, CUDA context, and the inference framework runtime (e.g., ExLlamaV2, AutoGPTQ).</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>Group Size Trade-Off: Accuracy vs. Memory</h3>
+            <p>Group size is the central tuning knob in GPTQ/AWQ quantization. It defines how many weights share a single scale factor, creating a direct accuracy-memory trade-off:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Group Size</th><th>Scale Overhead (70B Model)</th><th>Accuracy Impact</th><th>Use Case</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>32</strong></td><td>~4.07 GiB</td><td>Negligible perplexity increase. Near-FP16 quality.</td><td>High-quality chat, code generation, academic benchmarks.</td></tr>
+                    <tr><td><strong>64</strong></td><td>~2.04 GiB</td><td>Very minor perplexity increase (~0.1–0.3 PPL).</td><td>General-purpose inference, acceptable for most production use cases.</td></tr>
+                    <tr><td><strong>128</strong></td><td>~1.02 GiB</td><td>Moderate perplexity increase (~0.3–0.8 PPL). Standard GPTQ default.</td><td>Consumer GPU deployment, throughput-optimized serving.</td></tr>
+                    <tr><td><strong>256</strong></td><td>~0.51 GiB</td><td>Noticeable degradation on reasoning tasks.</td><td>Extreme compression, edge devices.</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>INT4 vs. FP16: The Memory Savings Reality</h3>
+            <p>While INT4 theoretically reduces weight memory by 75%, the <strong>effective VRAM savings</strong> are typically 65–72% once scale factors and runtime overhead are accounted for. This is still transformative: a 70B model that requires 2–4 A100 GPUs at FP16 can fit on a <strong>single RTX 4090 (24 GB)</strong> or dual RTX 3090s at INT4. For local inference enthusiasts and small teams, INT4 quantization is the only practical path to running frontier-scale models without enterprise GPU clusters.</p>
+
+            <h3>Quantization Formats: GPTQ vs. AWQ vs. GGUF</h3>
+            <p>Several INT4 quantization ecosystems exist, each with different trade-offs:</p>
+            <ul>
+                <li><strong>GPTQ (GPU-optimized):</strong> One-shot weight quantization with Optimal Brain Quantizer. Best inference throughput on CUDA GPUs via ExLlamaV2 kernels. Requires calibration dataset but produces highly optimized CUDA kernels.</li>
+                <li><strong>AWQ (Activation-Aware):</strong> Similar memory footprint to GPTQ but uses activation statistics to protect salient weight channels. Often yields 0.1–0.5 better perplexity than GPTQ at the same bit-width and group size.</li>
+                <li><strong>GGUF (CPU/Unified Memory):</strong> llama.cpp's format supporting offloading to GPU. Uses k-quant strategies (Q4_K_M, Q4_K_S) that allocate variable bit-widths across layers. Not purely INT4 — some layers retain higher precision. Our calculator models uniform group-wise quantization (GPTQ/AWQ style) rather than mixed-precision GGUF schemes.</li>
+            </ul>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/parameters-to-vram-fp16">FP16 VRAM Estimator &rarr;</a>
+                <a href="/context-window-vram-inflation">KV Cache Inflation &rarr;</a>
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function compute() {
+        var p = parseFloat(document.getElementById('params').value) || 0;
+        var b = parseFloat(document.getElementById('bits').value) || 0;
+        var gs = parseFloat(document.getElementById('group').value) || 128;
+        var w = p * 1e9 * b / 8 / 1073741824;
+        var s = (p * 1e9 / gs) * 2 / 1073741824;
+        var t = (w + s) * 1.15;
+        var fp16 = p * 1e9 * 2 / 1073741824;
+
+        document.getElementById('results-params').innerText =
+            p + 'B parameters · ' + b + '-bit quantization · group size ' + gs;
+
+        document.getElementById('recommendations').innerHTML =
+            '<div class="metric-grid">' +
+                '<div class="metric-tile"><div class="metric-val">' + w.toFixed(2) + ' GiB</div><div class="metric-label">Quantized Weights</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + s.toFixed(2) + ' GiB</div><div class="metric-label">Scale Overhead</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + t.toFixed(2) + ' GiB</div><div class="metric-label">Total VRAM</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + ((1 - t / fp16) * 100).toFixed(0) + '% smaller</div><div class="metric-label">vs FP16</div></div>' +
+            '</div>';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

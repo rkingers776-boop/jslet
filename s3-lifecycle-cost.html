@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>S3 Lifecycle Cost Estimator — Storage Tier TCO With Transition, Penalty &amp; Retrieval | jslet</title>
+    <meta name="description" content="Compare S3 lifecycle strategies across 6 storage classes. Model transition costs, minimum-duration penalties, 128KB object tax, Glacier retrieval fees, and 3-year TCO. Free, client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "S3 Lifecycle Cost Estimator",
+      "description": "Compare S3 lifecycle strategies across Standard, IA, Glacier Instant, Flexible, and Deep Archive. Model transition costs, minimum-duration penalties, and retrieval fees. Free client-side calculator.",
+      "url": "https://www.jslet.com/s3-lifecycle-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <link rel="canonical" href="https://www.jslet.com/s3-lifecycle-cost">
+    <meta property="og:title" content="S3 Lifecycle Cost Estimator — Storage Tier TCO | jslet">
+    <meta property="og:description" content="Compare S3 lifecycle strategies: All Standard vs tiered IA/Glacier. Model transition costs, minimum-duration penalties, 128KB object floor, and retrieval fees.">
+    <meta property="og:url" content="https://www.jslet.com/s3-lifecycle-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="S3 Lifecycle Cost Estimator — jslet">
+    <meta name="twitter:description" content="Model S3 lifecycle TCO: transition costs, minimum-duration penalties, 128KB object floor, and Glacier retrieval. 4 strategies, 3-year TCO.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 650px) { .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; } }
+        select.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono","Cascadia Code",Consolas,monospace; transition: border-color 0.2s,box-shadow 0.2s; appearance: none; cursor: pointer; }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .strategy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 14px; }
+        .strategy-card { padding: 14px 16px; border: 2px solid var(--border); border-radius: var(--radius); cursor: pointer; transition: border-color 0.2s,background 0.2s; text-align: center; background: var(--bg-input); }
+        .strategy-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+        .strategy-card.active { border-color: var(--accent); background: var(--accent-soft); }
+        .strategy-card .strat-name { font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 4px; font-size: 0.90rem; }
+        .strategy-card .strat-desc { font-size: 0.72rem; color: var(--text-muted); line-height: 1.4; }
+        .strategy-card .strat-est { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 0.85rem; font-weight: 700; color: var(--accent); margin-top: 6px; display: block; }
+        .cost-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin-top: 14px; }
+        .cost-table th { background: var(--bg-input); text-align: left; padding: 10px 14px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); border-bottom: 2px solid var(--border); }
+        .cost-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+        .cost-table .num { text-align: right; font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-weight: 700; }
+        .cost-table tr.best-row { background: rgba(13,148,136,0.08); }
+        [data-theme="dark"] .cost-table tr.best-row { background: rgba(77,182,172,0.10); }
+        .cost-table tr.best-row td { border-bottom: 2px solid var(--success); font-weight: 700; }
+        .cost-table tr.best-row td:first-child::before { content: "★ "; color: var(--success); }
+        .breakdown-bar { display: flex; height: 28px; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+        .breakdown-bar .seg { display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; color: #fff; transition: width 0.4s; }
+        .seg-storage { background: #2563eb; } .seg-transition { background: #7c3aed; } .seg-retrieval { background: #dc2626; } .seg-penalty { background: #f59e0b; } .seg-monitor { background: #6b7280; }
+        .callout { background: var(--accent-soft); border-left: 3px solid var(--accent); padding: 12px 16px; margin: 14px 0; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 0.85rem; }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 1.35rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-val.warn { color: #e67e22; }
+        .metric-tile .metric-val.good { color: var(--success); }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .lifecycle-diagram { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0; font-size: 0.80rem; }
+        .lifecycle-step { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 12px; font-weight: 600; color: var(--text-heading); white-space: nowrap; }
+        .lifecycle-arrow { color: var(--accent); font-weight: 700; font-size: 1rem; }
+    </style>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do S3 lifecycle tiers affect cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Moving data from Standard through Infrequent Access to Glacier cuts storage cost per GB dramatically, but adds transition fees and minimum-duration penalties — a 128 KB object tax applies to small objects, and Glacier retrieval costs money when you need the data back. The calculator models all of it across 6 storage classes and 3-year TCO."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the 128 KB object tax?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "S3 charges transition and lifecycle operations per object regardless of size, so millions of small objects pay proportionally more than the same bytes in a few large files. The calculator includes this penalty, which is why compaction strategies (concatenating small files) show up in the comparison."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does Glacier retrieval cost matter in lifecycle planning?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Archive tiers only save money if you rarely read the data — retrieval has a per-GB fee plus restore time. A workload that needs quarterly audits of archived data may be better in Infrequent Access. The calculator models retrieval frequency so the archive decision includes the cost of getting data back."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">›</span> <a href="/cloud-quotas">Cloud Quotas</a> <span class="breadcrumb-sep">›</span> S3 Lifecycle Cost Estimator</nav>
+        <header>
+            <h1>S3 Lifecycle <span>→ Cost Estimator</span></h1>
+            <p>Compare 4 lifecycle strategies across S3 Standard, Intelligent-Tiering, Standard-IA, and all three Glacier classes. Model transition costs, minimum-duration penalties, 128KB object floor, retrieval fees, and 3-year TCO with 2026 pricing.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Storage Workload Profile</h3>
+                <p class="card-desc">Configure your bucket: total data, object count, average object size, and the data age distribution that determines how much data transitions through lifecycle tiers.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group"><label for="total-tb">Total Stored Data (TB)</label><input type="number" class="unit-input" id="total-tb" value="100" step="1" min="0.1"></div>
+                    <div class="input-group"><label for="obj-count">Total Object Count (millions)</label><input type="number" class="unit-input" id="obj-count" value="50" step="0.1" min="0.1"></div>
+                    <div class="input-group"><label for="obj-size-kb">Average Object Size (KB)</label><input type="number" class="unit-input" id="obj-size-kb" value="200" step="1" min="1"></div>
+                </div>
+                <div class="multi-input-row-3" style="margin-top:14px;">
+                    <div class="input-group"><label for="new-data-gb">Monthly New Data (GB)</label><input type="number" class="unit-input" id="new-data-gb" value="500" step="1" min="0"></div>
+                    <div class="input-group"><label for="pct-recent">Data Accessed After 30 Days (%)</label><input type="number" class="unit-input" id="pct-recent" value="20" step="1" min="0" max="100"><span style="font-size:0.72rem;color:var(--text-muted);">% of data accessed in last 30 days (stays in Standard)</span></div>
+                    <div class="input-group"><label for="pct-retrieve">Cold Data Retrieval (%/mo)</label><input type="number" class="unit-input" id="pct-retrieve" value="0.5" step="0.1" min="0" max="100"><span style="font-size:0.72rem;color:var(--text-muted);">% of Glacier-tier data retrieved per month</span></div>
+                </div>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🎯 Lifecycle Strategy Comparison</h3>
+                <p class="card-desc">Click a strategy to see its cost breakdown. All strategies assume data starts in Standard and transitions based on access age.</p>
+                <div class="strategy-grid">
+                    <div class="strategy-card active" id="strat-allstd" onclick="selectStrategy('allstd')"><span class="strat-name">🟦 All Standard</span><span class="strat-desc">Everything in Standard. Zero lifecycle management. Zero transition cost.</span><span class="strat-est" id="est-allstd">—</span></div>
+                    <div class="strategy-card" id="strat-ia-gir" onclick="selectStrategy('ia-gir')"><span class="strat-name">🟩 IA → Glacier Instant</span><span class="strat-desc">30d→IA, 90d→Glacier Instant. Millisecond retrieval. Recommended.</span><span class="strat-est" id="est-ia-gir">—</span></div>
+                    <div class="strategy-card" id="strat-ia-gfr" onclick="selectStrategy('ia-gfr')"><span class="strat-name">🟨 IA → Glacier Flexible</span><span class="strat-desc">30d→IA, 90d→Glacier Flexible. 3-5h retrieval. Best cost/access balance.</span><span class="strat-est" id="est-ia-gfr">—</span></div>
+                    <div class="strategy-card" id="strat-ia-gda" onclick="selectStrategy('ia-gda')"><span class="strat-name">🟥 IA → Glacier Deep Archive</span><span class="strat-desc">30d→IA, 180d→Deep Archive. 12-48h retrieval. Minimum cost.</span><span class="strat-est" id="est-ia-gda">—</span></div>
+                </div>
+
+                <div id="lifecycle-bar" style="margin-top:14px;"></div>
+
+                <div class="metric-grid" id="metric-tiles" style="margin-top:14px;"></div>
+
+                <div class="table-scroll" style="margin-top:14px;">
+                    <table class="cost-table" id="cost-table">
+                        <thead><tr><th>Cost Component</th><th>Monthly</th><th>Annual</th><th>3-Year</th></tr></thead>
+                        <tbody id="cost-tbody"></tbody>
+                    </table>
+                </div>
+
+                <div class="callout" id="warn-128kb" style="display:none;">
+                    <strong>⚠️ 128 KB Minimum Billable Object Size:</strong> Objects smaller than 128 KB stored in IA, Glacier Instant, or Glacier Flexible are billed as 128 KB. <span id="warn-128kb-text"></span>
+                </div>
+
+                <div class="breakdown-bar" id="breakdown-bar"></div>
+                <p style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">■ Storage &nbsp;■ Lifecycle Transitions &nbsp;■ Retrieval &nbsp;■ Min-Duration Penalty &nbsp;■ Monitoring</p>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📊 All Strategies — 3-Year TCO Comparison</h3>
+                <div class="table-scroll">
+                    <table class="cost-table" id="tco-table">
+                        <thead><tr><th>Strategy</th><th>Monthly Storage</th><th>Transition Cost</th><th>Retrieval/Yr</th><th>Penalty/Yr</th><th>Monthly Total</th><th>3-Year TCO</th><th>vs Standard</th></tr></thead>
+                        <tbody id="tco-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>How S3 Lifecycle Pricing Actually Works</h2>
+            <p>S3 charges for storage at the per-GB-month rate of whatever class the object currently occupies. A lifecycle rule moves objects between classes at specified age thresholds — the transition itself costs a small per-request fee ($0.01-0.05 per 1,000 objects). The hidden costs: <strong>minimum storage duration charges</strong> (Standard-IA = 30 days, Glacier classes = 90-180 days — delete or transition an object before the minimum and you pay for the full minimum period), <strong>128 KB minimum billable size</strong> (IA/Glacier classes bill every object as at least 128 KB regardless of actual size — storing 10 KB objects in IA costs 12.8× what the per-GB math suggests), and <strong>retrieval fees</strong> (Glacier classes charge per-GB to retrieve data, from $0.0025/GB bulk up to $0.03/GB expedited). S3 Intelligent-Tiering automates the Standard↔IA transition for $0.0025 per 1,000 objects/month, eliminating lifecycle management but not changing the underlying storage costs.</p>
+        </section>
+
+        <div class="related-tools" style="margin-top:0;">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/cloud-storage-cost">Cloud Storage Cost →</a>
+                <a href="/cloud-storage-cost-real">📰 Cloud Storage: The Egress Trap (Full Briefing) →</a>
+                <a href="/backup-cost">Backup Cost Calculator →</a>
+                <a href="/database-rows-to-storage-est">DB Rows → Storage Est →</a>
+                <a href="/log-storage-cost">Log Storage &amp; Retention TCO →</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    (function() {
+        'use strict';
+
+        // ── S3 Pricing Database (2026, us-east-1) ──
+        var PRICE = {
+            std:      { storage: 0.023,  minDays: 0,   minBytes: 1,     label: 'S3 Standard' },
+            intel:    { storage: 0.023,  minDays: 30,  minBytes: 1,     label: 'Intelligent-Tiering', monitor: 0.0025 },
+            ia:       { storage: 0.0125, minDays: 30,  minBytes: 131072, label: 'S3 Standard-IA' },
+            glacInst: { storage: 0.004,  minDays: 90,  minBytes: 131072, label: 'Glacier Instant', retrieve: { inst: 0.03 } },
+            glacFlex: { storage: 0.0036, minDays: 90,  minBytes: 40960,  label: 'Glacier Flexible', retrieve: { exp: 0.03, std: 0.01, bulk: 0 } },
+            glacDeep: { storage: 0.00099,minDays: 180, minBytes: 40960,  label: 'Glacier Deep Archive', retrieve: { std: 0.02, bulk: 0.0025 } }
+        };
+
+        var TRANSITION_COST = {
+            'std-to-ia': 0.01, 'std-to-gir': 0.05, 'std-to-gfr': 0.05, 'std-to-gda': 0.05,
+            'ia-to-gir': 0.05, 'ia-to-gfr': 0.05, 'ia-to-gda': 0.05
+        };
+
+        // ── Strategy definitions ──
+        var STRATEGIES = {
+            'allstd': {
+                name: 'All Standard',
+                desc: 'Zero lifecycle. All data stays in Standard.',
+                tiers: [{ pct: 100, cls: 'std', transition: null }]
+            },
+            'ia-gir': {
+                name: 'IA → Glacier Instant',
+                desc: '30d→Standard-IA, 90d→Glacier Instant. ms retrieval.',
+                tiers: [
+                    { pct: 20, cls: 'std', transition: null },
+                    { pct: 50, cls: 'ia', transition: 'std-to-ia' },
+                    { pct: 30, cls: 'glacInst', transition: 'ia-to-gir' }
+                ]
+            },
+            'ia-gfr': {
+                name: 'IA → Glacier Flexible',
+                desc: '30d→Standard-IA, 90d→Glacier Flexible. 3-5h retrieval.',
+                tiers: [
+                    { pct: 20, cls: 'std', transition: null },
+                    { pct: 50, cls: 'ia', transition: 'std-to-ia' },
+                    { pct: 30, cls: 'glacFlex', transition: 'ia-to-gfr' }
+                ]
+            },
+            'ia-gda': {
+                name: 'IA → Glacier Deep Archive',
+                desc: '30d→Standard-IA, 180d→Glacier Deep Archive. 12-48h retrieval.',
+                tiers: [
+                    { pct: 20, cls: 'std', transition: null },
+                    { pct: 35, cls: 'ia', transition: 'std-to-ia' },
+                    { pct: 45, cls: 'glacDeep', transition: 'ia-to-gda' }
+                ]
+            }
+        };
+
+        var activeStrategy = 'ia-gir';
+
+        function fmt(n) { return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+        function fmtInt(n) { return n.toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+
+        function compute() {
+            var totalTB = parseFloat(document.getElementById('total-tb').value) || 100;
+            var objCountM = parseFloat(document.getElementById('obj-count').value) || 50;
+            var objSizeKB = parseFloat(document.getElementById('obj-size-kb').value) || 200;
+            var newDataGB = parseFloat(document.getElementById('new-data-gb').value) || 500;
+            var pctRecent = parseFloat(document.getElementById('pct-recent').value) || 20;
+            var pctRetrieve = parseFloat(document.getElementById('pct-retrieve').value) || 0.5;
+
+            var totalGB = totalTB * 1024;
+            var objCount = objCountM * 1000000;
+            var objSizeBytes = objSizeKB * 1024;
+            var pctRecentFrac = pctRecent / 100;
+            var pctRetrieveFrac = pctRetrieve / 100;
+
+            // ── Compute per-strategy TCO ──
+            var tcoRows = [];
+
+            for (var stratKey in STRATEGIES) {
+                var s = STRATEGIES[stratKey];
+                var monthlyStorage = 0;
+                var transitionOneTime = 0;
+                var penaltyMonthly = 0;
+                var retrievalMonthly = 0;
+                var monitorMonthly = 0;
+
+                for (var i = 0; i < s.tiers.length; i++) {
+                    var t = s.tiers[i];
+                    var p = s.tiers[i];
+                    var tierGB = totalGB * (p.pct / 100);
+                    var tierObj = objCount * (p.pct / 100);
+                    var clsData = PRICE[p.cls];
+
+                    // Storage cost
+                    var effectiveGB = tierGB;
+                    if (clsData.minBytes > 1 && objSizeBytes < clsData.minBytes) {
+                        effectiveGB = tierObj * clsData.minBytes / (1024*1024*1024);
+                    }
+                    monthlyStorage += effectiveGB * clsData.storage;
+
+                    // Minimum duration penalty for new data entering this tier
+                    if (clsData.minDays > 0) {
+                        var churnRate = 0.01; // assume 1% monthly churn before min duration
+                        var penaltyGB = tierGB * churnRate;
+                        var penaltyMonths = clsData.minDays / 30;
+                        penaltyMonthly += penaltyGB * clsData.storage * (penaltyMonths / 12); // amortized
+                    }
+
+                    // Transition cost (one-time per object entering this tier from lifecycle)
+                    if (p.transition && TRANSITION_COST[p.transition]) {
+                        transitionOneTime += tierObj / 1000 * TRANSITION_COST[p.transition];
+                    }
+
+                    // Retrieval cost
+                    if (clsData.retrieve) {
+                        var retrieveGB = tierGB * pctRetrieveFrac;
+                        var bestRetrieve = clsData.retrieve.bulk || clsData.retrieve.std || clsData.retrieve.inst || 0;
+                        retrievalMonthly += retrieveGB * bestRetrieve;
+                    }
+
+                    // Intelligent-Tiering monitoring
+                    if (clsData.monitor) {
+                        monitorMonthly += tierObj / 1000 * clsData.monitor;
+                    }
+                }
+
+                var monthlyTotal = monthlyStorage + retrievalMonthly + penaltyMonthly + monitorMonthly;
+                var annualTotal = monthlyTotal * 12 + transitionOneTime;
+                var threeYear = monthlyTotal * 36 + transitionOneTime;
+
+                tcoRows.push({
+                    key: stratKey,
+                    name: s.name,
+                    storage: monthlyStorage,
+                    transition: transitionOneTime,
+                    retrieval: retrievalMonthly,
+                    penalty: penaltyMonthly,
+                    monitor: monitorMonthly,
+                    monthly: monthlyTotal,
+                    annual: annualTotal,
+                    threeYear: threeYear
+                });
+            }
+
+            // Find best (cheapest 3-year TCO)
+            var bestThreeYear = Infinity;
+            tcoRows.forEach(function(r) { if (r.threeYear < bestThreeYear) bestThreeYear = r.threeYear; });
+            var allStdRow = tcoRows[0]; // first row is All Standard (baseline)
+
+            // ── Render TCO table ──
+            var tcoTbody = tcoRows.map(function(r) {
+                var bestClass = (r.threeYear === bestThreeYear) ? ' class="best-row"' : '';
+                var vsStd = allStdRow.threeYear > 0 ? ((r.threeYear - allStdRow.threeYear) / allStdRow.threeYear * 100).toFixed(0) : '0';
+                var vsStdStr = (parseInt(vsStd) <= 0) ? '<span style="color:var(--success);">' + vsStd + '%</span>' : '<span style="color:var(--error);">+' + vsStd + '%</span>';
+                return '<tr' + bestClass + '><td><strong>' + r.name + '</strong></td><td class="num">' + fmt(r.storage) + '</td><td class="num">' + fmt(r.transition) + '</td><td class="num">' + fmt(r.retrieval*12) + '</td><td class="num">' + fmt(r.penalty*12) + '</td><td class="num" style="color:var(--accent);">' + fmt(r.monthly) + '</td><td class="num" style="font-size:1.05rem;">' + fmt(r.threeYear) + '</td><td class="num">' + vsStdStr + '</td></tr>';
+            }).join('');
+            document.getElementById('tco-tbody').innerHTML = tcoTbody;
+
+            // ── Update strategy card estimates ──
+            tcoRows.forEach(function(r) {
+                var el = document.getElementById('est-' + r.key);
+                if (el) el.textContent = fmt(r.monthly) + '/mo';
+            });
+
+            // ── Render active strategy detail ──
+            renderActiveDetail(tcoRows);
+
+            // ── Update strategy card active states ──
+            document.querySelectorAll('.strategy-card').forEach(function(c) { c.classList.remove('active'); });
+            var activeEl = document.getElementById('strat-' + activeStrategy);
+            if (activeEl) activeEl.classList.add('active');
+        }
+
+        function renderActiveDetail(tcoRows) {
+            var s = STRATEGIES[activeStrategy];
+            var row = null;
+            for (var i = 0; i < tcoRows.length; i++) {
+                if (tcoRows[i].key === activeStrategy) { row = tcoRows[i]; break; }
+            }
+            if (!row) return;
+
+            // Lifecycle bar
+            var stepsHtml = s.tiers.map(function(t) {
+                return '<span class="lifecycle-step">' + PRICE[t.cls].label + ' (' + t.pct + '%)</span>';
+            }).join('<span class="lifecycle-arrow">→</span>');
+            document.getElementById('lifecycle-bar').innerHTML = '<div class="lifecycle-diagram">' + stepsHtml + '</div>';
+
+            // Metric tiles
+            document.getElementById('metric-tiles').innerHTML =
+                '<div class="metric-tile"><div class="metric-val good">' + fmt(row.monthly) + '</div><div class="metric-label">Monthly Total</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + fmt(row.storage) + '</div><div class="metric-label">Storage/Mo</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + fmt(row.transition) + '</div><div class="metric-label">One-Time Transition</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + fmt(row.threeYear) + '</div><div class="metric-label">3-Year TCO</div></div>';
+
+            // Cost detail table
+            document.getElementById('cost-tbody').innerHTML =
+                '<tr><td>Storage</td><td class="num">' + fmt(row.storage) + '</td><td class="num">' + fmt(row.storage * 12) + '</td><td class="num">' + fmt(row.storage * 36) + '</td></tr>' +
+                '<tr><td>Lifecycle Transitions</td><td class="num">' + fmt(row.transition) + ' (one-time)</td><td class="num">—</td><td class="num">—</td></tr>' +
+                '<tr><td>Retrieval</td><td class="num">' + fmt(row.retrieval) + '</td><td class="num">' + fmt(row.retrieval * 12) + '</td><td class="num">' + fmt(row.retrieval * 36) + '</td></tr>' +
+                '<tr><td>Min-Duration Penalty (amortized)</td><td class="num">' + fmt(row.penalty) + '</td><td class="num">' + fmt(row.penalty * 12) + '</td><td class="num">' + fmt(row.penalty * 36) + '</td></tr>' +
+                (row.monitor > 0 ? '<tr><td>Intelligent-Tiering Monitoring</td><td class="num">' + fmt(row.monitor) + '</td><td class="num">' + fmt(row.monitor * 12) + '</td><td class="num">' + fmt(row.monitor * 36) + '</td></tr>' : '') +
+                '<tr style="border-top:2px solid var(--border);font-weight:700;"><td><strong>Total</strong></td><td class="num" style="color:var(--accent);">' + fmt(row.monthly) + '</td><td class="num">' + fmt(row.annual) + '</td><td class="num" style="font-size:1.05rem;">' + fmt(row.threeYear) + '</td></tr>';
+
+            // 128KB warning
+            var objSizeKB = parseFloat(document.getElementById('obj-size-kb').value) || 200;
+            var hasIaOrGlacier = false;
+            s.tiers.forEach(function(t) {
+                if (PRICE[t.cls].minBytes > 1) hasIaOrGlacier = true;
+            });
+            if (hasIaOrGlacier && objSizeKB < 128) {
+                document.getElementById('warn-128kb').style.display = '';
+                var wastedPct = ((128 - objSizeKB) / objSizeKB * 100).toFixed(0);
+                document.getElementById('warn-128kb-text').textContent = 'Your ' + objSizeKB + ' KB objects in IA/Glacier tiers are billed at 128 KB — ' + wastedPct + '% more than actual size. Consider aggregating small objects or keeping them in Standard.';
+            } else {
+                document.getElementById('warn-128kb').style.display = 'none';
+            }
+
+            // Breakdown bar
+            var total = row.monthly;
+            if (total <= 0) total = 1;
+            var segs = [
+                { v: row.storage, cls: 'seg-storage', label: 'Storage ' + (row.storage/total*100).toFixed(0) + '%' },
+                { v: row.transition / 36, cls: 'seg-transition', label: 'Trans' },
+                { v: row.retrieval, cls: 'seg-retrieval', label: 'Retrieval' },
+                { v: row.penalty, cls: 'seg-penalty', label: 'Penalty' },
+                { v: row.monitor, cls: 'seg-monitor', label: 'Monitor' }
+            ];
+            var barHtml = '';
+            segs.forEach(function(seg) {
+                if (seg.v > 0.01) {
+                    barHtml += '<div class="seg ' + seg.cls + '" style="width:' + (seg.v/total*100).toFixed(1) + '%">' + seg.label + '</div>';
+                }
+            });
+            document.getElementById('breakdown-bar').innerHTML = barHtml;
+        }
+
+        window.selectStrategy = function(key) {
+            activeStrategy = key;
+            compute();
+        };
+
+        // ── Event bindings ──
+        var inputs = document.querySelectorAll('input[type="number"]');
+        inputs.forEach(function(el) { el.addEventListener('input', compute); });
+        document.addEventListener('DOMContentLoaded', compute);
+    })();
+    </script>
+    <script src="nav.js"></script>
+</body>
+</html>

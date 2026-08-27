@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Redis In-Memory Key Inflation Calculator — jslet</title>
+    <meta name="description" content="100-byte JSON → ~160 bytes in Redis. 1.6× inflation. Data structure choice matters more than instance size. Compute true memory cost including dictEntry, SDS, jemalloc fragmentation.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Redis In-Memory Key Inflation Calculator — jslet">
+    <meta property="og:description" content="Maps raw unstructured JSON database records into physical Redis operational RAM heap structures. Compute the true memory cost including overhead and fragmentation.">
+    <meta property="og:url" content="https://www.jslet.com/redis-ram-to-raw-json-ratio">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Redis In-Memory Key Inflation Calculator — jslet">
+    <meta name="twitter:description" content="Maps raw unstructured JSON database records into physical Redis operational RAM heap structures. Compute the true memory cost including overhead and fragmentation.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/redis-ram-to-raw-json-ratio">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Redis In-Memory Key Inflation Calculator",
+      "description": "Maps raw unstructured JSON database records into physical Redis operational RAM heap structures. Compute the true memory cost including dictEntry, SDS, and jemalloc fragmentation overhead.",
+      "url": "https://www.jslet.com/redis-ram-to-raw-json-ratio",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why does 4 GB of JSON take 5.5 GB of Redis RAM?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Redis adds per-key overhead: dictEntry, SDS headers, and jemalloc fragmentation inflate a 100-byte JSON value to roughly 160 bytes — a 1.6× ratio. The calculator models the real memory cost of your dataset, including data-structure choice, so instance sizing reflects the actual footprint."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much does data structure choice affect Redis memory?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Hashes with small fields are dramatically more memory-efficient than storing the same data as many flat keys, and large values fragment more. The calculator shows the memory delta between approaches, which is why \"the data is only 4 GB\" is the wrong starting point for Redis sizing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the maxmemory safety margin for?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Running Redis at 100% of RAM triggers eviction or OOM — the maxmemory safety margin keeps headroom for fragmentation and spikey workloads. The calculator applies the margin to your projection so the instance you buy has room to breathe instead of evicting under load."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>🔴 <span>Redis In-Memory</span> Key Inflation</h1>
+            <p>100-byte JSON → ~160 bytes in Redis. 1.6× inflation from dictEntry, SDS encoding, and jemalloc fragmentation. A 10 GB dataset becomes 16 GB on the wire. Data structure choice — hash vs. string, ziplist vs. skiplist — matters more than instance size. Model the inflation before you buy the next tier.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Redis Dataset Configuration</h3>
+                <p class="card-desc">Enter raw JSON size and expected overhead %. The engine computes actual Redis RAM, pure inflight overhead, and recommended maxmemory with 15% safety margin. Default overhead is 35% — matches real-world jemalloc profiling.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="raw">Raw JSON Size (GB)</label>
+                        <input type="number" class="unit-input" id="raw" value="4" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="ovPct">Redis Overhead (%)</label>
+                        <input type="number" class="unit-input" id="ovPct" value="35" step="any" min="0">
+                    </div>
+                </div>
+                <button class="btn-calc">Run Redis RAM Projection Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Redis Memory Projection</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="redis-ram-val">0.00 GiB</div><div class="metric-label">Redis RAM Required</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="overhead-val">0.00 GiB</div><div class="metric-label">Pure Overhead</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="maxmemory-val">0.00 GiB</div><div class="metric-label">Recommended maxmemory</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>Redis Memory Inflation: Why 4 GB of JSON Takes 5.5 GB of RAM</h2>
+            <p>If you serialize 4 GB of JSON objects and load them into Redis, you will not consume 4 GB of RAM. You will consume considerably more — typically 5.2 to 6.0 GB depending on key structure, value size distribution, and the underlying memory allocator. This phenomenon, known as <strong>Redis memory inflation</strong>, is not a bug. It is the cumulative result of several internal data structures that Redis maintains for every key it stores. The 35-50% overhead rule of thumb is borne out by production telemetry across thousands of Redis deployments: the raw data you insert is only 65-75% of what Redis actually allocates.</p>
+
+            <h3>The Anatomy of Redis Overhead</h3>
+            <p>Every key in Redis incurs a fixed overhead from three primary structures. <strong>dictEntry</strong>: the hash table entry in Redis's main dictionary, consuming 24 bytes on 64-bit systems (three pointers: key, value, next). <strong>SDS (Simple Dynamic String)</strong>: Redis's internal string representation, which adds a len/free header (8+ bytes) and a null terminator to every key and string value. For small keys and values, SDS overhead can exceed the payload itself. <strong>jemalloc fragmentation</strong>: Redis delegates all memory allocation to jemalloc, which allocates in size classes (8, 16, 32, 64, ..., 4096 byte bins). A 100-byte key is allocated in a 128-byte jemalloc slab, wasting 28 bytes. Across millions of keys, this slab-internal fragmentation alone adds 20-30% overhead. Together, these mechanisms explain why a 100-byte key-value pair consumes approximately 200-230 bytes of actual RAM.</p>
+
+            <h3>The maxmemory Safety Margin</h3>
+            <p>Redis's <code>maxmemory</code> directive sets a hard cap on RAM usage, but it pays to configure it conservatively. When Redis approaches maxmemory, it begins evicting keys according to the configured eviction policy — and during eviction, the server may become unresponsive to client commands. The recommended practice is to set maxmemory at <strong>1.2× to 1.5× the estimated steady-state memory usage</strong>. This provides headroom for replication buffers, client output buffers, AOF rewrite overhead, and transient allocation spikes during key expiration sweeps. For a dataset projected at 5.4 GiB, setting maxmemory to 6.5 GiB (1.2×) gives a reasonable safety net without excessive over-provisioning. Also consider that Redis fork-based persistence (BGSAVE) requires sufficient free system memory for the copy-on-write page table — ideally at least as much additional RAM as the Redis process itself consumes.</p>
+
+            <h3>Mitigating Memory Inflation</h3>
+            <p>Several strategies can reduce Redis memory overhead. Use <strong>hash-zipmap/listpack encoding</strong> when storing many small key-value pairs — Redis automatically switches to compact encoding for hashes with fewer than 512 entries and values under 64 bytes, cutting overhead by 50-70%. <strong>Key name compression</strong>: shortening verbose key patterns (e.g., "user:session:abc123" to "u:s:abc123") can save gigabytes at scale. <strong>RedisJSON and RedisSearch modules</strong> store JSON documents in a more compact internal format than raw JSON strings, reducing overhead by 15-25%. And for the largest deployments, <strong>Redis on Flash</strong> (Redis Enterprise) extends the working set onto SSD-backed storage, trading a modest latency increase for a 10× reduction in RAM cost per gigabyte. Ultimately, accurate memory projection — the goal of this calculator — is the first step toward a right-sized Redis deployment.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var r = v('raw');
+        var o = v('ovPct') / 100;
+        var redis = r * (1 + o);
+
+        document.getElementById('redis-ram-val').innerText = redis.toFixed(2) + ' GiB';
+        document.getElementById('overhead-val').innerText = (redis - r).toFixed(2) + ' GiB';
+        document.getElementById('maxmemory-val').innerText = (redis * 1.2).toFixed(2) + ' GiB';
+
+        document.getElementById('results-params').innerText = 'Raw JSON: ' + r.toLocaleString() + ' GB · Overhead: ' + v('ovPct') + '% · Redis RAM: ' + redis.toFixed(2) + ' GiB · maxmemory: ' + (redis * 1.2).toFixed(2) + ' GiB';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

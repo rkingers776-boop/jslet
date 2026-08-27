@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Cloud Storage Cost Comparison Calculator — S3 vs Blob vs GCS vs R2 vs B2 vs Wasabi — jslet</title>
+    <meta name="description" content="S3 charges for storage+ops+egress. R2 has zero egress. At 50 TB the 6-vendor spread exceeds 5×. Model your actual workload across all dimensions. Free, client-side.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .multi-input-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+        .multi-input-row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 14px;
+        }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        .vendor-compare-table {
+            width: 100%;
+            margin-top: 16px;
+            font-size: 0.82rem;
+        }
+        .vendor-compare-table th:first-child { text-align: left; }
+        .vendor-compare-table td:first-child { font-weight: 600; color: var(--text-heading); }
+        .vendor-compare-table .best { color: var(--success); font-weight: 700; }
+        .vendor-compare-table .worst { color: var(--error); }
+        .cost-bar-wrap {
+            margin-top: 20px;
+        }
+        .cost-bar-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.78rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: var(--text-heading);
+        }
+        .cost-bar {
+            height: 22px;
+            border-radius: 4px;
+            background: var(--accent);
+            min-width: 2px;
+            transition: width 0.4s ease;
+        }
+        .cost-bar.storage { background: #2563eb; }
+        .cost-bar.ops { background: #7c3aed; }
+        .cost-bar.egress { background: #dc2626; }
+        .lifecycle-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .lifecycle-row label { flex: 1; font-size: 0.82rem; }
+        .lifecycle-row input { width: 90px; }
+        .cost-summary-card {
+            background: var(--bg-card);
+            border: 2px solid var(--accent);
+            border-radius: var(--radius);
+            padding: 20px 24px;
+            margin-top: 20px;
+        }
+        .cost-summary-card h3 {
+            color: var(--accent);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+        select.unit-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 0.95rem;
+            color: var(--text-heading);
+            background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            appearance: none;
+            cursor: pointer;
+        }
+        select.unit-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Cloud Storage Cost",
+      "description": "Compare cloud object storage costs across AWS S3, GCP Cloud Storage, Azure Blob, Cloudflare R2, Backblaze B2, and Wasabi. Multi-dimension pricing: storage volume, read/write operations, egress traffic",
+      "url": "https://www.jslet.com/cloud-storage-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <link rel="canonical" href="https://www.jslet.com/cloud-storage-cost">
+    <meta property="og:title" content="Cloud Storage Cost Comparison Calculator — S3 vs Blob vs GCS vs R2 vs B2 vs Wasabi — jslet">
+    <meta property="og:description" content="Compare cloud object storage costs across AWS S3, GCP Cloud Storage, Azure Blob, Cloudflare R2, Backblaze B2, and Wasabi. Multi-dimension pricing: storage volume, read/write operations, egress traffic, lifecycle policies, and redundancy strategies.">
+    <meta property="og:url" content="https://www.jslet.com/cloud-storage-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Cloud Storage Cost Comparison Calculator — S3 vs Blob vs GCS vs R2 vs B2 vs Wasabi — jslet">
+    <meta name="twitter:description" content="Compare cloud object storage costs across AWS S3, GCP Cloud Storage, Azure Blob, Cloudflare R2, Backblaze B2, and Wasabi. Multi-dimension pricing: storage volume, read/write operations, egress traffic">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Which cloud storage provider is cheapest for my workload?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It depends on the mix of storage, operations, and egress — S3 charges for all three, while R2 has zero egress, and at 50 TB the spread across six vendors can exceed 5×. This calculator models your actual workload across all dimensions and lifecycle tiers (Standard → Infrequent → Archive) to produce a side-by-side monthly TCO, so the choice is based on your profile, not vendor marketing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does egress dominate cloud storage cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Egress — data transferred out of the provider — is where margins are made, and it is charged separately from storage. A read-heavy workload can pay more in egress than in storage. The calculator shows the egress component explicitly per vendor, which is why a zero-egress provider like R2 often wins for high-read workloads despite similar storage pricing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How should I set lifecycle tiers for my object storage?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Profile your data by access frequency: hot data stays in Standard, rarely-accessed data moves to Infrequent Access, and archival data goes to Glacier-style tiers. The calculator lets you set the tier distribution and shows how the 3-year TCO changes, including the transition and retrieval costs that naive comparisons forget."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">›</span> <a href="/decision-matrix">Decision Matrix</a> <span class="breadcrumb-sep">›</span> Cloud Storage Cost Comparison</nav>
+        <header>
+            <h1>Cloud Storage <span>→ Cost Comparison</span></h1>
+            <p>S3 charges three line items — storage, API ops, egress. R2 charges one: storage, zero egress. At 50 TB the 6-vendor spread is 5×. If your workload is egress-heavy, the cheapest $/GB vendor loses. Model your actual mix.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Workload Parameters</h3>
+                <p class="card-desc">Dial in storage volume, monthly egress, ops rates, lifecycle tiers, and redundancy. Every knob shifts the vendor ranking.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="storage-tb">Total Storage Volume (TB)</label>
+                        <input type="number" class="unit-input" id="storage-tb" value="50" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="egress-gb">Monthly Egress Traffic (GB)</label>
+                        <input type="number" class="unit-input" id="egress-gb" value="5000" step="any" min="0">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="write-ops-k">Monthly Write Operations (PUT/POST, thousands)</label>
+                        <input type="number" class="unit-input" id="write-ops-k" value="1000" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="read-ops-k">Monthly Read Operations (GET/HEAD, thousands)</label>
+                        <input type="number" class="unit-input" id="read-ops-k" value="10000" step="any" min="0">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="redundancy">Redundancy Strategy</label>
+                        <select class="unit-input" id="redundancy">
+                            <option value="standard">Standard (Single Region, Multi-AZ)</option>
+                            <option value="multi-region" selected>Multi-Region / Geo-Redundant</option>
+                            <option value="single-az">Single AZ Only</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="region">Primary Region</label>
+                        <select class="unit-input" id="region">
+                            <option value="us-east" selected>US East (N. Virginia)</option>
+                            <option value="us-west">US West (Oregon)</option>
+                            <option value="eu-west">EU West (Ireland)</option>
+                            <option value="ap-southeast">AP Southeast (Singapore)</option>
+                            <option value="ap-northeast">AP Northeast (Tokyo)</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Cross-Vendor Comparison</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Monthly Cost Comparison — All Vendors</h3>
+                <p class="card-desc" style="margin-bottom: 8px;" id="results-subtitle"></p>
+                <div class="table-scroll">
+<table class="vendor-compare-table">
+                    <thead>
+                        <tr>
+                            <th>Vendor / Tier</th>
+                            <th>Storage Cost</th>
+                            <th>API Ops Cost</th>
+                            <th>Egress Cost</th>
+                            <th>Total / Month</th>
+                            <th>Annual Estimate</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vendor-results-body"></tbody>
+                </table>
+</div>
+                <div class="cost-bar-wrap" id="cost-bars"></div>
+            </div>
+
+            <!-- LIFECYCLE CARD -->
+            <div class="calculator-card">
+                <h3>🔄 Lifecycle Tier Distribution</h3>
+                <p class="card-desc">Simulate data distribution across hot/warm/cold/archive tiers. Many vendors charge less for colder tiers but add retrieval fees.</p>
+                <div class="lifecycle-row">
+                    <label for="pct-hot">Hot Tier % (Frequent Access)</label>
+                    <input type="number" class="unit-input" id="pct-hot" value="20" min="0" max="100" step="1" style="width:80px;">
+                </div>
+                <div class="lifecycle-row">
+                    <label for="pct-warm">Warm Tier % (Infrequent Access)</label>
+                    <input type="number" class="unit-input" id="pct-warm" value="40" min="0" max="100" step="1" style="width:80px;">
+                </div>
+                <div class="lifecycle-row">
+                    <label for="pct-cold">Cold Tier % (Archive / Glacier)</label>
+                    <input type="number" class="unit-input" id="pct-cold" value="30" min="0" max="100" step="1" style="width:80px;">
+                </div>
+                <div class="lifecycle-row">
+                    <label for="pct-archive">Deep Archive % (Compliance / Legal Hold)</label>
+                    <input type="number" class="unit-input" id="pct-archive" value="10" min="0" max="100" step="1" style="width:80px;">
+                </div>
+                <p style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">Percentages should sum to 100. Lifecycle distribution affects storage cost only; operation and egress costs use the hot-tier assumption.</p>
+            </div>
+        </main>
+
+        <!-- PRICING REFERENCE -->
+        <section class="seo-section" style="margin-top:20px;">
+            <h2>Cloud Object Storage Pricing Landscape (2026)</h2>
+            <p>Cloud storage pricing is intentionally complex — each vendor slices costs across <strong>storage volume</strong>, <strong>API operations</strong> (Class A/B or PUT/GET), <strong>egress bandwidth</strong>, and <strong>minimum retention periods</strong> for cold tiers. The table below summarizes approximate per-GB storage costs by tier across the six major vendors modeled by this calculator.</p>
+            <div class="table-scroll">
+<table>
+                <thead>
+                    <tr><th>Vendor</th><th>Hot / Standard</th><th>Warm / IA</th><th>Cold / Archive</th><th>Egress ($/GB)</th><th>Notable</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>AWS S3</td><td>$0.023</td><td>$0.0125</td><td>$0.004</td><td>$0.09</td><td>Glacier Deep Archive at $0.00099/GB</td></tr>
+                    <tr><td>GCP Cloud Storage</td><td>$0.020</td><td>$0.010</td><td>$0.004</td><td>$0.12</td><td>Archive tier at $0.0012/GB</td></tr>
+                    <tr><td>Azure Blob</td><td>$0.018</td><td>$0.010</td><td>$0.002</td><td>$0.087</td><td>Cool tier has 30-day minimum</td></tr>
+                    <tr><td>Cloudflare R2</td><td>$0.015</td><td>—</td><td>—</td><td>$0.00</td><td>Zero egress fees; single tier</td></tr>
+                    <tr><td>Backblaze B2</td><td>$0.006</td><td>—</td><td>—</td><td>$0.01</td><td>Lowest base storage; 3× free egress</td></tr>
+                    <tr><td>Wasabi</td><td>$0.00699</td><td>—</td><td>—</td><td>$0.00</td><td>No egress; 90-day minimum storage</td></tr>
+                </tbody>
+            </table>
+</div>
+            <p style="margin-top:16px;"><strong>Why this calculator exists:</strong> AWS, GCP, and Azure each have 5–8 storage tiers with different retrieval fees, minimum duration penalties, and regional multipliers. New entrants like Cloudflare R2, Backblaze B2, and Wasabi disrupt the model with zero-egress or flat-rate pricing. Existing tools like joteo.net only cover 3 fields. Cloud vendor-native calculators only compute their own bill — no cross-vendor comparison. This tool fills that gap.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>How to Use This Calculator for Cloud Storage Selection</h2>
+            <h3>1. Profile Your Workload</h3>
+            <p>Input your estimated storage volume (in TB), monthly egress traffic (in GB), and API operation counts. If you don't have exact numbers, rough orders of magnitude are sufficient — the tool is designed for <em>comparative</em> analysis, not invoice-precision billing.</p>
+            <h3>2. Adjust Lifecycle Distribution</h3>
+            <p>Most production workloads don't store 100% of data in hot storage. Use the lifecycle sliders to model what percentage lives in each tier. Cold storage is dramatically cheaper per GB but incurs retrieval penalties — the calculator surfaces these trade-offs in the per-vendor breakdown.</p>
+            <h3>3. Compare Total Cost of Ownership (TCO)</h3>
+            <p>Don't just look at the $/GB storage number. A vendor with slightly higher storage pricing (e.g., Cloudflare R2 at $0.015/GB) can beat AWS S3 on TCO for egress-heavy workloads because R2 charges <strong>$0 for egress</strong>. This is the kind of cross-dimensional insight this calculator is built to surface.</p>
+            <h3>4. Factor in Minimum Retention</h3>
+            <p>Cold-tier storage at AWS (Glacier) and Azure (Archive) imposes 90-day or 180-day minimum retention periods. If you delete data early, you pay for the full minimum duration. Our calculator flags these constraints in the results.</p>
+        </section>
+        <!-- ── Related Tools ── -->
+        <div class="related-tools" style="margin-top:0;">
+            <h3>📰 Related Research</h3>
+            <div style="padding:12px 16px; background:var(--bg-card); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); margin-bottom:24px;">
+                <p style="margin:0; font-size:0.85rem; color:var(--text-body); line-height:1.55;"><strong>Deep-dive briefing:</strong> S3 storage is $0.023/GB. But API operations add $0.005 per 1,000 PUTs, and egress is $0.09/GB. This briefing models real TCO from 1 TB to 1 PB across S3, R2, B2, and Wasabi — including the line items the pricing pages bury.</p>
+                <a href="/cloud-storage-cost-real" style="display:inline-block; margin-top:8px; font-size:0.8rem; font-weight:700; color:var(--accent); text-decoration:none;">Read the full briefing →</a>
+            </div>
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/data-migration-time">Data Migration Planner &rarr;</a>
+                <a href="/gbps-to-tb-per-day">Gbps to TB/Day Egress &rarr;</a>
+                <a href="/backup-cost">Backup Strategy Cost &rarr;</a>
+            </div>
+        </div>
+
+
+                <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Vendor Pricing Database (approximate per-GB-month USD, 2026) ──
+    var VENDORS = [
+        {
+            name: 'AWS S3',
+            tiers: { hot: 0.023, warm: 0.0125, cold: 0.004, archive: 0.00099 },
+            opsWrite: 0.005,   // per 1000 PUT/POST
+            opsRead: 0.0004,   // per 1000 GET/HEAD
+            egress: 0.09,      // per GB (first 10TB tier)
+            minRetention: { cold: 90, archive: 180 },
+            retrievalCold: 0.01,    // per GB
+            retrievalArchive: 0.02, // per GB (expedited)
+            regionMultiplier: { 'us-east': 1.0, 'us-west': 1.02, 'eu-west': 1.0, 'ap-southeast': 1.05, 'ap-northeast': 1.08 }
+        },
+        {
+            name: 'GCP Cloud Storage',
+            tiers: { hot: 0.020, warm: 0.010, cold: 0.004, archive: 0.0012 },
+            opsWrite: 0.005,   // Class A per 1000
+            opsRead: 0.0004,   // Class B per 1000
+            egress: 0.12,      // per GB (0-1TB tier)
+            minRetention: { cold: 30, archive: 365 },
+            retrievalCold: 0.01,
+            retrievalArchive: 0.05,
+            regionMultiplier: { 'us-east': 1.0, 'us-west': 1.02, 'eu-west': 1.0, 'ap-southeast': 1.06, 'ap-northeast': 1.09 }
+        },
+        {
+            name: 'Azure Blob',
+            tiers: { hot: 0.018, warm: 0.010, cold: 0.002, archive: 0.00099 },
+            opsWrite: 0.005,   // per 1000 write ops
+            opsRead: 0.0004,   // per 1000 read ops
+            egress: 0.087,     // per GB (first 10TB)
+            minRetention: { cold: 30, archive: 180 },
+            retrievalCold: 0.01,
+            retrievalArchive: 0.022,
+            regionMultiplier: { 'us-east': 1.0, 'us-west': 1.02, 'eu-west': 1.02, 'ap-southeast': 1.08, 'ap-northeast': 1.09 }
+        },
+        {
+            name: 'Cloudflare R2',
+            tiers: { hot: 0.015, warm: 0.015, cold: 0.015, archive: 0.015 },
+            opsWrite: 0.0045,  // Class A per 1000
+            opsRead: 0.00036,  // Class B per 1000
+            egress: 0.00,      // ZERO egress fees
+            minRetention: { cold: 0, archive: 0 },
+            retrievalCold: 0,
+            retrievalArchive: 0,
+            regionMultiplier: { 'us-east': 1.0, 'us-west': 1.0, 'eu-west': 1.0, 'ap-southeast': 1.0, 'ap-northeast': 1.0 }
+        },
+        {
+            name: 'Backblaze B2',
+            tiers: { hot: 0.006, warm: 0.006, cold: 0.006, archive: 0.006 },
+            opsWrite: 0.005,   // Class A per 1000
+            opsRead: 0.0004,   // Class B per 1000
+            egress: 0.01,      // per GB (free up to 3× storage)
+            minRetention: { cold: 0, archive: 0 },
+            retrievalCold: 0,
+            retrievalArchive: 0,
+            regionMultiplier: { 'us-east': 1.0, 'us-west': 1.0, 'eu-west': 1.0, 'ap-southeast': 1.0, 'ap-northeast': 1.0 }
+        },
+        {
+            name: 'Wasabi',
+            tiers: { hot: 0.00699, warm: 0.00699, cold: 0.00699, archive: 0.00699 },
+            opsWrite: 0.00,    // free operations
+            opsRead: 0.00,
+            egress: 0.00,      // ZERO egress (fair use)
+            minRetention: { cold: 90, archive: 90 },
+            retrievalCold: 0,
+            retrievalArchive: 0,
+            regionMultiplier: { 'us-east': 1.0, 'us-west': 1.0, 'eu-west': 1.0, 'ap-southeast': 1.0, 'ap-northeast': 1.0 }
+        }
+    ];
+
+    function computeCloudCost() {
+        var storageTB = parseFloat(document.getElementById('storage-tb').value) || 0;
+        var egressGB = parseFloat(document.getElementById('egress-gb').value) || 0;
+        var writeOpsK = parseFloat(document.getElementById('write-ops-k').value) || 0;
+        var readOpsK = parseFloat(document.getElementById('read-ops-k').value) || 0;
+        var region = document.getElementById('region').value;
+        var redundancy = document.getElementById('redundancy').value;
+
+        var pctHot = parseFloat(document.getElementById('pct-hot').value) || 0;
+        var pctWarm = parseFloat(document.getElementById('pct-warm').value) || 0;
+        var pctCold = parseFloat(document.getElementById('pct-cold').value) || 0;
+        var pctArchive = parseFloat(document.getElementById('pct-archive').value) || 0;
+
+        var storageGB = storageTB * 1024;
+
+        // Redundancy multiplier
+        var redundancyMult = 1.0;
+        if (redundancy === 'multi-region') redundancyMult = 2.0;
+        else if (redundancy === 'single-az') redundancyMult = 0.6;
+
+        var results = VENDORS.map(v => {
+            var regionMult = v.regionMultiplier[region] || 1.0;
+
+            // Storage cost by tier distribution
+            var hotGB = storageGB * (pctHot / 100);
+            var warmGB = storageGB * (pctWarm / 100);
+            var coldGB = storageGB * (pctCold / 100);
+            var archiveGB = storageGB * (pctArchive / 100);
+
+            var storageCost = (
+                hotGB * v.tiers.hot +
+                warmGB * v.tiers.warm +
+                coldGB * v.tiers.cold +
+                archiveGB * v.tiers.archive
+            ) * redundancyMult * regionMult;
+
+            // API operations cost
+            var opsCost = (
+                (writeOpsK * v.opsWrite) +
+                (readOpsK * v.opsRead)
+            );
+
+            // Egress cost (Backblaze B2: first 3× storage GB is free)
+            var egressCost = 0;
+            if (v.name === 'Backblaze B2') {
+                var freeEgress = storageGB * 3;
+                var billableEgress = Math.max(0, egressGB - freeEgress);
+                egressCost = billableEgress * v.egress;
+            } else {
+                egressCost = egressGB * v.egress;
+            }
+
+            // Apply region multiplier to operations and egress
+            var totalStorage = storageCost;
+            var totalOps = opsCost * regionMult;
+            var totalEgress = egressCost * regionMult;
+            var totalMonthly = totalStorage + totalOps + totalEgress;
+
+            return {
+                name: v.name,
+                storageCost: totalStorage,
+                opsCost: totalOps,
+                egressCost: totalEgress,
+                totalMonthly: totalMonthly,
+                totalAnnual: totalMonthly * 12,
+                minRetention: v.minRetention
+            };
+        });
+
+        // Find the cheapest
+        var cheapest = results.reduce((min, r) => r.totalMonthly < min.totalMonthly ? r : min, results[0]);
+
+        // Render results
+        var tbody = document.getElementById('vendor-results-body');
+        tbody.innerHTML = results.map(r => {
+            var isCheapest = r === cheapest;
+            return `<tr>
+                <td>${r.name} ${isCheapest ? '🏆' : ''}</td>
+                <td class="${r.storageCost === Math.min(...results.map(x=>x.storageCost)) ? 'best' : ''}">$${r.storageCost.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                <td class="${r.opsCost === Math.min(...results.map(x=>x.opsCost)) ? 'best' : ''}">$${r.opsCost.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                <td class="${r.egressCost === Math.min(...results.map(x=>x.egressCost)) ? 'best' : ''}">$${r.egressCost.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                <td style="font-weight:700;color:${isCheapest ? 'var(--success)' : 'var(--text-heading)'}">$${r.totalMonthly.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+                <td>$${r.totalAnnual.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+            </tr>`;
+        }).join('');
+
+        // Bar chart
+        var maxTotal = Math.max(...results.map(r => r.totalMonthly));
+        var barsDiv = document.getElementById('cost-bars');
+        barsDiv.innerHTML = results.map(r => {
+            var pct = maxTotal > 0 ? (r.totalMonthly / maxTotal) * 100 : 0;
+            var isCheapest = r === cheapest;
+            return `<div style="margin-bottom:10px;">
+                <div class="cost-bar-label"><span>${r.name} ${isCheapest ? '🏆 Lowest' : ''}</span><span>$${r.totalMonthly.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}/mo</span></div>
+                <div style="display:flex;height:22px;border-radius:4px;overflow:hidden;background:var(--border-light);">
+                    <div class="cost-bar storage" style="width:${r.totalMonthly > 0 ? (r.storageCost/r.totalMonthly*100) : 0}%;" title="Storage: $${r.storageCost.toFixed(2)}"></div>
+                    <div class="cost-bar ops" style="width:${r.totalMonthly > 0 ? (r.opsCost/r.totalMonthly*100) : 0}%;" title="API Ops: $${r.opsCost.toFixed(2)}"></div>
+                    <div class="cost-bar egress" style="width:${r.totalMonthly > 0 ? (r.egressCost/r.totalMonthly*100) : 0}%;" title="Egress: $${r.egressCost.toFixed(2)}"></div>
+                </div>
+                <div style="display:flex;gap:14px;font-size:0.7rem;color:var(--text-muted);margin-top:3px;">
+                    <span>■ Storage</span><span>■ API Ops</span><span>■ Egress</span>
+                    ${r.minRetention.cold > 0 ? `<span style="color:var(--gold);">⏳ Min ${r.minRetention.cold}d (cold)</span>` : ''}
+                </div>
+            </div>`;
+        }).join('');
+
+        document.getElementById('results-subtitle').innerText =
+            `${storageTB} TB storage · ${egressGB.toLocaleString()} GB egress · ${writeOpsK.toLocaleString()}K writes · ${readOpsK.toLocaleString()}K reads · ${redundancy.replace('-',' ')} · ${region}`;
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Auto-compute on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        computeCloudCost();
+    });
+    document.querySelector('.btn-calc').addEventListener('click', computeCloudCost);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

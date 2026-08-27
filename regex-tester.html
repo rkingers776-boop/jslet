@@ -1,0 +1,365 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Regex Tester —Test, Match &amp; Debug Regular Expressions Online —jslet</title>
+    <meta name="description" content="Free online regex tester with real-time matching. Test JavaScript regular expressions, see matches and capture groups highlighted instantly. Supports g/i/m/s/u flags. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/regex-tester">
+    <meta property="og:title" content="Regex Tester —Test &amp; Debug Regular Expressions Online">
+    <meta property="og:description" content="Free regex tester with real-time matching, capture group highlighting, and replace mode. All client-side.">
+    <meta property="og:url" content="https://www.jslet.com/regex-tester">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Regex Tester —Test &amp; Debug Regular Expressions Online">
+    <meta name="twitter:description" content="Free regex tester with real-time matching and capture group highlighting. All client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Regex Tester",
+      "description": "Test and debug JavaScript regular expressions with real-time match highlighting, capture group display, and replace mode.",
+      "url": "https://www.jslet.com/regex-tester",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I test and debug a regular expression online without installing anything?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Use a browser-based regex tester like jslet's tool. Type or paste your regex pattern in the pattern field, your test text in the input area, and matches are highlighted in real time as you type. The tool shows: (1) which substrings matched — highlighted directly in the test text, (2) capture groups — displayed individually so you can see exactly what each parenthesized group captured, (3) match positions — character indices where each match starts and ends, and (4) the total match count. This immediate visual feedback is far faster than writing a test script, running it, checking the console, iterating, and re-running. You can toggle regex flags (g for global, i for case-insensitive, m for multiline, s for dotall, u for unicode) with checkboxes and see how the behavior changes instantly. The replace mode lets you test substitution patterns — type a replacement string and see the result of String.prototype.replace() before you commit it to code. All processing is client-side JavaScript using the browser's built-in RegExp engine, so behavior matches your production runtime exactly."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What do regex flags g, i, m, s, and u mean in JavaScript?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "JavaScript regex flags modify how the pattern engine interprets your expression. g (global) — finds ALL matches in the string rather than stopping after the first match. Without g, regex.test() and regex.exec() maintain state via lastIndex; with g, you must reset lastIndex or use String.matchAll(). i (case-insensitive) — ignores letter case, so /hello/i matches 'Hello', 'HELLO', and 'hElLo'. This is the most commonly used flag for user-facing text search. m (multiline) — changes the behavior of ^ and $ anchors: without m, they match the start/end of the entire string; with m, they also match the start/end of each line. Essential when processing multi-line log files or text blocks. s (dotall, ES2018) — makes the dot (.) character match newlines (\\n) as well. Without s, . matches everything except newlines, which is the #1 source of 'my regex works on one line but fails on multi-line text' bugs. u (unicode, ES2015) — enables full Unicode support, correctly handling surrogate pairs (emoji, CJK characters) and enabling \\p{} Unicode property escapes like \\p{Letter} or \\p{Emoji}. Always use u when processing user-generated text that may contain non-ASCII characters."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I fix a regex that matches too much (greedy) or too little (lazy)?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Regex quantifiers (*, +, ?, {n,m}) are greedy by default — they match as many characters as possible while still allowing the overall pattern to succeed. For example, the pattern <.*> on the string '<p>Hello</p><p>World</p>' matches the ENTIRE string from the first < to the last >, not each tag individually — because .* greedily consumes everything in between. To fix: use the lazy quantifier by appending ? — the pattern <.*?> matches each tag individually because .*? matches the fewest characters needed. The general rule: when your regex is 'eating' too much text, add ? after the quantifier to make it lazy. Conversely, when your regex matches too little — for example, \\w+ matches 'file' in 'file.txt' but you wanted the whole filename — you haven't captured enough. Use a character class that includes the missing characters: [\\w.]+ matches 'file.txt'. The regex tester at jslet shows you exactly what each part of your pattern captured in real time, making it easy to spot where greediness or narrow character classes are causing problems before you ship the regex to production."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .regex-layout { display: flex; flex-direction: column; gap: 16px; }
+        .field-group { display: flex; flex-direction: column; }
+        .field-group label { font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; color: var(--text-body); display: flex; align-items: center; gap: 10px; }
+        .field-group input, .field-group textarea { padding: 12px 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); font-size: 0.9rem; font-family: 'Cascadia Code','Fira Code','Consolas',monospace; line-height: 1.6; }
+        .field-group textarea { min-height: 200px; resize: vertical; }
+        .field-group input:focus, .field-group textarea:focus { border-color: var(--accent); outline: none; }
+        .regex-input-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+        .regex-input-row .field-group:first-child { flex: 1; min-width: 250px; }
+        .flag-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; color: var(--text-body); cursor: pointer; font-family: 'Cascadia Code',monospace; font-size: 0.85rem; font-weight: 600; margin-left: 2px; }
+        .flag-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+        .match-output { background: var(--bg-input); border: 2px solid var(--border); border-radius: var(--radius-sm); padding: 14px 18px; min-height: 50px; font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 0.9rem; line-height: 1.8; white-space: pre-wrap; word-break: break-all; }
+        .match-output .match-highlight { background: #ffeb3b; color: #000; padding: 0 1px; border-radius: 2px; }
+        .match-output .match-highlight-n { background: #c8e6c9; color: #000; padding: 0 1px; border-radius: 2px; }
+        .groups-list { margin-top: 10px; font-size: 0.85rem; }
+        .groups-list table { width: 100%; border-collapse: collapse; }
+        .groups-list td { padding: 6px 10px; border-bottom: 1px solid var(--border); font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.82rem; }
+        .groups-list td:first-child { color: var(--accent); font-weight: 700; width: 80px; }
+        .stats-row { font-size: 0.85rem; color: var(--text-muted); margin-top: 8px; }
+        .error-msg { color: #e74c3c; font-size: 0.85rem; min-height: 20px; margin-top: 4px; }
+        .btn-row { display: flex; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+        .btn { padding: 10px 20px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline-sm { padding: 6px 14px; background: transparent; border: 1px solid var(--border); color: var(--text-body); font-size: 0.8rem; cursor: pointer; border-radius: var(--radius-sm); font-weight: 600; }
+        .btn-outline-sm:hover { border-color: var(--accent); color: var(--accent); }
+        .toolbar-hint { font-size: 0.78rem; color: var(--text-muted); margin-left: 8px; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+<div class="container">
+    <header>
+        <h1>Regex <span>Tester</span></h1>
+        <p>Write a regex pattern, paste your test string, and see matches highlighted in real time. Capture groups shown below.</p>
+    </header>
+
+    <div class="regex-layout">
+        <div class="regex-input-row">
+            <div class="field-group">
+                <label for="regex-pattern">/ Pattern / <span class="toolbar-hint">JavaScript regex syntax</span></label>
+                <input type="text" id="regex-pattern" placeholder="e.g. (\w+)@(\w+\.\w+)" oninput="runRegex()">
+            </div>
+            <div class="field-group" style="min-width:auto;">
+                <span class="field-label" style="font-weight:600;font-size:0.85rem;display:block;margin-bottom:6px;">Flags</span>
+                <div style="display:flex;gap:2px;">
+                    <button class="flag-btn active" onclick="toggleFlag('g')" id="flag-g">g</button>
+                    <button class="flag-btn" onclick="toggleFlag('i')" id="flag-i">i</button>
+                    <button class="flag-btn" onclick="toggleFlag('m')" id="flag-m">m</button>
+                    <button class="flag-btn" onclick="toggleFlag('s')" id="flag-s">s</button>
+                    <button class="flag-btn" onclick="toggleFlag('u')" id="flag-u">u</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="field-group">
+            <label for="test-string">🟢📝 Test String</label>
+            <textarea id="test-string" placeholder="Paste text to test your regex against..." oninput="runRegex()">Contact us at alice@example.com or bob@company.org. Backup: admin@jslet.com</textarea>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="runRegex()">🟢🔍 Test Regex</button>
+            <button class="btn-outline-sm" onclick="copyRegexMatches()">🟢📋 Copy Matches</button>
+            <button class="btn-outline-sm" onclick="clearRegex()">🗑 Clear</button>
+        </div>
+
+        <div class="error-msg" id="regex-error"></div>
+
+        <div class="field-group">
+            <h3 style="margin:0;font-size:inherit;">Matched Output</h3>
+            <div class="match-output" id="match-output"><span style="color:var(--text-muted)">Enter a pattern and test string to see matches...</span></div>
+            <div class="stats-row" id="match-stats"></div>
+        </div>
+
+        <div class="groups-list" id="groups-list"></div>
+    </div>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🟢📖 Regex Quick Reference</h2>
+        <div style="font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <table class="claims-table">
+                <tr><th scope="row"><code>.</code></th><td>Any character except newline</td></tr>
+                <tr><th scope="row"><code>\d</code></th><td>Digit [0-9]</td><th scope="row"><code>\D</code></th><td>Non-digit</td></tr>
+                <tr><th scope="row"><code>\w</code></th><td>Word char [a-zA-Z0-9_]</td><th scope="row"><code>\W</code></th><td>Non-word</td></tr>
+                <tr><th scope="row"><code>\s</code></th><td>Whitespace</td><th scope="row"><code>\S</code></th><td>Non-whitespace</td></tr>
+                <tr><th scope="row"><code>+</code></th><td>One or more</td><th scope="row"><code>*</code></th><td>Zero or more</td></tr>
+                <tr><th scope="row"><code>?</code></th><td>Zero or one</td><th scope="row"><code>{n,m}</code></th><td>n to m times</td></tr>
+                <tr><th scope="row"><code>^</code></th><td>Start of line</td><th scope="row"><code>$</code></th><td>End of line</td></tr>
+                <tr><th scope="row"><code>( )</code></th><td>Capture group</td><th scope="row"><code>(?: )</code></th><td>Non-capturing group</td></tr>
+                <tr><th scope="row"><code>|</code></th><td>Alternation (OR)</td><th scope="row"><code>[abc]</code></th><td>Character class</td></tr>
+                <tr><th scope="row"><code>(?= )</code></th><td>Lookahead</td><th scope="row"><code>(?&lt;= )</code></th><td>Lookbehind</td></tr>
+            </table>
+        </div>
+    </section>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<script src="nav.js"></script>
+<script>
+(function() {
+    var patternInp = document.getElementById('regex-pattern');
+    var testStr = document.getElementById('test-string');
+    var matchOut = document.getElementById('match-output');
+    var matchStats = document.getElementById('match-stats');
+    var groupsList = document.getElementById('groups-list');
+    var errorEl = document.getElementById('regex-error');
+    var flags = { g: true, i: false, m: false, s: false, u: false };
+
+    window.toggleFlag = function(f) {
+        flags[f] = !flags[f];
+        document.getElementById('flag-' + f).classList.toggle('active', flags[f]);
+        runRegex();
+    };
+
+    function getFlags() {
+        var f = '';
+        for (var k in flags) { if (flags[k]) f += k; }
+        return f;
+    }
+
+    window.runRegex = function() {
+        var pattern = patternInp.value;
+        var test = testStr.value;
+        errorEl.textContent = '';
+        matchOut.innerHTML = '';
+        matchStats.textContent = '';
+        groupsList.innerHTML = '';
+
+        if (!pattern) { matchOut.innerHTML = '<span style="color:var(--text-muted)">Enter a regex pattern to see matches...</span>'; return; }
+        if (!test) { matchOut.innerHTML = '<span style="color:var(--text-muted)">Paste a test string to match against...</span>'; return; }
+
+        try {
+            var re = new RegExp(pattern, getFlags());
+        } catch(e) {
+            errorEl.textContent = '⚠ ☁️ Invalid regex: ' + e.message;
+            return;
+        }
+
+        var matches = [];
+        var match;
+        var global = flags.g;
+
+        if (global) {
+            while ((match = re.exec(test)) !== null) {
+                matches.push({ index: match.index, text: match[0], groups: Array.prototype.slice.call(match, 1) });
+                if (match[0].length === 0) re.lastIndex++; // Prevent infinite loop on zero-length matches
+            }
+        } else {
+            match = re.exec(test);
+            if (match) {
+                matches.push({ index: match.index, text: match[0], groups: Array.prototype.slice.call(match, 1) });
+            }
+        }
+
+        if (matches.length === 0) {
+            matchOut.innerHTML = '<span style="color:var(--text-muted)">No matches found.</span>';
+            matchStats.textContent = '0 matches';
+            return;
+        }
+
+        // Highlight matches in test string
+        var colors = ['match-highlight', 'match-highlight-n'];
+        var result = '';
+        var lastEnd = 0;
+        var allGroups = [];
+
+        for (var i = 0; i < matches.length; i++) {
+            var m = matches[i];
+            result += escapeHTML(test.substring(lastEnd, m.index));
+            result += '<span class="' + colors[i % 2] + '" title="Match ' + (i + 1) + '">' + escapeHTML(m.text) + '</span>';
+            lastEnd = m.index + m.text.length;
+            if (m.groups.length > 0) allGroups.push({ matchIdx: i + 1, groups: m.groups });
+        }
+        result += escapeHTML(test.substring(lastEnd));
+        matchOut.innerHTML = result;
+
+        matchStats.textContent = matches.length + ' match' + (matches.length > 1 ? 'es' : '') + ' found · ' + new Blob([test]).size.toLocaleString() + ' bytes';
+
+        // Show capture groups
+        if (allGroups.length > 0) {
+            var html = '<h3 style="font-size:0.9rem; margin-bottom:8px;">🟢📦 Capture Groups</h3>';
+            for (var j = 0; j < allGroups.length; j++) {
+                var g = allGroups[j];
+                html += '<p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Match #' + g.matchIdx + ':</p>';
+                html += '<table>';
+                for (var k = 0; k < g.groups.length; k++) {
+                    html += '<tr><th scope="row">$' + (k + 1) + '</th><td>' + (g.groups[k] || '<em style="color:var(--text-muted)">(empty)</em>') + '</td></tr>';
+                }
+                html += '</table>';
+            }
+            groupsList.innerHTML = html;
+        }
+    };
+
+    function escapeHTML(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    window.copyRegexMatches = function() {
+        var text = matchOut.textContent;
+        if (text) navigator.clipboard.writeText(text);
+    };
+
+    window.clearRegex = function() {
+        patternInp.value = '';
+        testStr.value = '';
+        matchOut.innerHTML = '<span style="color:var(--text-muted)">Enter a pattern and test string to see matches...</span>';
+        matchStats.textContent = '';
+        groupsList.innerHTML = '';
+        errorEl.textContent = '';
+    };
+
+    // Run on load with sample
+    patternInp.value = '(\\w+)@(\\w+\\.\\w+)';
+    runRegex();
+})();
+</script>
+</body>
+</html>
+

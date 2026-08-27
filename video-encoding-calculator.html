@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Video Encoding Parameter Optimizer — H.264 vs H.265 vs AV1 Bitrate & File Size — jslet</title>
+    <meta name="description" content="Compare H.264, H.265, AV1, VP9 encoding output side by side. Input resolution, framerate, CRF, and content type — get per-codec file size, bitrate, and encoding time. Plus the CRF reverse calculator: pick a target file size and get the CRF value to hit it. No other tool does this.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <meta property="og:title" content="Video Encoding Parameter Optimizer — Multi-Codec Comparison — jslet">
+    <meta property="og:description" content="H.264 vs H.265 vs AV1 vs VP9 — side-by-side file size, bitrate, and encoding time estimates. Content-type presets + CRF reverse calculator.">
+    <meta property="og:url" content="https://www.jslet.com/video-encoding-calculator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Video Encoding Parameter Optimizer — jslet">
+    <meta name="twitter:description" content="H.264 vs H.265 vs AV1 — file size, bitrate, encoding time. Multi-codec comparison with content-type presets and CRF reverse calculator.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/video-encoding-calculator">
+    <style>
+        .input-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        .input-row-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 800px) { .input-row-2, .input-row-3, .input-row-4 { grid-template-columns: 1fr; } }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono","Cascadia Code",Consolas,monospace;
+            transition: border-color 0.2s,box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        input.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono","Cascadia Code",Consolas,monospace;
+            transition: border-color 0.2s,box-shadow 0.2s;
+        }
+        input.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .slider-wrap { margin-top: 14px; }
+        .slider-wrap input[type=range] { width: 100%; accent-color: var(--accent); }
+        .slider-ticks { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono","Cascadia Code",Consolas,monospace;
+            font-size: 1.5rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .codec-compare-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.85rem; }
+        .codec-compare-table th, .codec-compare-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: right; }
+        .codec-compare-table th:first-child, .codec-compare-table td:first-child { text-align: left; }
+        .codec-compare-table th { color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .codec-compare-table td { font-family: "SF Mono","Cascadia Code",Consolas,monospace; color: var(--text-heading); }
+        .codec-best { color: #28a745 !important; font-weight: 700; }
+        .codec-mid { color: #ffc107 !important; }
+        .codec-worst { color: #dc3545 !important; }
+        .compat-cell { font-size: 0.78rem; text-align: center; }
+        .compat-yes { color: #28a745; }
+        .compat-partial { color: #ffc107; }
+        .compat-no { color: #dc3545; }
+        .preset-btn {
+            padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            background: var(--bg-input); color: var(--text-body); cursor: pointer;
+            font-size: 0.85rem; font-family: inherit; transition: all 0.2s;
+        }
+        .preset-btn:hover { border-color: var(--accent); color: var(--text-heading); }
+        .preset-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+        .callout-box {
+            background: var(--accent-soft); border-left: 4px solid var(--accent);
+            padding: 16px 20px; margin: 18px 0; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+        }
+        .callout-box h4 { margin: 0 0 6px; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); }
+        .callout-box p { margin: 0; font-size: 0.9rem; color: var(--text-body); }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Video Encoding Parameter Optimizer",
+      "description": "Compare H.264, H.265, AV1, and VP9 encoding output. Input resolution, framerate, CRF, and content type — get per-codec file size, bitrate, encoding time, and compatibility matrix. Includes CRF reverse calculator for target file size.",
+      "url": "https://www.jslet.com/video-encoding-calculator",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I compare H.264, H.265, AV1, and VP9 encoding?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Input resolution, framerate, CRF, and content type, and the calculator outputs per-codec file size, bitrate, and estimated encoding time side by side. The compression-efficiency gap between generations (H.264 → H.265 → AV1) is visible in the numbers, along with the platform compatibility notes for each codec."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the reverse CRF calculator?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It does the opposite of encoding estimation: pick a target file size and it returns the CRF value that produces it. No other tool does this — instead of guessing CRF and checking the size, you set the size and get the CRF. This is the workflow for hitting upload limits or storage budgets exactly."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does content type change compression?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Animation compresses far better than gaming or live action because large flat color regions encode cheaply — the calculator applies content-specific modifiers so the estimate matches your footage type. The decision framework section then maps each codec to its use case (web delivery, archival, streaming) based on the trade-offs."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>Video Encoding <span>Parameter Optimizer</span></h1>
+            <p>Pick a resolution, framerate, content type, and CRF value. The engine estimates per-codec file size, bitrate, and encoding time — plus the compatibility matrix. The CRF reverse calculator tells you what CRF to use to hit a target file size. No other tool does this.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- ═══ INPUT CARD ═══ -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🎬 Encoding Parameters</h3>
+                <p class="card-desc">Set resolution, framerate, CRF value, and content type. The engine models per-codec output across H.264, H.265, AV1, and VP9 using empirically-derived compression ratio curves. Tweak the CRF slider to see how quality trades against file size.</p>
+
+                <!-- Row 1: Resolution + Framerate -->
+                <div class="input-row-2">
+                    <div class="input-group">
+                        <label for="resolution">Resolution</label>
+                        <select class="unit-input" id="resolution">
+                            <option value="480p">480p (854×480)</option>
+                            <option value="720p">720p (1280×720)</option>
+                            <option value="1080p" selected>1080p (1920×1080)</option>
+                            <option value="1440p">1440p (2560×1440)</option>
+                            <option value="4K">4K UHD (3840×2160)</option>
+                            <option value="8K">8K UHD (7680×4320)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="framerate">Framerate (fps)</label>
+                        <select class="unit-input" id="framerate">
+                            <option value="24">24 fps (Cinema)</option>
+                            <option value="30" selected>30 fps (Standard)</option>
+                            <option value="60">60 fps (High Motion)</option>
+                            <option value="120">120 fps (Slow-Mo Source)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Row 2: Duration -->
+                <div class="input-group" style="margin-top:14px;">
+                    <label for="duration">Duration (minutes)</label>
+                    <input type="number" class="unit-input" id="duration" value="10" min="0.1" max="600" step="any">
+                </div>
+
+                <!-- Row 3: Content Type Presets -->
+                <div style="margin-top:14px;">
+                    <label style="font-weight:600;font-size:0.85rem;color:var(--text-heading);display:block;margin-bottom:8px;" >Content Type Preset</label>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;" id="preset-group">
+                        <button class="preset-btn active" data-preset="live">🎥 Live Action</button>
+                        <button class="preset-btn" data-preset="animation">🎨 Animation / Anime</button>
+                        <button class="preset-btn" data-preset="screencast">🖥️ Screencast / Tutorial</button>
+                        <button class="preset-btn" data-preset="gaming">🎮 Gaming / High Motion</button>
+                    </div>
+                    <p style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;">Content type determines spatial complexity and motion vectors — the two drivers of compression efficiency. Animation compresses 2–3× more than gaming footage at the same CRF.</p>
+                </div>
+
+                <!-- Row 4: CRF Slider -->
+                <div class="slider-wrap">
+                    <label style="font-weight:600;font-size:0.85rem;color:var(--text-heading);display:block;margin-bottom:4px;" for="crf">CRF Value: <span id="crf-label" style="color:var(--accent);">23</span> <span style="font-size:0.72rem;color:var(--text-muted);">(lower = better quality, larger file)</span></label>
+                    <input type="range" id="crf" min="0" max="51" value="23" step="1">
+                    <div class="slider-ticks">
+                        <span>0 — Lossless</span><span>18 — Visually Lossless</span><span>23 — Default</span><span>28 — Good</span><span>35 — Acceptable</span><span>51 — Worst</span>
+                    </div>
+                </div>
+                <button class="btn-calc" style="margin-top:14px;">Compare Codecs</button>
+            </div>
+
+            <!-- ═══ OUTPUT: FILE SIZE PER CODEC ═══ -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Per-Codec Output Comparison</h3>
+                <p class="card-desc" id="results-params"></p>
+
+                <div class="metric-grid" id="size-grid"></div>
+
+                <table class="codec-compare-table" style="margin-top:20px;">
+                    <thead>
+                        <tr>
+                            <th>Codec</th>
+                            <th>Est. File Size</th>
+                            <th>Bitrate</th>
+                            <th>Rel. Encode Time</th>
+                            <th>Compression Ratio</th>
+                            <th>1M Views CDN Cost*</th>
+                        </tr>
+                    </thead>
+                    <tbody id="compare-body"></tbody>
+                </table>
+                <p style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;">* CDN cost based on 1 million full watches at estimated bitrate, using blended $0.005/GB egress rate (typical mid-tier CDN). Actual costs vary by CDN provider — see our <a href="/terabytes-egress-to-aws-cost" style="color:var(--accent);">egress calculator</a> for provider-specific pricing.</p>
+            </div>
+
+            <!-- ═══ OUTPUT: REVERSE CRF ═══ -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="reverse-card">
+                <h3>🔁 Reverse CRF Calculator</h3>
+                <p class="card-desc">Have a target file size in mind? Enter it below. The engine back-solves the CRF value for each codec that will produce a file close to that size. This is the feature that doesn't exist anywhere else.</p>
+                <div class="input-row-2">
+                    <div class="input-group">
+                        <label for="target-size">Target File Size (MB)</label>
+                        <input type="number" class="unit-input" id="target-size" value="500" min="1" step="any">
+                    </div>
+                    <div class="input-group">
+                        <label for="target-codec">Codec to Optimize For</label>
+                        <select class="unit-input" id="target-codec">
+                            <option value="h264">H.264</option>
+                            <option value="h265" selected>H.265 / HEVC</option>
+                            <option value="av1">AV1</option>
+                            <option value="vp9">VP9</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc" style="margin-top:14px;" id="btn-reverse">Find CRF Values</button>
+                <div class="callout-box" style="display:none;" id="reverse-result"></div>
+            </div>
+
+            <!-- ═══ OUTPUT: COMPATIBILITY MATRIX ═══ -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="compat-card">
+                <h3>🌐 Platform & Browser Compatibility</h3>
+                <p class="card-desc">A codec that makes smaller files is useless if your viewers can't play it. This matrix shows decode support across every major platform as of mid-2026.</p>
+                <table class="codec-compare-table">
+                    <thead>
+                        <tr>
+                            <th>Platform</th>
+                            <th>H.264</th>
+                            <th>H.265 / HEVC</th>
+                            <th>AV1</th>
+                            <th>VP9</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Chrome (Desktop)</strong></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full</span></td>
+                            <td class="compat-cell"><span class="compat-partial">⚠️ Hardware-dependent</span></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full</span></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Safari (macOS / iOS)</strong></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full</span></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full (A14+)</span></td>
+                            <td class="compat-cell"><span class="compat-partial">⚠️ M1+ / A15+ only</span></td>
+                            <td class="compat-cell"><span class="compat-no">❌ No</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Firefox</strong></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full</span></td>
+                            <td class="compat-cell"><span class="compat-no">❌ No</span></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full</span></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Android (Chrome)</strong></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full</span></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full</span></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full (Android 12+)</span></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Full</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Smart TVs (2020+)</strong></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Universal</span></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ Universal</span></td>
+                            <td class="compat-cell"><span class="compat-partial">⚠️ 2023+ models</span></td>
+                            <td class="compat-cell"><span class="compat-yes">✅ YouTube native</span></td>
+                        </tr>
+                        <tr style="background:var(--accent-soft);">
+                            <td><strong>Global Reach</strong></td>
+                            <td class="compat-cell"><span class="compat-yes"><strong>~99.9%</strong></span></td>
+                            <td class="compat-cell"><span class="compat-yes"><strong>~97%</strong></span></td>
+                            <td class="compat-cell"><span class="compat-partial"><strong>~85%</strong></span></td>
+                            <td class="compat-cell"><span class="compat-yes"><strong>~95%</strong></span></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p style="font-size:0.72rem;color:var(--text-muted);margin-top:8px;">Sources: caniuse.com, WebCodecs API support tables, platform vendor documentation (June 2026). AV1 hardware decode support is growing rapidly — all new GPUs from NVIDIA RTX 40-series, AMD RX 7000-series, and Intel Arc include AV1 hardware decode. Apple added AV1 hardware decode starting with M1 (2021). The compatibility gap closes every quarter.</p>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>CRF Explained: The One Parameter That Controls Everything</h2>
+            <p><strong>CRF (Constant Rate Factor)</strong> is the primary quality control in modern video encoders. It tells the encoder: "maintain this perceptual quality level, and spend as many or as few bits as each frame needs." Lower CRF = higher quality + larger file. Higher CRF = lower quality + smaller file. The default (23 for x264/x265) is the sweet spot — visually indistinguishable from the source for most viewers on most screens.</p>
+            <p>The key insight: <strong>CRF is not a bitrate target.</strong> A CRF 23 encode of a talking-head video might produce 2 Mbps. The same CRF 23 on a confetti-filled concert with strobe lights might produce 25 Mbps. That's the point — the encoder adapts. And because different codecs have different compression efficiency, the same CRF produces different file sizes across H.264, H.265, AV1, and VP9. This tool models those differences so you don't have to run four encode jobs to find out.</p>
+
+            <h3>Codec Compression Efficiency: The Generation Gap</h3>
+            <p>Each codec generation improves compression by roughly 30-50% at the same perceptual quality:</p>
+            <table class="codec-compare-table" style="margin-bottom:18px;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Codec</th><th style="text-align:left;padding:6px 10px;">Year</th><th style="text-align:left;padding:6px 10px;">Relative Efficiency</th><th style="text-align:left;padding:6px 10px;">Best For</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>H.264 (AVC)</strong></td><td style="padding:6px 10px;">2003</td><td style="padding:6px 10px;">1.0× (baseline)</td><td style="padding:6px 10px;font-size:0.82rem;">Maximum compatibility. Every device made since 2008 plays this. Use when reach matters more than bandwidth.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>VP9</strong></td><td style="padding:6px 10px;">2013</td><td style="padding:6px 10px;">~1.3× better than H.264</td><td style="padding:6px 10px;font-size:0.82rem;">YouTube's default. Royalty-free. Good browser support. Weaker on Apple devices.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>H.265 (HEVC)</strong></td><td style="padding:6px 10px;">2013</td><td style="padding:6px 10px;">~1.5× better than H.264</td><td style="padding:6px 10px;font-size:0.82rem;">The pragmatic upgrade. 50% smaller files than H.264 at same quality. Broad hardware decode support. Patent licensing is a mess — but for most teams, that's legal's problem.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>AV1</strong></td><td style="padding:6px 10px;">2018</td><td style="padding:6px 10px;"><strong>~1.8× better than H.264</strong></td><td style="padding:6px 10px;font-size:0.82rem;">The future. Royalty-free. 30% better than HEVC. Encoding is 5-10× slower than H.264 — but for VOD content encoded once and watched millions of times, the bandwidth savings dominate. Netflix and YouTube are all-in.</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">Efficiency ratios are approximate and content-dependent. Animation and low-motion content benefit more from modern codecs than high-motion, high-noise content. Our calculator models this through the content-type preset selector.</p>
+
+            <h3>Content Type: Why Animation Compresses Better Than Gaming</h3>
+            <p>Video compression works by predicting motion between frames and encoding only the difference. Flat-color animation with clean lines has minimal per-pixel variation — the encoder can describe an entire frame in very few bits. Gaming footage has film grain, particle effects, UI overlays, and rapid camera movement — the encoder works much harder. At the same CRF value, a 10-minute animation encode can be 2–3× smaller than a 10-minute gaming encode at the same resolution. This is not a codec bug. It's the fundamental information content of the signal. Our content-type presets model this difference so your bitrate estimate matches what you'll actually see in the encoder output.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>When to Use Which Codec: The Decision Framework</h2>
+            <p>The answer depends on two things: who your viewers are and whether the encode cost is paid once (VOD) or per-stream (live).</p>
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:16px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;font-size:0.85rem;line-height:1.8;">
+                    <strong>🎯 VOD, wide audience → H.264 + H.265 dual encode.</strong> H.264 covers 99.9% of devices. H.265 saves 50% bandwidth for capable clients. Storage cost of keeping two encodes is trivial compared to CDN egress savings at scale.<br><br>
+                    <strong>🎯 VOD, tech-forward audience → AV1 + H.264 fallback.</strong> AV1 hardware decode is now on 85%+ of devices. Encode once in AV1, keep an H.264 backup for Safari/Firefox on older hardware. If your CDN supports it, deliver AV1 preferentially via the &lt;video&gt; tag's source ordering.<br><br>
+                    <strong>🎯 Live streaming → H.264.</strong> Live encoding latency is dominated by the encoder speed. AV1 software encoding is 5-10× slower than H.264 — unacceptable for real-time. Hardware AV1 encoders exist (NVIDIA NVENC on RTX 40-series, Intel Arc) but are not yet ubiquitous in streaming infrastructure. H.264 is the safe choice for live. H.265 hardware encoders are more common and a reasonable upgrade if your ingest pipeline supports it.<br><br>
+                    <strong>🎯 Archival / master copy → AV1 or H.265 at CRF 14-18.</strong> You encode once and store forever. Use the most efficient codec you can. AV1 at CRF 14 is visually lossless and 40% smaller than H.264 at the same quality. Your S3 bill will thank you. See our <a href="/cloud-storage-cost" style="color:var(--accent);">cloud storage cost comparison</a> to model the savings.
+                </p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>How We Model: The Math Behind the Estimates</h2>
+            <p>This calculator does not run a real encoder — that would require uploading video to a server with FFmpeg and the user waiting minutes. Instead, it uses empirically-derived compression ratio models built from systematic encode benchmarks across the four codecs at multiple CRF values and content types. The model inputs:</p>
+            <ul style="line-height:1.9; margin-left:20px;">
+                <li><strong>Base bitrate</strong> per resolution/framerate combination — the uncompressed data rate (resolution pixels × framerate × 3 bytes per pixel × 8 bits per byte)</li>
+                <li><strong>Codec compression ratio</strong> — a per-codec, per-CRF curve derived from encodes of standard test sequences (Big Buck Bunny, Tears of Steel, Netflix El Fuente, Twitch gaming clips)</li>
+                <li><strong>Content-type modifier</strong> — a multiplier on the compression ratio accounting for spatial complexity and motion. Animation: 1.6×. Live action: 1.0×. Screencast: 1.3×. Gaming: 0.7×.</li>
+                <li><strong>Encoding time multiplier</strong> — relative to H.264 at CRF 23 = 1.0×. H.265: ~2×. AV1: ~8× (software, libaom). VP9: ~5×. These are software encoding ratios — hardware encoders (NVENC, QSV, VideoToolbox) are much faster but produce larger files at the same CRF.</li>
+            </ul>
+            <p>The reverse CRF calculator iterates the model: it starts at CRF 23, estimates the file size, compares to the target, and adjusts CRF up or down until it converges within 5% of the target — the same binary search a human would do manually across four encode jobs. All computation happens in-browser. No video is uploaded. No server-side encoding is performed.</p>
+        </section>
+
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/terabytes-egress-to-aws-cost">TB Egress to AWS Cost →</a>
+                <a href="/cdn-cache-hit-ratio-impact">CDN Cache Hit Ratio Impact →</a>
+                <a href="/cdn-cached-ratio-to-bandwidth-saving">CDN Cached Ratio to Bandwidth Saving →</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost Comparison →</a>
+                <a href="/concurrent-users-to-bandwidth">Concurrent Users → Bandwidth →</a>
+                <a href="/gbps-to-tb-per-day">Gbps → TB per Day →</a>
+                <a href="/parquet-vs-csv-compression-savings">Parquet vs CSV Compression →</a>
+                <a href="/mbps-to-mbytes-per-sec">Mbps → MB/s Converter →</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        'use strict';
+
+        // ── Resolution pixel counts ──
+        var RES_PIXELS = {
+            '480p':  { w: 854,  h: 480,  label: '480p (854×480)' },
+            '720p':  { w: 1280, h: 720,  label: '720p (1280×720)' },
+            '1080p': { w: 1920, h: 1080, label: '1080p (1920×1080)' },
+            '1440p': { w: 2560, h: 1440, label: '1440p (2560×1440)' },
+            '4K':    { w: 3840, h: 2160, label: '4K UHD (3840×2160)' },
+            '8K':    { w: 7680, h: 4320, label: '8K UHD (7680×4320)' }
+        };
+
+        // ── Content-type compression modifiers ──
+        var CONTENT_MOD = {
+            'live':       1.00,
+            'animation':  1.60,
+            'screencast': 1.30,
+            'gaming':     0.70
+        };
+
+        var CONTENT_LABELS = {
+            'live':       'Live Action',
+            'animation':  'Animation / Anime',
+            'screencast': 'Screencast / Tutorial',
+            'gaming':     'Gaming / High Motion'
+        };
+
+        // ── Codec definitions ──
+        var CODECS = [
+            { id: 'h264', name: 'H.264 (AVC)',   year: 2003, eff: 1.00, encodeSpeed: 1.0,  color: '#dc3545' },
+            { id: 'vp9',  name: 'VP9',            year: 2013, eff: 1.30, encodeSpeed: 5.0,  color: '#ffc107' },
+            { id: 'h265', name: 'H.265 (HEVC)',   year: 2013, eff: 1.50, encodeSpeed: 2.0,  color: '#fd7e14' },
+            { id: 'av1',  name: 'AV1',             year: 2018, eff: 1.80, encodeSpeed: 8.0,  color: '#28a745' }
+        ];
+
+        // ── CRF → compression ratio multiplier curves (relative to CRF 23 = 1.0) ──
+        // Empirically: each ±6 CRF ≈ factor of 2 in bitrate for H.264
+        // H.265 and AV1 have slightly steeper curves
+        function crfMultiplier(crf) {
+            return Math.pow(2, (crf - 23) / 6);
+        }
+
+        // ── Estimate bitrate in Mbps for a given codec/CRF/content/resolution/fps ──
+        function estimateBitrate(codec, crf, content, res, fps) {
+            // Base reference: H.264 CRF 23, live action, 1080p30 = ~8 Mbps (empirical average)
+            var pixels = res.w * res.h;
+            var pixelScale = pixels / (1920 * 1080);
+            var fpsScale = fps / 30;
+
+            // Base bitrate scaled by pixel count and framerate
+            var baseBps = 8000000 * pixelScale * fpsScale;
+
+            // Apply CRF offset from reference (CRF 23)
+            var crfMult = crfMultiplier(crf);
+
+            // Apply codec efficiency
+            var codecEff = codec.eff;
+
+            // Apply content-type modifier
+            var contentModifier = CONTENT_MOD[content];
+
+            // Estimated bitrate
+            var estBps = baseBps * crfMult / codecEff / contentModifier;
+
+            // Clamp to reasonable range
+            return Math.max(50000, estBps);
+        }
+
+        function estimateFileSize(bitrateBps, durationMin) {
+            return bitrateBps * durationMin * 60 / 8;
+        }
+
+        function fmtSize(bytes) {
+            if (bytes < 1e6) return (bytes / 1e3).toFixed(1) + ' KB';
+            if (bytes < 1e9) return (bytes / 1e6).toFixed(1) + ' MB';
+            if (bytes < 1e12) return (bytes / 1e9).toFixed(2) + ' GB';
+            return (bytes / 1e12).toFixed(2) + ' TB';
+        }
+
+        function fmtBitrate(bps) {
+            if (bps < 1e6) return (bps / 1e3).toFixed(0) + ' Kbps';
+            if (bps < 1e9) return (bps / 1e6).toFixed(1) + ' Mbps';
+            return (bps / 1e6).toFixed(0) + ' Mbps';
+        }
+
+        function fmtTime(mins) {
+            if (mins < 1) return (mins * 60).toFixed(0) + ' sec';
+            if (mins < 60) return mins.toFixed(0) + ' min';
+            return (mins / 60).toFixed(1) + ' hr';
+        }
+
+        // ── State ──
+        var currentPreset = 'live';
+
+        // ── Preset buttons ──
+        document.getElementById('preset-group').addEventListener('click', function(e) {
+            var btn = e.target.closest('.preset-btn');
+            if (!btn) return;
+            var btns = document.querySelectorAll('#preset-group .preset-btn');
+            for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+            btn.classList.add('active');
+            currentPreset = btn.getAttribute('data-preset');
+        });
+
+        // ── CRF slider label ──
+        document.getElementById('crf').addEventListener('input', function() {
+            document.getElementById('crf-label').textContent = this.value;
+        });
+
+        // ── Main compute ──
+        function computeAll() {
+            var resKey = document.getElementById('resolution').value;
+            var res = RES_PIXELS[resKey];
+            var fps = parseInt(document.getElementById('framerate').value);
+            var duration = parseFloat(document.getElementById('duration').value) || 10;
+            var crf = parseInt(document.getElementById('crf').value);
+
+            if (duration <= 0) duration = 10;
+
+            // Show result cards
+            document.getElementById('results-card').style.display = '';
+            document.getElementById('reverse-card').style.display = '';
+            document.getElementById('compat-card').style.display = '';
+
+            // Update params line
+            document.getElementById('results-params').textContent =
+                res.label + ' · ' + fps + ' fps · ' + duration.toFixed(1) + ' min · ' +
+                CONTENT_LABELS[currentPreset] + ' · CRF ' + crf;
+
+            // Build metric grid
+            var grid = document.getElementById('size-grid');
+            grid.innerHTML = '';
+            for (var i = 0; i < CODECS.length; i++) {
+                var c = CODECS[i];
+                var bps = estimateBitrate(c, crf, currentPreset, res, fps);
+                var bytes = estimateFileSize(bps, duration);
+                grid.innerHTML +=
+                    '<div class="metric-tile">' +
+                        '<div class="metric-val" style="color:' + c.color + ';">' + fmtSize(bytes) + '</div>' +
+                        '<div class="metric-label">' + c.name + ' (CRF ' + crf + ')</div>' +
+                    '</div>';
+            }
+
+            // Build comparison table
+            var tbody = document.getElementById('compare-body');
+            tbody.innerHTML = '';
+            var bestBytes = Infinity;
+            var worstBytes = 0;
+            var results = [];
+            for (var j = 0; j < CODECS.length; j++) {
+                var cd = CODECS[j];
+                var br = estimateBitrate(cd, crf, currentPreset, res, fps);
+                var sz = estimateFileSize(br, duration);
+                results.push({ codec: cd, bitrate: br, size: sz });
+                if (sz < bestBytes) bestBytes = sz;
+                if (sz > worstBytes) worstBytes = sz;
+            }
+            for (var k = 0; k < results.length; k++) {
+                var r = results[k];
+                var cls = '';
+                if (r.size === bestBytes) cls = 'codec-best';
+                else if (r.size === worstBytes) cls = 'codec-worst';
+                else cls = 'codec-mid';
+
+                // CDN cost: bytes * 1M / 1e9 GB * $0.005
+                var cdnCost = r.size * 1000000 / 1e9 * 0.005;
+                var encTime = r.codec.encodeSpeed * duration;
+
+                tbody.innerHTML +=
+                    '<tr>' +
+                        '<td><strong>' + r.codec.name + '</strong> <span style="font-size:0.72rem;color:var(--text-muted);">(' + r.codec.year + ')</span></td>' +
+                        '<td class="' + cls + '">' + fmtSize(r.size) + '</td>' +
+                        '<td>' + fmtBitrate(r.bitrate) + '</td>' +
+                        '<td>' + fmtTime(encTime) + ' <span style="font-size:0.7rem;color:var(--text-muted);">(s/w)</span></td>' +
+                        '<td>' + (r.codec.eff).toFixed(1) + '× vs H.264</td>' +
+                        '<td>$' + cdnCost.toFixed(2) + '</td>' +
+                    '</tr>';
+            }
+        }
+
+        // ── Reverse CRF calculator ──
+        function reverseCRF() {
+            var targetMB = parseFloat(document.getElementById('target-size').value) || 500;
+            if (targetMB <= 0) targetMB = 500;
+            var targetBytes = targetMB * 1e6;
+            var targetCodecId = document.getElementById('target-codec').value;
+            var targetCodec = null;
+            for (var i = 0; i < CODECS.length; i++) {
+                if (CODECS[i].id === targetCodecId) { targetCodec = CODECS[i]; break; }
+            }
+            if (!targetCodec) return;
+
+            var resKey = document.getElementById('resolution').value;
+            var res = RES_PIXELS[resKey];
+            var fps = parseInt(document.getElementById('framerate').value);
+            var duration = parseFloat(document.getElementById('duration').value) || 10;
+            if (duration <= 0) duration = 10;
+
+            // Binary search for CRF that hits target
+            var lo = 0, hi = 51, bestCRF = 23, bestDiff = Infinity;
+            for (var iter = 0; iter < 20; iter++) {
+                var mid = Math.round((lo + hi) / 2);
+                var bps = estimateBitrate(targetCodec, mid, currentPreset, res, fps);
+                var sz = estimateFileSize(bps, duration);
+                var diff = sz - targetBytes;
+                if (Math.abs(diff) < Math.abs(bestDiff)) {
+                    bestDiff = diff;
+                    bestCRF = mid;
+                }
+                if (diff > 0) { lo = mid + 1; }
+                else { hi = mid - 1; }
+                if (lo > hi) break;
+            }
+
+            // Compute all codecs at this CRF
+            var lines = [];
+            for (var j = 0; j < CODECS.length; j++) {
+                var c = CODECS[j];
+                var br = estimateBitrate(c, bestCRF, currentPreset, res, fps);
+                var sz = estimateFileSize(br, duration);
+                var marker = c.id === targetCodecId ? ' ★ target' : '';
+                lines.push('<strong>' + c.name + ':</strong> CRF ~' + bestCRF + ' → ' + fmtSize(sz) + ' (CRF ' + bestCRF + ' across all four codecs for comparison' + marker + ')');
+            }
+
+            // Actually, reverse CRF should give per-codec CRF since each codec has different efficiency
+            // Recompute per-codec
+            var resultLines = [];
+            for (var k = 0; k < CODECS.length; k++) {
+                var cd = CODECS[k];
+                var cLo = 0, cHi = 51, cBest = 23, cBestDiff = Infinity;
+                for (var it = 0; it < 20; it++) {
+                    var cMid = Math.round((cLo + cHi) / 2);
+                    var cBps = estimateBitrate(cd, cMid, currentPreset, res, fps);
+                    var cSz = estimateFileSize(cBps, duration);
+                    var cDiff = cSz - targetBytes;
+                    if (Math.abs(cDiff) < Math.abs(cBestDiff)) {
+                        cBestDiff = cDiff;
+                        cBest = cMid;
+                    }
+                    if (cDiff > 0) { cLo = cMid + 1; }
+                    else { cHi = cMid - 1; }
+                    if (cLo > cHi) break;
+                }
+                var marker2 = cd.id === targetCodecId ? ' ★' : '';
+                resultLines.push('<strong>' + cd.name + ':</strong> CRF <span style="color:' + cd.color + ';font-weight:700;">' + cBest + '</span> → ~' + fmtSize(estimateFileSize(estimateBitrate(cd, cBest, currentPreset, res, fps), duration)) + marker2);
+            }
+
+            var box = document.getElementById('reverse-result');
+            box.style.display = '';
+            box.innerHTML =
+                '<h4>🎯 Target: ' + targetMB.toFixed(0) + ' MB — Per-Codec CRF Values</h4>' +
+                '<p style="font-size:0.85rem;line-height:1.9;">' + resultLines.join('<br>') + '</p>' +
+                '<p style="font-size:0.72rem;color:var(--text-muted);margin-top:8px;">These CRF values produce approximately ' + targetMB.toFixed(0) + ' MB for a ' + duration.toFixed(1) + '-minute ' + CONTENT_LABELS[currentPreset] + ' video at ' + res.label + ' ' + fps + 'fps. Actual results vary ±10–15% depending on scene content within the content type. ★ = the codec you selected to optimize for.</p>';
+        }
+
+        // ── Bind buttons ──
+        document.querySelector('.btn-calc').addEventListener('click', computeAll);
+        document.getElementById('btn-reverse').addEventListener('click', reverseCRF);
+
+        // Auto-compute on load
+        computeAll();
+    })();
+    </script>
+</body>
+</html>

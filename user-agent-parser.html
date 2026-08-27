@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>User Agent Parser — Decode Browser, OS & Device Online — jslet</title>
+    <meta name="description" content="Parse any User-Agent string to identify browser, version, OS, device type and engine. Chrome, Safari, Firefox, Edge, mobile, bots — with common UA presets. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/user-agent-parser">
+    <meta property="og:title" content="User Agent Parser — Decode Browser, OS & Device">
+    <meta property="og:description" content="Parse User-Agent strings: browser, version, OS, device, engine. Common UA presets. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/user-agent-parser">
+    <meta property="og:type" content="website"><meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="User Agent Parser — Decode Browser, OS & Device">
+    <meta name="twitter:description" content="Parse User-Agent strings: browser, version, OS, device. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"User Agent Parser","description":"Parse User-Agent strings to identify browser, version, OS, device type and rendering engine. Includes common UA presets. 100% client-side.","url":"https://www.jslet.com/user-agent-parser","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What does a User-Agent string actually tell you?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A User-Agent (UA) string is a text header your browser sends with every HTTP request. It identifies, in order of usefulness: the rendering engine (Blink, WebKit, Gecko, Trident), the browser family and version (Chrome 126, Safari 17, Firefox 128), the operating system (Windows NT 10.0, Mac OS X 15, Android 14, iOS 17), and the device class (iPhone, iPad, Macintosh, Linux x86_64). Bots identify themselves too — Googlebot, Bingbot, GPTBot and ClaudeBot all have recognizable UA strings. This parser walks the string with the same precedence real analytics tools use and shows you every field it extracts, plus the raw segments so you can verify the logic."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does every browser claim to be Mozilla?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Historical compatibility. The UA format began with 'Mozilla/5.0' in the 1990s Netscape era, and every browser since — Chrome, Safari, Edge, even modern Firefox — keeps the prefix because some old sites snubbed anything that did not start with it. Chrome also includes 'Safari/' because it inherited the WebKit lineage, and 'like Gecko' to satisfy even older sniffers. The real signal is further in the string: 'Chrome/126' or 'Gecko/128' is what identifies the actual engine. This is why UA parsing is pattern-matching archaeology rather than simple reading — and why client-side feature detection (navigator.userAgentData or platform checks) is often more reliable than the UA string for modern apps."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I identify mobile devices from a User-Agent?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Look for the device tokens: 'iPhone' with 'Mobile/15E148' means iOS Safari; 'Android' with 'Mobile' means a phone; 'Android' without 'Mobile' means a tablet (most Android tablets omit the Mobile token); 'iPad' is self-identifying. The order matters: an iPhone UA contains both 'Mobile' and 'Macintosh'-compatible tokens, so naive checks that look for 'Mobile' only get half the picture. This parser combines the device token, the Mobile marker, and the OS to classify phone vs tablet vs desktop, and it shows you which rule fired so you can audit the decision."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How reliable is User-Agent based browser detection?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It is a heuristic, not a guarantee. Users can spoof their UA (privacy browsers, developer tools), and Chrome 110+ ships a reduced UA that hides the exact minor version. For most analytics purposes the UA is still fine — you care about the browser family and OS platform, which are accurate. For security-sensitive decisions (blocking, feature gating), never trust the UA — use feature detection and the modern navigator.userAgentData API where available. This tool is for understanding and debugging UA strings, not for building security boundaries."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .tool-layout { display: flex; gap: 20px; min-height: 400px; }
+        @media (max-width: 768px) { .tool-layout { flex-direction: column; } }
+        .tool-panel { flex: 1; }
+        .tool-panel label { font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; display: block; color: var(--text-body); }
+        .ua-input { font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 0.82rem; padding: 12px 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); width: 100%; box-sizing: border-box; min-height: 60px; resize: vertical; }
+        .ua-input:focus { border-color: var(--accent); outline: none; }
+        .btn-row { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
+        .btn { padding: 9px 18px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.85rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+        .result-card { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px; margin-top: 14px; }
+        .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+        .result-item { background: var(--bg-input); border-radius: 4px; padding: 10px 12px; }
+        .result-item .lbl { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .result-item .val { font-size: 0.95rem; font-weight: 700; margin-top: 2px; }
+        .ua-preview { font-size: 0.8rem; color: var(--text-muted); margin-top: 6px; word-break: break-all; }
+        .preset-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+        .preset-chip { padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 0.75rem; cursor: pointer; color: var(--text-body); }
+        .preset-chip:hover { border-color: var(--accent); color: var(--accent); }
+        .info-bar { font-size: 0.82rem; color: var(--text-muted); margin-top: 8px; }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>User-Agent <span>Parser</span></h1><p>Paste any UA string and get browser, version, OS, device and engine — with the exact rules that fired. Chrome, Safari, Firefox, Edge, mobile and bots all covered.</p></header>
+        <div class="tool-panel">
+            <label for="ua-input">🟢📥 User-Agent String</label>
+            <textarea id="ua-input" class="ua-input" placeholder="Paste a User-Agent string here...">Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36</textarea>
+            <div class="btn-row">
+                <button class="btn btn-primary" onclick="parseUA()">🟢🔍 Parse</button>
+                <button class="btn btn-outline" onclick="useMine()">🟢📡 Use my browser's UA</button>
+            </div>
+            <div class="preset-row" id="preset-row">
+                <span class="preset-chip" onclick="loadPreset('chrome')">Chrome Win</span>
+                <span class="preset-chip" onclick="loadPreset('safari')">Safari Mac</span>
+                <span class="preset-chip" onclick="loadPreset('firefox')">Firefox Win</span>
+                <span class="preset-chip" onclick="loadPreset('edge')">Edge Win</span>
+                <span class="preset-chip" onclick="loadPreset('iphone')">iPhone</span>
+                <span class="preset-chip" onclick="loadPreset('android')">Android Phone</span>
+                <span class="preset-chip" onclick="loadPreset('ipad')">iPad</span>
+                <span class="preset-chip" onclick="loadPreset('googlebot')">Googlebot</span>
+                <span class="preset-chip" onclick="loadPreset('gptbot')">GPTBot</span>
+            </div>
+        </div>
+        <div class="result-card" id="result-card" style="display:none;"></div>
+        <div class="info-bar" id="ua-info"></div>
+        <section style="margin-top: 28px; border-top:2px solid var(--border); padding-top:16px;">
+            <h2 style="font-size:1rem;">🟢📖 Reading a User-Agent Like an Analyst</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>Ignore the front, read the middle.</strong> "Mozilla/5.0" is historical baggage every browser carries. The real tokens start at <code>Chrome/126</code>, <code>Safari/17.5</code>, <code>Gecko/128</code> or <code>Edg/126</code>. Chrome includes "Safari/" and "like Gecko" for compatibility — the last real engine token is the truth.</p>
+                <p><strong>OS tells you the platform:</strong> <code>Windows NT 10.0</code> = Win10/11, <code>Mac OS X 15_4</code> = macOS, <code>Android 14</code> and <code>iPhone OS 17_5</code> for mobile. The device class comes from <code>iPhone</code>, <code>iPad</code>, or <code>Mobile</code> presence — Android tablets omit "Mobile".</p>
+                <p><strong>Bots identify themselves:</strong> <code>Googlebot/2.1</code>, <code>bingbot/2.0</code>, <code>GPTBot/1.2</code>, <code>ClaudeBot/1.0</code>, <code>Applebot</code>. This parser flags recognized crawlers — useful when auditing server logs to see what is actually hitting your site.</p>
+                <p>See also: <a href="/http-status-codes">HTTP Status Codes</a> · <a href="/url-parser">URL &amp; Query Parser</a> · <a href="/mime-type-lookup">MIME Type Lookup</a> · <a href="/curl-to-fetch">cURL →Fetch</a> · <a href="/dev-tools">More Developer Tools</a></p>
+            </div>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var input = document.getElementById('ua-input');
+        var card = document.getElementById('result-card');
+        var info = document.getElementById('ua-info');
+
+        var PRESETS = {
+            chrome: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            safari: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 15_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15',
+            firefox: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0',
+            edge: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0',
+            iphone: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+            android: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36',
+            ipad: 'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+            googlebot: 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; +http://www.google.com/bot.html) Chrome/126.0.0.0 Safari/537.36',
+            gptbot: 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)',
+        };
+
+        var BOTS = {
+            'googlebot': 'Googlebot',
+            'bingbot': 'Bingbot',
+            'gptbot': 'GPTBot',
+            'claudebot': 'ClaudeBot',
+            'applebot': 'Applebot',
+            'duckduckbot': 'DuckDuckBot',
+            'baiduspider': 'Baiduspider',
+            'yandexbot': 'YandexBot',
+            'semrushbot': 'SemrushBot',
+            'ahrefsbot': 'AhrefsBot',
+            'slurp': 'Yahoo Slurp',
+            'facebookexternalhit': 'Facebook Bot',
+        };
+
+        function parseUA() {
+            var ua = input.value.trim();
+            if (!ua) return;
+            var r = { browser: 'Unknown', version: '—', os: 'Unknown', osVersion: '—', device: 'Desktop', engine: 'Unknown', bot: null, rules: [] };
+
+            // 1. 爬虫识别
+            var uaLower = ua.toLowerCase();
+            for (var b in BOTS) {
+                if (uaLower.indexOf(b) >= 0) { r.bot = BOTS[b]; r.rules.push('bot:' + b); break; }
+            }
+
+            // 2. 引擎
+            if (uaLower.indexOf('edg/') >= 0) { r.engine = 'Blink (Edge)'; r.rules.push('engine:edg'); }
+            else if (uaLower.indexOf('chrome/') >= 0) { r.engine = 'Blink'; r.rules.push('engine:chrome'); }
+            else if (uaLower.indexOf('gecko/') >= 0 && uaLower.indexOf('like gecko') < 0) { r.engine = 'Gecko'; r.rules.push('engine:gecko'); }
+            else if (uaLower.indexOf('webkit/') >= 0) { r.engine = 'WebKit'; r.rules.push('engine:webkit'); }
+            else if (uaLower.indexOf('trident/') >= 0) { r.engine = 'Trident'; r.rules.push('engine:trident'); }
+
+            // 3. 浏览器（优先级：Edge > Chrome > Safari > Firefox > Version-only）
+            var m = ua.match(/Edg\/([\d.]+)/);
+            if (m) { r.browser = 'Microsoft Edge'; r.version = m[1]; r.rules.push('browser:edge'); }
+            else {
+                m = ua.match(/Firefox\/([\d.]+)/);
+                if (m) { r.browser = 'Firefox'; r.version = m[1]; r.rules.push('browser:firefox'); }
+                else {
+                    m = ua.match(/Chrome\/([\d.]+)/);
+                    if (m && !r.bot) { r.browser = 'Chrome'; r.version = m[1]; r.rules.push('browser:chrome'); }
+                    else {
+                        m = ua.match(/Version\/([\d.]+)/);
+                        if (m && uaLower.indexOf('safari/') >= 0) { r.browser = 'Safari'; r.version = m[1]; r.rules.push('browser:safari'); }
+                    }
+                }
+            }
+            if (r.bot && r.browser === 'Unknown') { r.browser = r.bot; r.rules.push('browser:bot'); }
+
+            // 4. 操作系统
+            if (uaLower.indexOf('windows nt 10.0') >= 0) { r.os = 'Windows'; r.osVersion = '10/11'; r.rules.push('os:win10'); }
+            else if (uaLower.indexOf('windows nt 6.1') >= 0) { r.os = 'Windows'; r.osVersion = '7'; r.rules.push('os:win7'); }
+            else if (uaLower.indexOf('windows nt 6.3') >= 0) { r.os = 'Windows'; r.osVersion = '8.1'; r.rules.push('os:win81'); }
+            else if (uaLower.indexOf('windows') >= 0) { r.os = 'Windows'; r.rules.push('os:win'); }
+            else if (uaLower.indexOf('iphone os') >= 0 || uaLower.indexOf('cpu os') >= 0) {
+                var im = ua.match(/CPU (?:iPhone )?OS (\d+)_(\d+)/);
+                r.os = 'iOS'; r.osVersion = im ? im[1] + '.' + im[2] : '—'; r.rules.push('os:ios');
+            }
+            else if (uaLower.indexOf('android') >= 0) {
+                var am = ua.match(/Android (\d+(?:\.\d+)?)/);
+                r.os = 'Android'; r.osVersion = am ? am[1] : '—'; r.rules.push('os:android');
+            }
+            else if (uaLower.indexOf('mac os x') >= 0 || uaLower.indexOf('macintosh') >= 0) {
+                var mm = ua.match(/Mac OS X (\d+)_(\d+)/);
+                r.os = 'macOS'; r.osVersion = mm ? mm[1] + '.' + mm[2] : '—'; r.rules.push('os:mac');
+            }
+            else if (uaLower.indexOf('linux') >= 0) { r.os = 'Linux'; r.rules.push('os:linux'); }
+            else if (uaLower.indexOf('crkey') >= 0 || uaLower.indexOf('crvos') >= 0) { r.os = 'ChromeOS'; r.rules.push('os:chromeos'); }
+
+            // 5. 设备类型
+            if (uaLower.indexOf('iphone') >= 0) { r.device = 'iPhone'; r.rules.push('device:iphone'); }
+            else if (uaLower.indexOf('ipad') >= 0) { r.device = 'iPad'; r.rules.push('device:ipad'); }
+            else if (uaLower.indexOf('android') >= 0) {
+                r.device = uaLower.indexOf('mobile') >= 0 ? 'Android Phone' : 'Android Tablet';
+                r.rules.push('device:android' + (uaLower.indexOf('mobile') >= 0 ? '-mobile' : '-tablet'));
+            }
+            else if (uaLower.indexOf('mobile') >= 0) { r.device = 'Mobile'; r.rules.push('device:mobile'); }
+
+            render(r, ua);
+        }
+
+        function render(r, ua) {
+            var items = [
+                ['Browser', r.browser + (r.version !== '—' ? ' ' + r.version : '')],
+                ['Operating System', r.os + (r.osVersion !== '—' ? ' ' + r.osVersion : '')],
+                ['Device', r.device],
+                ['Engine', r.engine],
+                ['Crawler', r.bot || 'No'],
+            ];
+            var html = '<div class="result-grid">';
+            items.forEach(function(it) {
+                html += '<div class="result-item"><div class="lbl">' + it[0] + '</div><div class="val">' + it[1] + '</div></div>';
+            });
+            html += '</div><div class="ua-preview">Matched rules: ' + r.rules.join(' · ') + '</div>';
+            card.innerHTML = html;
+            card.style.display = 'block';
+            info.textContent = '🟢📊 ' + ua.length + ' chars · ' + r.rules.length + ' rules matched';
+        }
+
+        window.parseUA = parseUA;
+        window.useMine = function() { input.value = navigator.userAgent; parseUA(); };
+        window.loadPreset = function(name) { input.value = PRESETS[name] || ''; parseUA(); };
+
+        // Expose for tests
+        window.parseUAForTest = parseUA;
+
+        // Initial
+        parseUA();
+    })();
+    </script>
+</body>
+</html>

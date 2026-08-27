@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>RI vs Spot Breakeven Calculator — Reserved Instance &amp; Spot Pricing Comparison | jslet</title>
+    <meta name="description" content="Your CFO wants 3-year RIs at 40% off. Your CTO wants spot at 65% off. The breakeven depends on interruption rate. Model annual costs across On-Demand, RI, and Spot. Free, client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "RI vs Spot Breakeven Calculator",
+      "description": "Compare Reserved Instance and Spot Instance pricing. Model annual costs with interruption risk baked in. Compute breakeven interruption rate. Free client-side calculator.",
+      "url": "https://www.jslet.com/ri-vs-spot-breakeven",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <link rel="canonical" href="https://www.jslet.com/ri-vs-spot-breakeven">
+    <meta property="og:title" content="RI vs Spot Breakeven Calculator — jslet">
+    <meta property="og:description" content="RI vs Spot: your CFO and CTO disagree. Model annual cost with interruption risk baked in. Breakeven math, not opinions.">
+    <meta property="og:url" content="https://www.jslet.com/ri-vs-spot-breakeven">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="RI vs Spot Breakeven Calculator — jslet">
+    <meta name="twitter:description" content="RI vs Spot: which side of the commitment trade wins? Model interruption risk, compute the breakeven.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <style>
+        .input-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 700px) { .input-row-2, .input-row-3 { grid-template-columns: 1fr; } }
+        select.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono","Cascadia Code",Consolas,monospace; transition: border-color 0.2s,box-shadow 0.2s; appearance: none; cursor: pointer; }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        input[type="range"] { width: 100%; -webkit-appearance: none; appearance: none; height: 8px; border-radius: 4px; background: var(--border); outline: none; margin: 8px 0; cursor: pointer; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
+        [data-theme="dark"] input[type="range"]::-webkit-slider-thumb { border-color: #161b22; }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 18px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 1.35rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-val.cost-od { color: #6b7280; }
+        .metric-tile .metric-val.cost-ri { color: #2563eb; }
+        .metric-tile .metric-val.cost-spot { color: #059669; }
+        .metric-tile .metric-val.cost-best { color: #7c3aed; font-size: 1.6rem; }
+
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .recommendation-badge { display: inline-block; padding: 8px 18px; border-radius: 999px; font-weight: 700; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; margin-top: 10px; }
+        .rec-ri { background: #dbeafe; color: #1e40af; }
+        .rec-spot { background: #d1fae5; color: #065f46; }
+        .rec-od { background: #f3f4f6; color: #374151; }
+        [data-theme="dark"] .rec-ri { background: #1e3a5f; color: #93c5fd; }
+        [data-theme="dark"] .rec-spot { background: #064e3b; color: #6ee7b7; }
+        [data-theme="dark"] .rec-od { background: #1f2937; color: #9ca3af; }
+
+        .cost-bar-wrap { margin-top: 18px; }
+        .cost-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .cost-bar-label { width: 100px; font-size: 0.78rem; font-weight: 700; color: var(--text-heading); text-align: right; flex-shrink: 0; }
+        .cost-bar-track { flex: 1; height: 26px; background: var(--border); border-radius: 4px; overflow: hidden; position: relative; }
+        .cost-bar-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; padding-left: 10px; font-size: 0.72rem; font-weight: 700; color: #fff; transition: width 0.5s ease; }
+        .cost-bar-fill.bar-od { background: #6b7280; }
+        .cost-bar-fill.bar-ri { background: #2563eb; }
+        .cost-bar-fill.bar-spot { background: #059669; }
+
+        .breakeven-badge { text-align: center; padding: 18px 24px; border-radius: var(--radius); margin-top: 18px; border: 2px solid var(--accent); background: var(--bg-card); }
+        .breakeven-badge .big-number { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 2.2rem; font-weight: 700; color: var(--accent); }
+        .breakeven-badge .big-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+        .scenario-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 14px; }
+        .scenario-chip { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: border-color 0.2s,background 0.2s; text-align: center; background: var(--bg-input); font-size: 0.82rem; }
+        .scenario-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+        .scenario-chip .sc-name { font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 3px; font-size: 0.85rem; }
+        .scenario-chip .sc-meta { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 0.7rem; color: var(--accent); }
+    </style>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "When does Spot beat a 3-year Reserved Instance?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Spot is 65%+ off list but can be interrupted; RIs are ~40% off with no interruption risk. The breakeven depends entirely on your interruption rate — the percentage of time spot capacity is reclaimed. The calculator models annual costs across On-Demand, RI, and Spot so the CFO-vs-CTO argument becomes a number."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does the interruption rate change the math?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "If spot is interrupted rarely (a few %), its effective cost beats RI despite occasional re-provisioning. If interruptions are frequent or workloads are not resumable, the cost of disruption eats the discount. The calculator takes your interruption rate as input and shows the crossover point where RI becomes cheaper."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I mix RIs and Spot?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — the practical pattern is RI for the steady-state baseline and Spot for burstable or stateless workloads. The calculator supports comparing the mixed strategy, which is usually the actual recommendation: cover the floor with RIs, ride the peaks on Spot."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>RI <span>vs Spot</span> Breakeven</h1>
+            <p>Your CFO wants 3-year RIs at 40% off. Your CTO says spot is 65% cheaper and interruption risk is overblown. Both want a number, not an opinion. The breakeven depends on exactly one variable: how often your instances get reclaimed. Model it before the 36-month commitment locks you in.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Pricing Scenario Configuration</h3>
+                <p class="card-desc">Set instance pricing, RI commitment, spot discount, and interruption parameters. The engine computes annual costs across all three models and finds the breakeven interruption rate where RI and Spot equalize.</p>
+                <div class="input-row-3">
+                    <div class="input-group"><label for="od-price">On-Demand Price ($/hr)</label><input type="number" class="unit-input" id="od-price" value="0.50" step="0.01" min="0.001"></div>
+                    <div class="input-group"><label for="instances">Instance Count</label><input type="number" class="unit-input" id="instances" value="10" step="1" min="1" max="10000"></div>
+                    <div class="input-group"><label for="monthly-hours">Monthly Runtime (hours)</label><input type="number" class="unit-input" id="monthly-hours" value="730" step="1" min="1" max="730"></div>
+                </div>
+                <div class="input-row-3" style="margin-top: 14px;">
+                    <div class="input-group">
+                        <label for="ri-term">RI Commitment Term</label>
+                        <select class="unit-input" id="ri-term">
+                            <option value="1yr">1-Year (Standard RI)</option>
+                            <option value="3yr" selected>3-Year (Standard RI)</option>
+                            <option value="1yr-conv">1-Year Convertible</option>
+                            <option value="3yr-conv">3-Year Convertible</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="ri-disc-slider">RI Discount</label>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <input type="range" id="ri-disc-slider" value="40" min="10" max="72" step="1" style="flex:1;">
+                            <span style="font-family:'SF Mono','Cascadia Code',Consolas,monospace;font-weight:700;color:var(--accent);min-width:42px;text-align:right;" id="ri-disc-val">40%</span>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="spot-disc-slider">Spot Discount vs On-Demand</label>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <input type="range" id="spot-disc-slider" value="65" min="20" max="90" step="1" style="flex:1;">
+                            <span style="font-family:'SF Mono','Cascadia Code',Consolas,monospace;font-weight:700;color:#059669;min-width:42px;text-align:right;" id="spot-disc-val">65%</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="input-row-2" style="margin-top: 14px;">
+                    <div class="input-group">
+                        <label for="int-rate-slider">Spot Interruption Rate (per 1,000 instance-hours)</label>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <input type="range" id="int-rate-slider" value="2.0" min="0.1" max="50" step="0.1" style="flex:1;">
+                            <span style="font-family:'SF Mono','Cascadia Code',Consolas,monospace;font-weight:700;color:#f59e0b;min-width:48px;text-align:right;" id="int-rate-val">2.0</span>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="recovery-slider">Cost Per Interruption (minutes of lost work)</label>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <input type="range" id="recovery-slider" value="10" min="1" max="120" step="1" style="flex:1;">
+                            <span style="font-family:'SF Mono','Cascadia Code',Consolas,monospace;font-weight:700;color:#ef4444;min-width:42px;text-align:right;" id="recovery-val">10 min</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn-calc" id="btn-compute">Compare Pricing Models</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>💰 Annual Cost Comparison</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val cost-od" id="val-od">—</div><div class="metric-label">On-Demand Annual</div></div>
+                    <div class="metric-tile"><div class="metric-val cost-ri" id="val-ri">—</div><div class="metric-label">RI Annual (Locked)</div></div>
+                    <div class="metric-tile"><div class="metric-val cost-spot" id="val-spot">—</div><div class="metric-label">Spot Annual (w/ Interruptions)</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-savings">—</div><div class="metric-label">Best vs On-Demand</div></div>
+                </div>
+                <div class="cost-bar-wrap">
+                    <div class="cost-bar-row"><span class="cost-bar-label">On-Demand</span><div class="cost-bar-track"><div class="cost-bar-fill bar-od" id="bar-od" style="width:100%;">—</div></div></div>
+                    <div class="cost-bar-row"><span class="cost-bar-label">RI (3yr)</span><div class="cost-bar-track"><div class="cost-bar-fill bar-ri" id="bar-ri" style="width:60%;">—</div></div></div>
+                    <div class="cost-bar-row"><span class="cost-bar-label">Spot</span><div class="cost-bar-track"><div class="cost-bar-fill bar-spot" id="bar-spot" style="width:35%;">—</div></div></div>
+                </div>
+                <div class="breakeven-badge">
+                    <div class="big-number" id="breakeven-rate">—</div>
+                    <div class="big-label">Breakeven Interruption Rate (per 1,000 hrs)</div>
+                    <p style="font-size:0.82rem;color:var(--text-body);margin-top:8px;" id="breakeven-explain">—</p>
+                </div>
+                <div style="text-align:center;margin-top:14px;" id="recommendation-area"></div>
+            </div>
+
+            <!-- SCENARIO PRESETS -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🎯 Common Scenarios</h3>
+                <p class="card-desc">Click a preset to populate the calculator. Each models a real workload pattern: stateless web tier, batch processing, stateful analytics, and CI/CD runners.</p>
+                <div class="scenario-grid">
+                    <div class="scenario-chip" onclick="loadPreset('web')"><span class="sc-name">🖥️ Stateless Web Tier</span><span class="sc-meta">2% int · 10min recov</span></div>
+                    <div class="scenario-chip" onclick="loadPreset('batch')"><span class="sc-name">⚡ Batch Processing</span><span class="sc-meta">15% int · 5min recov</span></div>
+                    <div class="scenario-chip" onclick="loadPreset('analytics')"><span class="sc-name">📊 Stateful Analytics</span><span class="sc-meta">5% int · 60min recov</span></div>
+                    <div class="scenario-chip" onclick="loadPreset('cicd')"><span class="sc-name">🔧 CI/CD Runners</span><span class="sc-meta">8% int · 3min recov</span></div>
+                    <div class="scenario-chip" onclick="loadPreset('ml-inference')"><span class="sc-name">🧠 ML Inference</span><span class="sc-meta">1% int · 20min recov</span></div>
+                    <div class="scenario-chip" onclick="loadPreset('ml-training')"><span class="sc-name">🔥 ML Training (GPU)</span><span class="sc-meta">20% int · 120min recov</span></div>
+                </div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>RI vs Spot: The Commitment Trade-Off</h2>
+            <p>Reserved Instances give you a guaranteed discount in exchange for a 1- or 3-year commitment. You pay for 8,760 hours per instance per year — whether your workloads run or not. Spot Instances give you a steeper discount with zero commitment — but AWS can reclaim them with a 2-minute warning. The economics are not a philosophical debate. They are a <strong>probability distribution over interruption events</strong> multiplied by the cost of recovering from each one.</p>
+
+            <h3>How the Breakeven Math Works</h3>
+            <p>This calculator computes annual costs across three models:</p>
+            <ul style="line-height:1.9; margin-left:20px;">
+                <li><strong>On-Demand:</strong> <code>instances × monthly-hours × 12 × on-demand-price</code>. Zero commitment. Maximum flexibility. Maximum cost.</li>
+                <li><strong>Reserved Instance:</strong> <code>instances × 8,760 × on-demand-price × (1 − RI discount)</code>. You pay for 24/7/365. The discount is guaranteed regardless of utilization. If your workload runs less than ~60% of the year, RI overpayment eats the discount.</li>
+                <li><strong>Spot:</strong> <code>instances × effective-hours × on-demand-price × (1 − spot discount)</code>. Effective hours = actual runtime + time lost to interruption recovery. Interruption rate is per-1,000-instance-hours, drawn from AWS's historical frequency data for your instance type and AZ.</li>
+            </ul>
+
+            <h3>The Interruption Rate Is the Only Variable That Matters</h3>
+            <p>AWS publishes spot interruption frequency data but not per-customer prediction. In practice, interruption rates range from <strong>5–20% for GPU instances</strong> (p4d, p5, g5 in us-east-1) to <strong>&lt;1% for less-contested instance families</strong> (m6i, c6i). The <strong>cost of an interruption</strong> — minutes of lost work — varies by workload: stateless web servers lose ~10 seconds of in-flight requests; ML training runs with checkpointing lose ~5 minutes since last save; stateful analytics without fault tolerance can lose hours. This calculator lets you model both dimensions independently.</p>
+
+            <h3>When Spot Wins (and When It Loses)</h3>
+            <p>Spot wins when <strong>interruptions are rare and recovery is cheap</strong>. Stateless web tiers behind a load balancer, batch jobs with idempotent processing, and CI/CD runners with retry logic are textbook spot candidates — savings of 60–70% with near-zero operational impact. Spot loses when <strong>interruptions are frequent or recovery is expensive</strong>. GPU training runs with hourly checkpointing, stateful databases, and latency-bound streaming pipelines should strongly consider RIs or On-Demand. The breakeven line is where <code>spot savings = RI savings + interruption cost</code>.</p>
+
+            <h3>The Dirty Secret: You Can Mix Both</h3>
+            <p>Teams that win the cloud pricing game do not pick one model. They run a <strong>base fleet on RIs</strong> (covering the minimum steady-state load) and <strong>burst capacity on Spot</strong> (covering variable or elastic demand). A 10-instance workload might put 6 on 3-year RIs, 2 on spot, and leave 2 on on-demand as a safety buffer. The math for mixed fleets is more complex but the principle is the same: <strong>commit to what you know you will use; float the rest on spot.</strong> Use this calculator to find where your breakeven line sits, then allocate accordingly.</p>
+        </section>
+    </div>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        'use strict';
+
+        var elOdPrice = document.getElementById('od-price');
+        var elInstances = document.getElementById('instances');
+        var elMonthlyHours = document.getElementById('monthly-hours');
+        var elRiTerm = document.getElementById('ri-term');
+        var elRiDiscSlider = document.getElementById('ri-disc-slider');
+        var elRiDiscVal = document.getElementById('ri-disc-val');
+        var elSpotDiscSlider = document.getElementById('spot-disc-slider');
+        var elSpotDiscVal = document.getElementById('spot-disc-val');
+        var elIntRateSlider = document.getElementById('int-rate-slider');
+        var elIntRateVal = document.getElementById('int-rate-val');
+        var elRecoverySlider = document.getElementById('recovery-slider');
+        var elRecoveryVal = document.getElementById('recovery-val');
+        var elBtnCompute = document.getElementById('btn-compute');
+        var elResultsCard = document.getElementById('results-card');
+
+        // RI term presets for discount
+        var riTermDefaults = { '1yr': 31, '3yr': 40, '1yr-conv': 22, '3yr-conv': 34 };
+
+        // Sync sliders with display values
+        function syncSliders() {
+            elRiDiscVal.textContent = elRiDiscSlider.value + '%';
+            elSpotDiscVal.textContent = elSpotDiscSlider.value + '%';
+            elIntRateVal.textContent = parseFloat(elIntRateSlider.value).toFixed(1);
+            elRecoveryVal.textContent = elRecoverySlider.value + ' min';
+        }
+
+        elRiDiscSlider.addEventListener('input', syncSliders);
+        elSpotDiscSlider.addEventListener('input', syncSliders);
+        elIntRateSlider.addEventListener('input', syncSliders);
+        elRecoverySlider.addEventListener('input', syncSliders);
+
+        elRiTerm.addEventListener('change', function() {
+            var def = riTermDefaults[this.value] || 40;
+            elRiDiscSlider.value = def;
+            syncSliders();
+            compute();
+        });
+
+        function formatCurrency(n) {
+            if (n >= 1000000) return '$' + (n / 1000000).toFixed(2) + 'M';
+            if (n >= 1000) return '$' + (n / 1000).toFixed(1) + 'K';
+            return '$' + n.toFixed(0);
+        }
+
+        function formatCurrencyPrecise(n) {
+            return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        }
+
+        function compute() {
+            var odPrice = parseFloat(elOdPrice.value) || 0.50;
+            var instances = parseInt(elInstances.value) || 10;
+            var monthlyHours = parseFloat(elMonthlyHours.value) || 730;
+            var riDisc = parseInt(elRiDiscSlider.value) / 100;
+            var spotDisc = parseInt(elSpotDiscSlider.value) / 100;
+            var intRatePer1k = parseFloat(elIntRateSlider.value);
+            var recoveryMin = parseInt(elRecoverySlider.value);
+            var recoveryHrs = recoveryMin / 60;
+
+            var annualHours = monthlyHours * 12;
+            var riAnnualHours = 8760; // RI commitment: 24/7/365
+
+            // On-Demand Annual
+            var odAnnual = instances * annualHours * odPrice;
+
+            // RI Annual (locked commitment, pay for 8760 hrs regardless of usage)
+            var riAnnual = instances * riAnnualHours * odPrice * (1 - riDisc);
+
+            // Spot Annual (pay only for hours used + interruption recovery cost)
+            var annualInterruptions = (annualHours / 1000) * intRatePer1k;
+            var lostHours = annualInterruptions * recoveryHrs;
+            var effectiveSpotHours = annualHours + lostHours;
+            var spotAnnual = instances * effectiveSpotHours * odPrice * (1 - spotDisc);
+
+            // Breakeven: at what interruption rate does RI = Spot?
+            // RI_annual = instances * 8760 * odPrice * (1 - riDisc)
+            // Spot_annual = instances * (annualHours + annualHours/1000 * breakevenRate * recoveryHrs) * odPrice * (1 - spotDisc)
+            // Set equal, solve for breakevenRate:
+            // 8760 * (1 - riDisc) = (annualHours + annualHours/1000 * rate * recoveryHrs) * (1 - spotDisc)
+            // 8760 * (1 - riDisc) / (1 - spotDisc) = annualHours + annualHours/1000 * rate * recoveryHrs
+            // 8760 * (1 - riDisc) / (annualHours * (1 - spotDisc)) - 1 = rate * recoveryHrs / 1000
+            // rate = (8760 * (1 - riDisc) / (annualHours * (1 - spotDisc)) - 1) * 1000 / recoveryHrs
+            var denom = annualHours * (1 - spotDisc);
+            var breakevenRate = 0;
+            var breakevenExplainText = '';
+
+            if (denom > 0 && recoveryHrs > 0) {
+                var ratio = (8760 * (1 - riDisc)) / denom;
+                if (ratio > 1) {
+                    breakevenRate = (ratio - 1) * 1000 / recoveryHrs;
+                } else {
+                    breakevenRate = 0; // RI is cheaper even at zero interruptions
+                }
+            }
+
+            // Determine recommendation
+            var best = 'od';
+            var bestCost = odAnnual;
+            var bestName = 'On-Demand';
+            var bestClass = 'rec-od';
+            if (riAnnual < bestCost) { best = 'ri'; bestCost = riAnnual; bestName = 'Reserved Instance'; bestClass = 'rec-ri'; }
+            if (spotAnnual < bestCost) { best = 'spot'; bestCost = spotAnnual; bestName = 'Spot'; bestClass = 'rec-spot'; }
+
+            var vsOnDemand = ((odAnnual - bestCost) / odAnnual * 100).toFixed(0);
+
+            // Render results
+            document.getElementById('val-od').textContent = formatCurrency(odAnnual);
+            document.getElementById('val-ri').textContent = formatCurrency(riAnnual);
+            document.getElementById('val-spot').textContent = formatCurrency(spotAnnual);
+            document.getElementById('val-savings').textContent = vsOnDemand + '% vs OD';
+
+            document.getElementById('results-params').textContent =
+                instances + '× $' + odPrice.toFixed(2) + '/hr' +
+                ' · ' + monthlyHours + ' hrs/mo' +
+                ' · ' + elRiTerm.options[elRiTerm.selectedIndex].text +
+                ' · ' + elSpotDiscSlider.value + '% spot discount' +
+                ' · ' + elIntRateSlider.value + ' int/1K hrs' +
+                ' · ' + elRecoverySlider.value + ' min recovery';
+
+            // Cost bars (relative to max cost)
+            var maxCost = Math.max(odAnnual, riAnnual, spotAnnual, 1);
+            document.getElementById('bar-od').style.width = (odAnnual / maxCost * 100).toFixed(1) + '%';
+            document.getElementById('bar-od').textContent = formatCurrency(odAnnual);
+            document.getElementById('bar-ri').style.width = (riAnnual / maxCost * 100).toFixed(1) + '%';
+            document.getElementById('bar-ri').textContent = formatCurrency(riAnnual);
+            document.getElementById('bar-spot').style.width = (spotAnnual / maxCost * 100).toFixed(1) + '%';
+            document.getElementById('bar-spot').textContent = formatCurrency(spotAnnual);
+
+            // Breakeven
+            if (breakevenRate > 100) {
+                document.getElementById('breakeven-rate').textContent = '>100';
+                breakevenExplainText = 'Spot wins at any realistic interruption rate. The spot discount is so deep that even frequent interruptions do not close the gap. Go spot — but checkpoint aggressively.';
+            } else if (breakevenRate < 0.01) {
+                document.getElementById('breakeven-rate').textContent = '<0.01';
+                breakevenExplainText = 'RI wins at virtually any interruption rate above zero. Your workload runs nearly 24/7 and recovery is expensive. Lock in the RI — the commitment math is on your side.';
+            } else {
+                document.getElementById('breakeven-rate').textContent = breakevenRate.toFixed(2);
+                if (intRatePer1k < breakevenRate) {
+                    breakevenExplainText = 'Actual interruption rate (' + intRatePer1k.toFixed(1) + ') is below breakeven (' + breakevenRate.toFixed(2) + '). Spot is the cheaper option at current conditions. If interruptions climb above ' + breakevenRate.toFixed(2) + '/1K hrs, switch to RI.';
+                } else {
+                    breakevenExplainText = 'Actual interruption rate (' + intRatePer1k.toFixed(1) + ') exceeds breakeven (' + breakevenRate.toFixed(2) + '). RI provides better value at current conditions. If interruptions drop below ' + breakevenRate.toFixed(2) + '/1K hrs, swap to Spot.';
+                }
+            }
+            document.getElementById('breakeven-explain').textContent = breakevenExplainText;
+
+            // Recommendation badge
+            var recArea = document.getElementById('recommendation-area');
+            recArea.innerHTML = '<span class="recommendation-badge ' + bestClass + '">Best: ' + bestName + ' — ' + formatCurrency(bestCost) + '/yr</span>';
+
+            elResultsCard.style.display = '';
+        }
+
+        window.loadPreset = function(type) {
+            var presets = {
+                'web':       { od: 0.30, inst: 20, hrs: 730, riTerm: '3yr', riDisc: 40, spotDisc: 65, intRate: 2.0, recovery: 10 },
+                'batch':     { od: 0.50, inst: 8,  hrs: 200, riTerm: '1yr', riDisc: 31, spotDisc: 70, intRate: 15,  recovery: 5 },
+                'analytics': { od: 0.80, inst: 5,  hrs: 500, riTerm: '3yr', riDisc: 40, spotDisc: 60, intRate: 5.0, recovery: 60 },
+                'cicd':      { od: 0.25, inst: 30, hrs: 300, riTerm: '1yr', riDisc: 31, spotDisc: 68, intRate: 8.0, recovery: 3 },
+                'ml-inference': { od: 1.20, inst: 4, hrs: 730, riTerm: '3yr', riDisc: 40, spotDisc: 62, intRate: 1.0, recovery: 20 },
+                'ml-training': { od: 3.06, inst: 8, hrs: 500, riTerm: '1yr', riDisc: 31, spotDisc: 55, intRate: 20, recovery: 120 }
+            };
+            var p = presets[type];
+            if (!p) return;
+
+            elOdPrice.value = p.od;
+            elInstances.value = p.inst;
+            elMonthlyHours.value = p.hrs;
+            elRiTerm.value = p.riTerm;
+            elRiDiscSlider.value = p.riDisc;
+            elSpotDiscSlider.value = p.spotDisc;
+            elIntRateSlider.value = p.intRate;
+            elRecoverySlider.value = p.recovery;
+            syncSliders();
+            compute();
+
+            // Scroll results into view
+            elResultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+
+        elBtnCompute.addEventListener('click', compute);
+
+        // Auto-compute on any input change
+        [elOdPrice, elInstances, elMonthlyHours].forEach(function(el) {
+            el.addEventListener('input', compute);
+        });
+        [elRiDiscSlider, elSpotDiscSlider, elIntRateSlider, elRecoverySlider].forEach(function(el) {
+            el.addEventListener('input', function() {
+                syncSliders();
+                compute();
+            });
+        });
+        elRiTerm.addEventListener('change', compute);
+
+        // Initial sync
+        syncSliders();
+    })();
+    </script>
+</body>
+</html>

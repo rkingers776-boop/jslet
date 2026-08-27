@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The Rate Limit Racket: Why Your API Gateway Bills $400/Month for What NGINX Does on a $124 Server (2026) — jslet</title>
+    <meta name="description" content="API Gateway pricing lists $1.00 per million requests. At 500M requests/month, that's $500 — manageable. But add 150 TB of data transfer at $0.09/GB and your gateway bill hits $14,000/month. Move the same workload to a self-hosted NGINX instance on a $124/month reserved instance and your data transfer drops to $0 (the instance is in your VPC). The per-request rate is a decoy. Data transfer, throttling retry amplification, and multi-region fragmentation are the real cost drivers.">
+    <meta property="og:title" content="The Rate Limit Racket: Why Your API Gateway Costs 30× More Than Self-Hosted">
+    <meta property="og:description" content="API Gateway per-request pricing is a decoy. Data transfer, throttling retry loops, and multi-region fragmentation drive 30× cost multipliers vs self-hosted.">
+    <meta property="og:url" content="https://www.jslet.com/api-rate-limit-cost-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-07-26T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-26T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Rate Limit Racket: Why Your API Gateway Costs 30× More Than Self-Hosted">
+    <meta name="twitter:description" content="API Gateway per-request pricing = decoy. Data transfer + retry amplification + multi-region = 30× multiplier. Self-hosted breakeven at ~500 req/s.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/api-rate-limit-cost-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Rate Limit Racket: Why Your API Gateway Bills $400/Month for What NGINX Does on a $124 Server (2026)",
+      "description": "Managed API Gateway pricing advertises per-request rates of $1.00-3.50 per million. At 500M requests/month, the request cost is $500-1,750 — a line item. The cost driver nobody talks about is data transfer: the same 500M requests with 50 KB average response size generate 25 TB of egress per month. At AWS data transfer rates of $0.09/GB for the top tier, that's $2,250/month in egress — exceeding the request cost. Add throttling retry amplification (429 responses trigger client retries, multiplying effective request volume by 1.5-3×), multi-region Gateway fragmentation ($335/month per Azure APIM instance × 5 regions = $1,675/month), and protocol choice (REST vs gRPC: 40% bandwidth gap). Self-hosted NGINX on a $124/month reserved instance with zero egress charges (traffic stays within the VPC) hits the breakeven at roughly 500 requests/second. This briefing quantifies all five cost multipliers and provides the self-hosted vs managed breakeven model across all three major clouds.",
+      "url": "https://www.jslet.com/api-rate-limit-cost-real",
+      "datePublished": "2026-07-26T00:00:00+00:00",
+      "dateModified": "2026-07-26T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research" },
+      "publisher": { "@type": "Organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "At what request volume should I switch from managed API Gateway to self-hosted?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The breakeven between managed API Gateway and self-hosted NGINX/Kong occurs at roughly 500 requests/second sustained. At 500 rps (1.3B requests/month): AWS REST API Gateway costs roughly $4,550/month (requests) + data transfer. Self-hosted on a c6i.xlarge reserved instance (3-year RI at $66.24/month) with a second instance for HA ($132.48/month total) handles the same throughput with zero per-request charges and zero egress charges (traffic stays within the VPC). The managed Gateway's per-request pricing is linear with volume; self-hosted compute is fixed. Below 100 rps, managed Gateway wins on operational simplicity. Above 1,000 rps, the self-hosted savings exceed $10,000/month — and the operational overhead of running two NGINX instances is justified. Use the API Rate Limit Cost Calculator at jslet.com/api-rate-limit-cost to model the breakeven for your exact traffic profile across AWS, GCP, Azure, and self-hosted options."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much does throttling actually inflate API Gateway costs?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "AWS API Gateway throttles at the account-level rate limit (default 10,000 rps per region). When a request is throttled (HTTP 429), the Gateway still counts it as a billable request — and the client typically retries, often with exponential backoff. The amplification factor: if 10% of requests are throttled and each throttled request triggers 2 retries, the effective request volume is 1.3× nominal. At 1,000 nominal rps with 10% throttling and 2 retries each, Gateway bills for 1,000 + 200 = 1,200 rps (accounting for throttled requests + client retries). In a cascading throttle scenario where retried requests also get throttled (retry storms), the amplification can reach 2-3× nominal volume. The double hit: you pay for the throttled request (Gateway processed it to return 429), and you pay for the retry (which may also get throttled). The fix: set per-client rate limits at the Gateway level (usage plans + API keys), not just account-level limits, and design clients with jittered exponential backoff + circuit breakers that stop retrying after 3 consecutive 429s."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much bandwidth does gRPC save vs REST for API traffic?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "gRPC with Protobuf serialization reduces payload size by 40-60% compared to REST with JSON for the same data. For a typical API response: a JSON payload with field names, quotes, and whitespace might be 10 KB. The same data in Protobuf binary encoding is 3-4 KB. At 500M requests/month: JSON = 5 TB of response data; Protobuf = 2 TB. At AWS data transfer rates ($0.09/GB for the top tier), the bandwidth saving is $270/month in egress alone. gRPC's additional benefits for cost: HTTP/2 multiplexing reduces connection overhead (fewer TLS handshakes = lower latency), and Protobuf schema validation catches malformed requests before they reach your backend (eliminating 400-error processing costs). The tradeoffs: gRPC requires client-side stub generation (protoc compilation step), has limited browser-native support (requires gRPC-Web proxy), and is harder to debug (curl doesn't speak Protobuf). For internal service-to-service communication, gRPC is the correct default — the bandwidth, latency, and schema enforcement benefits are unambiguous. For public-facing APIs consumed by third-party developers, REST+JSON remains the compatibility default despite the bandwidth premium."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does multi-region API Gateway deployment fragment costs so aggressively?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Azure API Management charges a flat base fee per instance per region: Standard tier at ~$400/month per instance. Deploying in 5 regions for global low-latency access costs $2,000/month in base fees before a single API call. AWS API Gateway has no base fee (pure per-request), but each regional endpoint is a separate Gateway with its own throttling limits, caching configuration, and CloudWatch metric costs. At 5 regions with 100M requests/month each: AWS's per-request costs multiply by 5 for the same workload served regionally. The alternative: a single-region Gateway behind a global CDN (CloudFront with regional edge caches) serves global traffic from one Gateway endpoint, paying CDN egress rates ($0.085/GB) instead of multi-region Gateway fragmentation. For read-heavy APIs with cacheable responses, CDN caching at the edge eliminates 60-90% of Gateway requests entirely — each cached response is served from the CDN edge, not the Gateway. This is the single-largest cost optimization for public APIs: cache at the CDN, not at the Gateway. Use the API Rate Limit Cost Calculator at jslet.com/api-rate-limit-cost to model multi-region vs CDN-fronted architectures."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What's the cheapest way to protect an API from abuse without paying per-request for WAF?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "AWS WAF on API Gateway costs $5/month per web ACL + $1/month per rule + $0.60 per million requests inspected. At 500M requests/month: $300/month just for WAF request inspection — often exceeding the Gateway request cost. The cheapest abuse protection stack: (1) CloudFront in front of the Gateway with AWS WAF at the CloudFront level — CloudFront WAF costs the same per-request but CloudFront caches responses and absorbs DDoS traffic before it reaches the Gateway. At 80% cache hit rate, only 100M of 500M requests reach the Gateway, and WAF inspects all 500M at CloudFront (cost unchanged) but the Gateway bill drops by 80%. (2) Rate limiting at the Gateway itself via usage plans + API keys — free, built into API Gateway, blocks abusive clients before WAF even evaluates. (3) For DDoS volumetric protection, AWS Shield Standard is free and included with CloudFront — covers SYN floods, UDP reflection, and HTTP request floods at the network edge. Shield Advanced at $3,000/month adds cost-protection insurance (refunds for scaling costs incurred during a Shield-mitigated attack) and is worth it only if your clean traffic exceeds 100 Gbps and a sustained DDoS could generate $50K+ in CloudFront/Gateway scaling costs."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>The <span>Rate Limit Racket</span></h1>
+            <p>Why Your API Gateway Bills $400/Month for What NGINX Does on a $124 Server — And The Five Cost Multipliers The Pricing Page Hides</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-07-26 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 15 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <section class="seo-section">
+            <h2>Executive Summary</h2>
+            <p>API Gateway pricing pages all lead with the same number: dollars per million requests. AWS REST API Gateway: $3.50/M. AWS HTTP API Gateway: $1.00/M. GCP API Gateway: $3.00/M. These numbers create a mental model where cost = request volume × per-request rate. The model is wrong. The per-request rate is the smallest line item on a production API Gateway bill. The real cost drivers — data transfer egress, throttling retry amplification, multi-region instance fragmentation, and protocol overhead — each multiply the per-request cost by a factor of 2-10×. Together they produce bills where the per-request rate accounts for less than 20% of the total.</p>
+            <p>This briefing deconstructs the five cost multipliers, provides the self-hosted vs managed breakeven model across AWS, GCP, and Azure, and shows why a $124/month NGINX instance can replace a $4,000/month API Gateway bill for the same traffic — with lower latency and zero per-request charges.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Multiplier 1: Data Transfer — The Line Item Bigger Than Requests</h2>
+            <p>API Gateway data transfer pricing is buried three scrolls down on the pricing page. AWS API Gateway charges $0.09/GB for the first 10 TB, then $0.085/GB up to 50 TB. At 500M requests/month with a 10 KB average request body and 50 KB average response: (10 + 50) × 500M = 30 TB/month of data transfer. At $0.085/GB (tiered rate): $2,550/month in egress. The request cost for 500M at $1.00/M (HTTP API): $500/month. Data transfer is 5.1× the request cost. At 1 KB request + 100 KB response: egress jumps to $4,295/month — 8.6× the request cost.</p>
+            <p>The per-request rate is the decoy. Data transfer is the hook. This is true across all providers: AWS, GCP, and Azure all charge separately for data transfer through the Gateway, and the egress rate ($0.05-0.12/GB depending on tier and provider) dominates the bill at any response size above ~10 KB. For APIs serving images, documents, large JSON payloads, or unoptimized responses with verbose field names — the data transfer cost alone exceeds all other line items combined.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Multiplier 2: Throttling Retry Amplification</h2>
+            <p>When a client gets an HTTP 429 from the API Gateway, the Gateway counts it as a billable request. The client then retries — typically 2-3 times with exponential backoff. Each retry is another billable request. At 10% throttling rate with 2 retries per throttled request: effective request volume is 1.3× nominal. In a cascading scenario — where retries push the Gateway further over its rate limit, causing more 429s, causing more retries — the amplification can hit 2-3×. You pay for the throttled request (Gateway processed it to determine "rate limit exceeded"), you pay for the retry request, and if that retry is also throttled, you pay for the second 429 and the third attempt. Four billable requests for one successful client transaction.</p>
+            <p>The 429 response itself is small (~200 bytes), so the per-request cost on a throttled request is minimal — but the amplification effect on the total request count is not. A 100M-request/month API with 15% throttle rate and 2× amplification is actually handling 130M billable requests. At $1.00/M requests (HTTP API): $130/month instead of $100 — a 30% increase from throttling alone. The fix: per-client rate limiting via API keys + usage plans, and clients that implement circuit breakers (stop retrying after 3 consecutive 429s from the same endpoint).</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Multiplier 3: Protocol Choice As A Cost Lever</h2>
+            <p>REST+JSON is the default. gRPC+Protobuf is 40-60% smaller on the wire. At 500M requests/month with 50 KB JSON responses: 25 TB egress. Same data in Protobuf: 10-15 TB. At $0.085/GB: JSON egress costs $2,125/month. Protobuf egress costs $850-1,275/month. The protocol choice saves $850-1,275/month in data transfer alone — plus the latency reduction from fewer bytes over the wire. WebSocket persistent connections add a different cost dynamic: the connection stays open, eliminating TLS handshake overhead per-request, but the Gateway bills for the connection duration. For high-frequency, small-payload workloads (trading data, chat, live scores), WebSocket eliminates the per-request data transfer overhead and is structurally cheaper. For infrequent, large-payload workloads (file upload, batch processing), REST with HTTP/2 multiplexing is the sweet spot. The protocol is not just an engineering choice. It's a cost-structure choice. Model the difference with the <a href="/api-rate-limit-cost">API Rate Limit Cost Calculator</a>.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Multiplier 4: Multi-Region Fragmentation</h2>
+            <p>Azure API Management charges per-instance base fees: Standard tier at ~$400/month per instance. Deploying in 5 regions for global low-latency: $2,000/month before a single API call. AWS API Gateway has no base fee, but each regional endpoint is a separate Gateway — 5 regions means 5 separate rate limits to manage, 5 sets of CloudWatch metrics, 5 configurations to keep in sync. The cost fragmentation is not just monetary — it's operational. A single-region Gateway behind a global CDN (CloudFront) serves the same global traffic from one endpoint. At 80% CDN cache hit rate, the Gateway sees only 20% of requests. A 500M request/month API with 80% cacheable responses: 100M Gateway requests ($100-350/month depending on Gateway type), 400M CDN cache serves (included in CloudFront egress pricing at $0.085/GB for the cached responses). Total: $100-350 Gateway + CDN egress on 400M × avg response size. The CDN-fronted architecture is almost always cheaper than multi-region Gateway deployment — and it's simpler to operate.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Multiplier 5: The Self-Hosted Breakeven</h2>
+            <p>The mathematical breakeven between managed API Gateway and self-hosted NGINX: compute cost of NGINX ≤ per-request + data-transfer cost of managed Gateway. A c6i.xlarge reserved instance (3-year RI, $66.24/month) running NGINX handles ~5,000-10,000 rps for typical API workloads (connection proxying, basic header manipulation, rate limiting via limit_req). At 5,000 rps sustained: 13B requests/month. AWS HTTP API Gateway: $13,000/month in request costs alone, plus data transfer. NGINX on c6i.xlarge: $66.24/month. HA pair: $132.48/month. The self-hosted option is 98% cheaper — and the data transfer is free because NGINX is inside your VPC talking to your backend services over private IPs.</p>
+            <p>The breakeven is not at 5,000 rps. It's at roughly 500 rps. At 500 rps (1.3B requests/month): HTTP API Gateway = $1,300/month request cost + data transfer. Two c6i.xlarge RIs in HA = $132.48/month + negligible operational overhead if you use an AMI or container image with pre-configured NGINX. The managed Gateway "simplicity premium" is worth $1,167/month at this scale — and the question is whether your team's operational capacity justifies spending $14,000/year to avoid managing two NGINX instances. For many teams, the answer shifts from "managed is worth it for simplicity" to "we can manage this" somewhere between 200 and 500 rps.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Concrete Steps: The API Gateway Cost Audit</h2>
+            <p><strong>1. Pull data transfer as a separate line item from your AWS bill.</strong> AWS Cost Explorer → filter by Service = "API Gateway" → group by Usage Type. You'll see "APIGateway-Requests" and "APIGateway-DataTransfer-Out-Bytes." The ratio of data transfer cost to request cost tells you whether response optimization (compression, field trimming, protocol change) will move the needle. If data transfer > 2× request cost: optimize responses first. If request cost > 2× data transfer: consolidate endpoints or evaluate self-hosted.</p>
+            <p><strong>2. Calculate your throttling amplification factor.</strong> CloudWatch metric: 4XXError count / Request count. If 4XX errors > 2% of total requests and most are 429s, throttling is amplifying your bill. Implement per-client rate limits via usage plans. Add a circuit breaker to your client SDKs.</p>
+            <p><strong>3. Run the CDN-fronted vs multi-region Gateway comparison.</strong> If your API has cacheable GET responses (>60% of traffic is GET), a single-region Gateway behind CloudFront with caching enabled typically cuts Gateway costs by 60-80%. Spend 30 minutes configuring cache behaviors and TTLs.</p>
+            <p><strong>4. Test gRPC for internal service-to-service paths.</strong> If you have backend microservices calling each other through the Gateway (which is an anti-pattern but common in lift-and-shift migrations), move them to direct VPC communication or gRPC. The Gateway is for external traffic. Internal traffic through the Gateway pays the per-request tax on every inter-service call — easily the most expensive RPC mechanism in your architecture.</p>
+            <p><strong>5. Model the self-hosted breakeven at your actual traffic volume.</strong> Use the <a href="/api-rate-limit-cost">API Rate Limit Cost Calculator</a> to compare managed Gateway vs self-hosted across all three clouds. If your sustained traffic exceeds 500 rps and you have an operational team that manages EC2 instances or containers, self-hosted NGINX or Kong will save $10,000-100,000/year.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>🧰 Use our related tools:</strong> <a href="/api-rate-limit-cost">API Rate Limit Cost Calculator</a> · <a href="/latency-budget-calculator">Latency Budget Calculator</a> · <a href="/gbps-to-tb-per-day">Gbps → TB/Day Egress</a> · <a href="/nat-gateway-cost-real">NAT Gateway Cost</a> · <a href="/mbps-to-mbytes-per-sec">Mbps → MB/s Throughput</a></p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Frequently Asked Questions</h2>
+            <div class="faq-item" style="margin-bottom: 28px;"><h3 style="font-size:1.1rem; margin-bottom: 8px;">At what request volume should I switch from managed API Gateway to self-hosted?</h3><p>The breakeven occurs at roughly 500 requests/second sustained. Below 100 rps: managed Gateway wins on operational simplicity. At 500 rps: self-hosted NGINX on two c6i.xlarge RIs ($132.48/month HA) costs 90% less than AWS HTTP API Gateway ($1,300/month + data transfer). Above 1,000 rps: the savings exceed $10,000/month and self-hosted is the only rational economic choice. The operational overhead is managing two EC2 instances — the same operational capability required to run any production backend. Use the <a href="/api-rate-limit-cost">API Rate Limit Cost Calculator</a> to model your exact numbers.</p></div>
+            <div class="faq-item" style="margin-bottom: 28px;"><h3 style="font-size:1.1rem; margin-bottom: 8px;">Does throttling actually cause a measurable cost increase on API Gateway?</h3><p>Yes. Each 429 response is a billable request. Each client retry is another billable request. At 15% throttle rate with 2× retry amplification: a 100M-request/month API actually bills 130M requests — 30% more than nominal. The fix: per-client rate limiting (API keys + usage plans) prevents abusive clients from consuming the shared rate limit, and client-side circuit breakers stop retries after 3 consecutive failures. These are configuration changes, not architecture changes — 30 minutes of CloudFormation work to save 20-30% on monthly Gateway bills for throttled APIs.</p></div>
+            <div class="faq-item" style="margin-bottom: 28px;"><h3 style="font-size:1.1rem; margin-bottom: 8px;">gRPC vs REST vs WebSocket — which protocol is cheapest on API Gateway?</h3><p>gRPC with Protobuf is cheapest in data transfer (40-60% smaller payloads than JSON), but AWS API Gateway's native gRPC support is limited to HTTP API Gateway only. REST with HTTP/2 and compressed JSON (gzip/brotli at the Gateway level) closes most of the gap. WebSocket is cheapest for high-frequency, small-payload workloads (trading, live scores, chat) because it eliminates per-connection TLS handshake overhead. Pick the protocol based on workload shape, not per-byte cost: request-response = REST+gzip, service-to-service = gRPC, persistent bidirectional streams = WebSocket. Use the <a href="/api-rate-limit-cost">API Rate Limit Cost Calculator</a> to toggle between protocols and see the cost impact.</p></div>
+            <div class="faq-item" style="margin-bottom: 28px;"><h3 style="font-size:1.1rem; margin-bottom: 8px;">How do I reduce multi-region API Gateway costs without sacrificing global latency?</h3><p>Put a single-region Gateway behind CloudFront with regional edge caches. CloudFront has 600+ points of presence globally — your API traffic hits the nearest PoP, cached responses are served from the edge (0ms Gateway latency, 0 Gateway requests), and only cache misses reach the origin Gateway. For read-heavy APIs (GET > 60% of traffic), this cuts Gateway request volume by 60-80%. The CDN egress cost is $0.085/GB (CloudFront) vs the Gateway egress cost of $0.09/GB — similar per-GB, but 80% fewer bytes flowing through the Gateway. Multi-region Gateway deployment should be reserved for write-heavy, non-cacheable APIs where low-latency write path to the nearest region is the primary requirement.</p></div>
+            <div class="faq-item" style="margin-bottom: 28px;"><h3 style="font-size:1.1rem; margin-bottom: 8px;">What's the cheapest WAF/DDoS protection for a public API?</h3><p>CloudFront + AWS WAF ($5/month per Web ACL + $1/month per rule + $0.60/M requests) + AWS Shield Standard (free, included with CloudFront). At 500M requests/month, WAF inspection costs $300/month. CloudFront caches responses: at 80% cache hit rate, only 100M requests reach the Gateway, reducing Gateway request costs by 80%. The WAF inspects all 500M requests at CloudFront ($300/month), the Gateway handles the 100M cache misses. Shield Standard provides free L3/L4 DDoS protection. Shield Advanced ($3,000/month) is only justified if your clean traffic exceeds 100 Gbps and a sustained volumetric attack could generate 6-figure CloudFront/Gateway scaling bills — Shield Advanced provides cost-protection insurance (AWS refunds scaling costs during a Shield-mitigated attack).</p></div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Pricing data from publicly available cloud provider rate cards accessed in July 2026. AWS API Gateway: REST $3.50/M requests, HTTP $1.00/M requests. GCP API Gateway: $3.00/M requests. Azure API Management: Standard tier $400/month/instance + $2.00/M requests. Data transfer: AWS $0.09/GB (first 10 TB), GCP $0.12/GB (first 1 TB), Azure $0.087/GB (first 10 TB). All pricing us-east-1 (or equivalent primary region). Self-hosted compute: c6i.xlarge 3-year Standard RI at $66.24/month (us-east-1).</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. This analysis was produced using our own <a href="/api-rate-limit-cost">API Rate Limit Cost Calculator</a> and publicly available cloud pricing data. We are not sponsored by any cloud provider.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>AWS (2026).</strong> "API Gateway Pricing." <a href="https://aws.amazon.com/api-gateway/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-2"><strong>GCP (2026).</strong> "API Gateway Pricing." <a href="https://cloud.google.com/api-gateway/pricing" target="_blank" rel="noopener">cloud.google.com</a></li>
+                <li id="ref-3"><strong>Azure (2026).</strong> "API Management Pricing." <a href="https://azure.microsoft.com/en-us/pricing/details/api-management/" target="_blank" rel="noopener">azure.microsoft.com</a></li>
+                <li id="ref-4"><strong>AWS (2026).</strong> "Throttling API requests for better throughput." <a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-request-throttling.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-5"><strong>gRPC (2026).</strong> "gRPC vs REST — Performance benchmark." Protobuf serialization benchmarks, HTTP/2 multiplexing vs HTTP/1.1 comparison. <a href="https://grpc.io" target="_blank" rel="noopener">grpc.io</a></li>
+                <li id="ref-6"><strong>NGINX (2026).</strong> "NGINX as an API Gateway." Rate limiting, authentication, and routing configuration. <a href="https://www.nginx.com" target="_blank" rel="noopener">nginx.com</a></li>
+                <li id="ref-7"><strong>AWS (2026).</strong> "CloudFront Pricing." <a href="https://aws.amazon.com/cloudfront/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/api-rate-limit-cost-real&t=The+Rate+Limit+Racket:+Why+Your+API+Gateway+Bills+%24400%2FMonth+for+What+NGINX+Does+on+a+%24124+Server" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/api-rate-limit-cost-real&text=API+Gateway+pricing+pages+lead+with+%241.00%2FM+requests.+Your+bill+is+5-30%C3%97+that.+The+decoys:+per-request+rate.+The+hooks:+data+transfer,+throttling+retry+amplification,+and+multi-region+fragmentation.+NGINX+self-hosted+breakeven+at+500+rps:+&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/aws/submit?url=https://www.jslet.com/api-rate-limit-cost-real&title=The+Rate+Limit+Racket:+API+Gateway+vs+NGINX+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/api-rate-limit-cost-real&title=The+Rate+Limit+Racket:+Why+Your+API+Gateway+Costs+30%C3%97+More+Than+Self-Hosted" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL.</p>
+                <p style="margin:0;"><strong>Preferred Attribution Format:</strong> <code style="font-size:0.82rem; background:var(--bg-card); padding:2px 8px; border-radius:3px;">"The Rate Limit Racket (2026)" — jslet Research, July 2026. https://www.jslet.com/api-rate-limit-cost-real</code></p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> When the per-request rate is 20% of your bill and data transfer is 80%, the pricing page misled you. RSS covers one pricing-model reality check per week. No vendor sponsors. <a href="/rss.xml" style="font-weight:700; color:var(--accent);">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent);">More options →</a></p>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

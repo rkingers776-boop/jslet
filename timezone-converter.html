@@ -1,0 +1,425 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Timezone Converter —Convert Between IANA Timezones —jslet</title>
+    <meta name="description" content="Free online timezone converter. Convert datetimes between IANA timezones (UTC, US/Pacific, Europe/London, Asia/Tokyo and more). See DST status and UTC offsets. 100% client-side —instant conversion in your browser.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/timezone-converter">
+    <meta property="og:title" content="Timezone Converter —Convert Between IANA Timezones">
+    <meta property="og:description" content="Convert datetimes between IANA timezones instantly. UTC, US/Pacific, Europe/London, Asia/Tokyo and more. DST-aware. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/timezone-converter">
+    <meta property="og:type" content="website"><meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Timezone Converter —Convert Between IANA Timezones">
+    <meta name="twitter:description" content="Convert datetimes between IANA timezones. DST-aware. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Timezone Converter","description":"Convert datetimes between IANA timezones (UTC, US/Pacific, Europe/London, Asia/Tokyo, etc.). DST-aware conversion showing UTC offsets and timezone abbreviations. 100% client-side.","url":"https://www.jslet.com/timezone-converter","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I convert a meeting time between timezones without getting it wrong?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Use jslet's Timezone Converter: enter the source datetime, pick the source timezone (e.g., US/Pacific), pick the target timezone (e.g., Europe/London), and the tool shows the converted time instantly. It also displays each timezone's current UTC offset (e.g., UTC-7 for Pacific Daylight Time, UTC+1 for British Summer Time) and whether DST is active — so you can verify the conversion makes sense. The most common timezone mistake is assuming that '2 PM my time' maps to a fixed offset year-round. DST transitions make this wrong: San Francisco (US/Pacific) is UTC-8 in winter but UTC-7 in summer. A meeting scheduled as '10 AM Pacific' in January is 6 PM London; in July, it is 6 PM London (because both regions observe DST, but they don't switch on the same day — there are 1-3 weeks per year when the offset is different by an hour). The tool always uses the IANA timezone database (the same database Linux servers and browsers use), so DST transitions are handled correctly for the datetime you pick. All conversion happens in your browser."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why do I see US/Pacific, America/Los_Angeles, and PST — which timezone name should I use?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Use IANA timezone identifiers (like America/Los_Angeles or Europe/London) — they are the only standard that correctly handles DST transitions and historical timezone changes. Three naming systems exist and they're easily confused: (1) IANA identifiers (America/Los_Angeles) — the correct choice. They encode the geographic region, so the system knows DST rules for that location historically and into the future. (2) POSIX abbreviations (PST, PDT, EST, EDT) — ambiguous and dangerous. 'CST' could mean China Standard Time (UTC+8), Central Standard Time US (UTC-6), or Cuba Standard Time (UTC-5). Never store or transmit these as authoritative identifiers. (3) UTC offsets (UTC-8, UTC+5:30) — useful for display, but offset alone loses DST information. India is always UTC+5:30 (no DST), but the US East Coast is UTC-5 in winter and UTC-4 in summer. jslet's converter uses IANA identifiers in the dropdown and shows both the current offset and the abbreviation for context. US/Pacific is a deprecated alias for America/Los_Angeles — it still works but the canonical form is America/Los_Angeles."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does daylight saving time (DST) affect timezone conversion, and how do I avoid scheduling errors around DST transitions?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "DST creates two types of scheduling traps. Spring-forward gap: in the US, clocks jump from 1:59 AM to 3:00 AM on the second Sunday in March. A meeting scheduled for 2:30 AM on that day literally doesn't exist — no clock ever shows 2:30 AM in that timezone on that date. If you schedule a recurring event at 2:30 AM daily in US/Eastern, the cron job or calendar must have a policy for the missing hour (skip, run at 3:00, or error). Fall-back ambiguity: on the first Sunday in November, 1:30 AM happens twice — once at UTC-4, then again an hour later at UTC-5. If you schedule something at 1:30 AM on that day, which one do you mean? The IANA database resolves this by convention: the first occurrence (UTC-4, DST active) is used for the initial timestamp; the second occurrence (UTC-5, standard time) requires an explicit UTC offset. For practical scheduling: avoid scheduling anything between 1:00–3:00 AM local time in DST-observing regions. If you must, use UTC as the canonical time and convert to local time for display only. The timezone converter shows DST status for both source and target timezones so you can spot transition days before they cause problems."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .tz-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 16px; align-items: end; margin-bottom: 24px; }
+        @media (max-width: 768px) { .tz-grid { grid-template-columns: 1fr; } }
+        .tz-panel { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 20px; }
+        .tz-panel label { font-weight: 700; font-size: 0.85rem; display: block; margin-bottom: 8px; color: var(--text-body); }
+        .tz-panel select, .tz-panel input { width: 100%; padding: 10px 12px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); font-size: 0.9rem; font-family: 'Cascadia Code','Consolas',monospace; box-sizing: border-box; }
+        .tz-panel select:focus, .tz-panel input:focus { border-color: var(--accent); outline: none; }
+        .swap-btn { display: flex; align-items: center; justify-content: center; padding: 10px; }
+        .swap-btn button { width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--accent); background: transparent; color: var(--accent); font-size: 1.2rem; cursor: pointer; font-weight: 700; }
+        .swap-btn button:hover { background: var(--accent-soft); }
+        .result-card { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 20px; margin-top: 20px; }
+        .result-card .converted-time { font-size: 1.6rem; font-weight: 700; font-family: 'Cascadia Code','Consolas',monospace; color: var(--text-body); }
+        .result-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }
+        .detail-item { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px; }
+        .detail-item .d-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .detail-item .d-value { font-size: 1rem; font-weight: 700; color: var(--text-body); font-family: 'Cascadia Code','Consolas',monospace; }
+        .dst-warning { background: #fff3cd; border: 1px solid #ffc107; border-radius: var(--radius-sm); padding: 12px 16px; margin-top: 16px; font-size: 0.85rem; color: #664d03; display: none; }
+        .dst-warning.show { display: block; }
+        .btn-row { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>Timezone <span>Converter</span></h1><p>Convert datetimes between IANA timezones instantly. DST-aware. Pick source and target timezones, enter a datetime, and see the converted result with UTC offsets and abbreviations.</p></header>
+
+        <div class="tz-grid">
+            <div class="tz-panel">
+                <label for="src-tz">🟢🌍 Source Timezone</label>
+                <select id="src-tz" onchange="doConvert()">
+                    <option value="UTC">UTC (Coordinated Universal Time)</option>
+                    <option value="America/Los_Angeles">US/Pacific (PT)</option>
+                    <option value="America/Denver">US/Mountain (MT)</option>
+                    <option value="America/Chicago">US/Central (CT)</option>
+                    <option value="America/New_York">US/Eastern (ET)</option>
+                    <option value="Europe/London">Europe/London (GMT/BST)</option>
+                    <option value="Europe/Berlin">Europe/Berlin (CET/CEST)</option>
+                    <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
+                    <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                    <option value="Asia/Shanghai">Asia/Shanghai (CST)</option>
+                    <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                    <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+                    <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                    <option value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT)</option>
+                    <option value="America/Sao_Paulo">America/Sao_Paulo (BRT)</option>
+                    <option value="Asia/Dubai">Asia/Dubai (GST)</option>
+                </select>
+                <label style="margin-top:12px;" for="src-datetime">🟢📅 Input Datetime</label>
+                <input type="datetime-local" id="src-datetime" onchange="doConvert()">
+            </div>
+            <div class="swap-btn"><button onclick="swapTz()" title="Swap timezones">⇵?</button></div>
+            <div class="tz-panel">
+                <label for="tgt-tz">🟢🎯 Target Timezone</label>
+                <select id="tgt-tz" onchange="doConvert()">
+                    <option value="UTC">UTC (Coordinated Universal Time)</option>
+                    <option value="America/Los_Angeles">US/Pacific (PT)</option>
+                    <option value="America/Denver">US/Mountain (MT)</option>
+                    <option value="America/Chicago">US/Central (CT)</option>
+                    <option value="America/New_York" selected>US/Eastern (ET)</option>
+                    <option value="Europe/London">Europe/London (GMT/BST)</option>
+                    <option value="Europe/Berlin">Europe/Berlin (CET/CEST)</option>
+                    <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
+                    <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                    <option value="Asia/Shanghai">Asia/Shanghai (CST)</option>
+                    <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                    <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+                    <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                    <option value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT)</option>
+                    <option value="America/Sao_Paulo">America/Sao_Paulo (BRT)</option>
+                    <option value="Asia/Dubai">Asia/Dubai (GST)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="setNow()">🟢🕐 Use Current Time</button>
+            <button class="btn btn-outline" onclick="doConvert()">🟢🔄 Convert</button>
+        </div>
+
+        <div class="dst-warning" id="dst-warning">⚠ ☁️ <strong>DST Note:</strong> One or both of the selected timezones is currently observing Daylight Saving Time. Conversion accounts for current DST rules, but be aware that DST transition dates vary by region. For scheduling future events, confirm the specific date's DST status.</div>
+
+        <div id="result-area"></div>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">🟢📖 Understanding Timezone Conversion</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>IANA timezones</strong> (e.g., <code>America/New_York</code>) are the standard identifiers used by operating systems and programming languages. Unlike fixed offsets like UTC-5, IANA timezones encode the full history of DST transitions —meaning a conversion for July 4, 2026 correctly applies EDT (UTC-4), while a conversion for January 4, 2026 uses EST (UTC-5).</p>
+                <p><strong>UTC offsets are not timezones.</strong> <code>UTC-5</code> could be Eastern Standard Time, Central Daylight Time, or Peru Time —only the IANA identifier disambiguates. Always store IANA names in your database alongside UTC timestamps.</p>
+                <p><strong>DST transitions</strong> create two edge cases: the "spring forward" gap (e.g., 02:00—3:00 does not exist in US Eastern) and the "fall back" overlap (01:00—2:00 occurs twice). This converter uses the browser's built-in Intl API which handles these according to the host system's locale data.</p>
+                <table class="claims-table" style="margin-top:12px;"><tr><th scope="row">Best practice</th><td>Store all times as UTC. Convert to local timezone only at the presentation layer.</td></tr><tr><th scope="row">Common pitfall</th><td>Using fixed offsets (<code>+05:30</code>) instead of IANA names —DST rules change over time.</td></tr></table>
+                <p>See also: <a href="/unix-timestamp-converter">Unix Timestamp Converter</a> · <a href="/iso-8601-formatter">ISO 8601 Formatter</a></p>
+            </div>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var srcTz = document.getElementById('src-tz');
+        var tgtTz = document.getElementById('tgt-tz');
+        var srcDt = document.getElementById('src-datetime');
+        var resultArea = document.getElementById('result-area');
+        var dstWarning = document.getElementById('dst-warning');
+
+        function isDst(tz, date) {
+            try {
+                var parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' }).formatToParts(date);
+                for (var i = 0; i < parts.length; i++) {
+                    if (parts[i].type === 'timeZoneName') {
+                        var abbr = parts[i].value;
+                        // Most DST abbreviations contain "D" e.g. EDT, PDT, BST, AEDT
+                        if (/[D]T$/.test(abbr) || abbr === 'BST' || abbr === 'CEDT' || abbr === 'CEST' || abbr === 'AEDT' || abbr === 'NZDT') return true;
+                        // IST is never DST, EST/CST/MST/PST are standard
+                        return false;
+                    }
+                }
+            } catch(e) {}
+            return false;
+        }
+
+        function formatInTz(date, tz) {
+            try {
+                var opts = { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'short' };
+                var parts = new Intl.DateTimeFormat('en-US', opts).formatToParts(date);
+                var vals = {};
+                for (var i = 0; i < parts.length; i++) {
+                    if (parts[i].type !== 'literal') vals[parts[i].type] = parts[i].value;
+                }
+                var dtStr = (vals.year || '') + '-' + (vals.month || '') + '-' + (vals.day || '') + ' ' + (vals.hour || '') + ':' + (vals.minute || '') + ':' + (vals.second || '');
+                return { datetime: dtStr, abbr: vals.timeZoneName || '', tz: tz };
+            } catch(e) {
+                return { datetime: 'N/A', abbr: '', tz: tz };
+            }
+        }
+
+        function getOffset(tz, date) {
+            try {
+                var iso = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZoneName: 'longOffset' }).format(date);
+                // Extract offset like "GMT-04:00" or "UTC+05:30"
+                var m = iso.match(/GMT([+-]\d{2}:\d{2})/);
+                if (!m) m = iso.match(/UTC([+-]\d{2}:\d{2})/);
+                if (!m) {
+                    // Try short offset
+                    var fmt2 = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' }).format(date);
+                    var m2 = fmt2.match(/GMT([+-]\d{2}:\d{2})/);
+                    if (m2) return 'UTC' + m2[1];
+                    return 'N/A';
+                }
+                return 'UTC' + m[1];
+            } catch(e) {
+                return 'N/A';
+            }
+        }
+
+        window.doConvert = function() {
+            var val = srcDt.value;
+            if (!val) {
+                resultArea.innerHTML = '';
+                dstWarning.classList.remove('show');
+                return;
+            }
+            // Parse the datetime-local value (which is in local time but treated as the source TZ time)
+            var parts = val.split(/[-T:]/);
+            if (parts.length < 5) return;
+            var year = parseInt(parts[0], 10);
+            var month = parseInt(parts[1], 10) - 1;
+            var day = parseInt(parts[2], 10);
+            var hour = parseInt(parts[3], 10);
+            var minute = parseInt(parts[4], 10);
+
+            var src = srcTz.value;
+            var tgt = tgtTz.value;
+
+            // Construct a date interpreted at the source timezone
+            // We use a trick: format the date in the source TZ to get its UTC timestamp
+            var srcStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0') + 'T' + String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0') + ':00';
+            // Create a Date by interpreting srcStr in source timezone
+            // We use Intl.DateTimeFormat to get the equivalent UTC time
+            var formatSrc = new Intl.DateTimeFormat('en-US', { timeZone: src, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+            // Actually, we need to go the other way: given a local time in src TZ, compute the UTC Date
+            // Approach: construct the ISO-like string, parse as UTC, then adjust based on offset
+            var naiveDate = new Date(Date.UTC(year, month, day, hour, minute, 0));
+            var srcOffset = getOffsetMinutes(src, naiveDate);
+            var utcDate = new Date(naiveDate.getTime() - srcOffset * 60000);
+
+            if (isNaN(utcDate.getTime())) { resultArea.innerHTML = '<p style="color:#e74c3c;">Invalid date.</p>'; return; }
+
+            var srcInfo = formatInTz(utcDate, src);
+            var tgtInfo = formatInTz(utcDate, tgt);
+            var srcOffsetStr = getOffset(src, utcDate);
+            var tgtOffsetStr = getOffset(tgt, utcDate);
+
+            var srcDst = isDst(src, utcDate);
+            var tgtDst = isDst(tgt, utcDate);
+
+            if (srcDst || tgtDst) {
+                dstWarning.classList.add('show');
+            } else {
+                dstWarning.classList.remove('show');
+            }
+
+            var html = '<div class="result-card">';
+            html += '<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:4px;">🟢🕐 Converted Time (' + tgt + ')</div>';
+            html += '<div class="converted-time">' + tgtInfo.datetime + ' ' + tgtInfo.abbr + '</div>';
+            html += '</div>';
+
+            html += '<div class="result-details">';
+            html += '<div class="detail-item"><div class="d-label">Source (' + src + ')</div><div class="d-value">' + srcInfo.datetime + ' ' + srcInfo.abbr + '</div></div>';
+            html += '<div class="detail-item"><div class="d-label">Source Offset</div><div class="d-value">' + srcOffsetStr + '</div></div>';
+            html += '<div class="detail-item"><div class="d-label">Target Offset</div><div class="d-value">' + tgtOffsetStr + '</div></div>';
+            html += '<div class="detail-item"><div class="d-label">UTC Time</div><div class="d-value">' + utcDate.toISOString().replace('T', ' ').substring(0, 19) + ' UTC</div></div>';
+            html += '<div class="detail-item"><div class="d-label">Unix Timestamp</div><div class="d-value">' + Math.floor(utcDate.getTime() / 1000).toLocaleString() + '</div></div>';
+            html += '<div class="detail-item"><div class="d-label">Day of Week</div><div class="d-value">' + utcDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' }) + '</div></div>';
+            html += '</div>';
+            resultArea.innerHTML = html;
+        };
+
+        function getOffsetMinutes(tz, date) {
+            try {
+                // Format date in the target timezone to get hour
+                var fmtHour = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false }).format(date);
+                var tzHour = parseInt(fmtHour, 10);
+                var utcHour = date.getUTCHours();
+                var diff = (tzHour - utcHour);
+                // Normalize to -12..+14 range
+                if (diff > 12) diff -= 24;
+                if (diff < -12) diff += 24;
+                return diff * 60 + date.getUTCMinutes() - date.getUTCMinutes(); // minutes offset
+                // Better approach:
+            } catch(e) { return 0; }
+        }
+
+        // More robust offset calculation
+        function getOffsetMinutesRobust(tz, date) {
+            try {
+                var utcParts = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(date);
+                var tzParts = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(date);
+
+                function extract(p) { var o = {}; for (var i = 0; i < p.length; i++) { if (p[i].type !== 'literal') o[p[i].type] = parseInt(p[i].value, 10); } return o; }
+                var utc = extract(utcParts);
+                var tz = extract(tzParts);
+
+                var utcMin = utc.hour * 60 + utc.minute;
+                var tzMin = tz.hour * 60 + tz.minute;
+                var diff = tzMin - utcMin;
+                // Handle day boundaries
+                if (diff > 720) diff -= 1440;
+                if (diff < -720) diff += 1440;
+                return diff;
+            } catch(e) { return 0; }
+        }
+
+        // Override getOffsetMinutes with robust version
+        getOffsetMinutes = getOffsetMinutesRobust;
+
+        window.swapTz = function() {
+            var tmp = srcTz.value;
+            srcTz.value = tgtTz.value;
+            tgtTz.value = tmp;
+            doConvert();
+        };
+
+        window.setNow = function() {
+            var now = new Date();
+            // Format as datetime-local value (YYYY-MM-DDTHH:MM)
+            var val = now.getFullYear() + '-' +
+                String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                String(now.getDate()).padStart(2, '0') + 'T' +
+                String(now.getHours()).padStart(2, '0') + ':' +
+                String(now.getMinutes()).padStart(2, '0');
+            srcDt.value = val;
+            doConvert();
+        };
+
+        // Sample data: pre-set a meeting time and auto-run
+        var sampleDate = new Date();
+        sampleDate.setHours(14, 0, 0, 0);
+        srcTz.value = 'Europe/London';
+        tgtTz.value = 'America/New_York';
+        srcDt.value = sampleDate.getFullYear() + '-' +
+            String(sampleDate.getMonth() + 1).padStart(2, '0') + '-' +
+            String(sampleDate.getDate()).padStart(2, '0') + 'T14:00';
+        doConvert();
+    })();
+    </script>
+</body>
+</html>
+

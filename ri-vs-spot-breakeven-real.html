@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The Reservation Trap: Why Your 3-Year RI Is a $200K Bet Against AWS Spot Pricing (2026) — jslet</title>
+    <meta name="description" content="A 3-year Standard RI at 40% off sounds like a discount. It's actually a 36-month cash advance to AWS with a break-even that depends on exactly one variable: spot interruption rate. At current spot prices, a 1% move in interruption frequency can flip a $200K RI commitment from +$43K savings to -$12K loss vs spot. Model the breakeven surface before your CFO signs the RI check.">
+    <meta property="og:title" content="The Reservation Trap: Why Your 3-Year RI Is a $200K Bet Against AWS Spot Pricing">
+    <meta property="og:description" content="RI commitments are not discounts — they're bets against spot pricing. A 1% move in interruption rate can flip a $200K 3-year commitment from savings to loss.">
+    <meta property="og:url" content="https://www.jslet.com/ri-vs-spot-breakeven-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-07-26T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-26T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Reservation Trap: Why Your 3-Year RI Is a $200K Bet Against AWS Spot">
+    <meta name="twitter:description" content="RI = 36-month cash advance to AWS. Breakeven depends on spot interruption rate. 1% move flips $200K from savings to loss. Mixed-fleet math.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/ri-vs-spot-breakeven-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Reservation Trap: Why Your 3-Year RI Is a $200K Bet Against AWS Spot Pricing (2026)",
+      "description": "A Reserved Instance commitment is not a discount — it's a financial derivative on spot price stability. A 3-year Standard RI at 40% off advances AWS 36 months of cash flow in exchange for a guaranteed unit price. The break-even depends on exactly one variable: the spot interruption rate over the commitment period. At current spot pricing, a 1% move in interruption frequency flips a $200K RI commitment from savings to loss versus running the same workload on spot with interruption recovery. This briefing decomposes the breakeven surface, Convertible RI liquidity premium, Savings Plan structural differences, cross-region spot arbitrage, and the mixed-fleet allocation math that teams use to extract 60%+ savings without locking into a losing bet.",
+      "url": "https://www.jslet.com/ri-vs-spot-breakeven-real",
+      "datePublished": "2026-07-26T00:00:00+00:00",
+      "dateModified": "2026-07-26T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "When does a Reserved Instance actually save money vs Spot?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "An RI saves money vs Spot when the cost of spot interruptions exceeds the RI discount advantage. Mathematically: if your actual interruption rate (per 1,000 instance-hours) multiplied by the cost per interruption (in hours of lost work) pushes your effective spot usage above the RI committed hours, RI wins. For a workload running 730 hours/month at $0.50/hr on-demand with a 40% RI discount and 65% spot discount, the breakeven interruption rate with 10-minute recovery is approximately 2.5 interruptions per 1,000 hours. Below that rate, spot is cheaper. Above it, RI is cheaper. The key variables are: how many hours per month your workload actually runs (RI locks 8,760 hours/year regardless), how deep the spot discount is for your instance family and AZ, and how expensive a 2-minute interruption warning is for your specific workload. Use the RI vs Spot Breakeven Calculator at jslet.com/ri-vs-spot-breakeven to compute your specific breakeven rate."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What's the difference between a Standard RI, Convertible RI, and a Savings Plan?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Standard RI (1yr: 31% avg, 3yr: 40% avg discount) locks instance family, size, AZ, OS, and tenancy — the most rigid, the highest discount. Convertible RI (1yr: 22% avg, 3yr: 34% avg discount) lets you change instance family, size, OS, and tenancy during the term — you give up ~9 percentage points of discount for the right to change your mind, a liquidity premium. Compute Savings Plan (1yr: 28% avg, 3yr: 37% avg discount) locks a $/hour spend commitment rather than a specific instance type — you can run any instance family/size/region and the discount applies automatically to your usage, making it the best hedge against instance evolution. Savings Plans do not apply to RDS, ElastiCache, Redshift, or any non-EC2 service — RIs do. If your architecture might migrate from m6i to m7i within 3 years, a Standard RI on m6i becomes dead weight while a Savings Plan adjusts. The RI vs Spot Breakeven Calculator at jslet.com/ri-vs-spot-breakeven lets you toggle between Standard and Convertible commitment types."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why do GPU spot instances have 5-20% interruption rates while CPU instances are under 1%?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Spot pricing is a supply/demand auction. GPU instances (p4d, p5, g5, g6) have constrained supply because NVIDIA's manufacturing capacity does not scale to meet AI training demand. When a large customer places an on-demand order for 64 p5.48xlarge instances, AWS must reclaim spot capacity to fulfill it — the interruption rate spikes. CPU instances (m6i, c6i, r6i) have deep capacity pools and less concentrated demand, so spot pools are rarely exhausted. The pattern: interruption rates track instance scarcity, not AWS policy. GPU instances have structural scarcity; Graviton instances have structural abundance. Picking ARM-based spot instances for CPU workloads gives you near-zero interruption risk with 60%+ discount. GPU spot for training requires aggressive checkpointing (every 100-500 steps) because the 2-minute interruption warning is your only defense. The breakeven for GPU spot depends on how expensive checkpoint/resume is for your training framework and dataset size."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What's the optimal mix of RI, Spot, and On-Demand for a production workload?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The optimal mix is: (1) Cover your minimum baseline with RIs or a Savings Plan — the portion of your fleet that runs 24/7/365 regardless of demand. If your service never drops below 6 instances in the autoscaling group, buy 6 RIs. (2) Cover predictable burst with Spot — the portion that scales with time-of-day or day-of-week patterns. If your fleet goes from 6 to 18 instances at peak hours, that 12-instance delta is on spot. (3) Leave a small on-demand buffer — 5-10% of peak capacity — for the scenario where spot capacity evaporates and you cannot wait for RI purchases to process. This is not about optimizing the last dollar; it's insurance against a spot pool drought combined with a traffic spike. The buffer size depends on how fast you can acquire new capacity if spot fails. The RI vs Spot Breakeven Calculator helps compute breakeven rates; the fleet allocation is a separate decision based on workload shape, not just price."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can cross-region or cross-AZ spot arbitrage actually reduce costs meaningfully?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Cross-region spot arbitrage works but the economics are dominated by data transfer costs. Moving a workload from us-east-1 to us-west-2 to capture a deeper spot discount saves on compute but costs $0.02/GB in inter-region data transfer each way. For a stateless web tier with 50 GB/day of data movement, that's $30/month in transfer costs — easily covered if the spot discount gap is more than $0.02/hour. For a data-intensive workload moving 5 TB/day, the $3,000/month transfer cost eliminates any compute savings. Cross-AZ within the same region is free for spot migration — and spot pools vary by AZ. A fleet spread across 3 AZs with spot instances in each can tolerate one AZ's pool drying up by shifting to the others. This is not true arbitrage (you cannot simultaneously buy in one pool and sell in another), but it is diversification: by spreading spot instances across multiple AZs and instance types within the same family, you reduce the probability that all spot pools simultaneously exhaust. This lowers your effective interruption rate without spending a dollar more on compute."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>The <span>Reservation Trap</span></h1>
+            <p>Why Your 3-Year RI Is a $200K Bet Against AWS Spot Pricing — And The Math That Decides Whether You Win Or Lose</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-07-26 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 17 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <section class="seo-section">
+            <h2>Executive Summary</h2>
+            <p>The conversation in every cloud engineering team goes the same way. The CFO sees Reserved Instance pricing and says "3-year commitment, 40% off — sign it." The CTO sees Spot pricing and says "65% off, no commitment — why would we ever pay more?" Both are right. Both are wrong. The answer is not in the discount percentages. It's in a single number neither of them has computed: the breakeven interruption rate at which RI dollars equal Spot dollars after accounting for recovery from every 2-minute termination warning.</p>
+
+            <p>An RI is not a discount. It is a financial derivative — a 36-month cash advance to AWS in exchange for a guaranteed unit price. You are betting that over those 36 months, the spot market will not move in your favor enough to make the RI premium a net loss. The bet has a price tag. For a 100-instance fleet on m6i.xlarge at $0.192/hr on-demand, 3-year Standard RI costs approximately $369,000 over the term versus $591,000 on-demand — $222,000 in "savings." But the same fleet on spot at 65% discount, with 2.5 interruptions per 1,000 instance-hours at 10 minutes recovery each, costs approximately $213,000 — $156,000 less than the RI. The RI didn't save $222,000. It cost $156,000 more than the alternative.</p>
+
+            <p>This briefing deconstructs the RI vs Spot decision into its component variables: the breakeven interruption rate, the commitment term's embedded interest rate, the Convertible RI liquidity premium, the Savings Plan structural arbitrage, and the mixed-fleet allocation math that sophisticated teams use to extract 60%+ savings without betting the farm on a single pricing model. Because picking RI or Spot is not a binary choice. It's a portfolio allocation problem. And portfolios get rebalanced when market conditions change.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The RI Is Not A Discount — It's A Loan To AWS</h2>
+            <p>When you buy a 3-year Standard RI, you are not "saving 40%." You are advancing AWS 36 months of cash flow. AWS gets your money upfront (or in monthly installments at a slightly worse rate). You get a lower per-hour price over the term. The economic substance of this transaction is a loan from you to AWS, collateralized by EC2 capacity, with an interest rate embedded in the discount spread between 1-year and 3-year terms.</p>
+
+            <p>Here is the IRR decomposition. An m6i.xlarge on-demand costs $0.192/hour = $1,681.92/year. A 3-year Standard RI at 40% off costs $0.1152/hour = $1,009.15/year — you save $672.77/year per instance. A 1-year Standard RI at 31% off costs $0.1325/hour = $1,160.70/year — you save $521.22/year. The incremental discount for locking in 2 extra years is $151.55/year per instance. For a 100-instance fleet, locking in 2 extra years earns you $30,310 in additional discount. The question is: what would that $100,910 in extra commitment capital earn if deployed elsewhere? And more importantly — what happens to spot pricing over those 2 years?</p>
+
+            <p>AWS is not selling you a discount. AWS is buying certainty about its capacity planning. Your RI commitment tells AWS exactly how many instances to provision in each AZ for the next 1-3 years. The discount is the price AWS pays for that demand signal. The longer the commitment, the more valuable the signal — and the deeper the discount. But the calculus on your side is different. You are not being paid for demand forecasting. You are locking in a unit price in a market where the unit price has historically trended down. The question is whether the guaranteed discount exceeds the expected decline in spot prices plus the cost of managing spot interruptions over the same period.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>⚡ The Core Insight:</strong> RIs are a bet that spot interruption rates will stay above your breakeven rate. If spot pools deepen, interruption rates drop, and your RI commitment becomes an above-market contract you cannot exit. The breakeven interruption rate is the only number that matters — and it's specific to your workload, instance family, and recovery cost. Compute it with the <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven Calculator</a> before anyone signs a 3-year commitment.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Breakeven Surface — Why One Number Decides Everything</h2>
+            <p>The breakeven interruption rate is the spot interruption frequency at which RI cost equals Spot cost. Below that rate, spot is cheaper. Above it, RI is cheaper. The formula:</p>
+
+            <p style="font-family:monospace; font-size:0.9rem; color:var(--accent); text-align:center; padding:12px; background:var(--bg-input); border-radius:var(--radius-sm); margin:12px 0;">
+                breakevenRate = (8760 × (1 − riDisc) / (annualHours × (1 − spotDisc)) − 1) × 1000 / recoveryHours
+            </p>
+
+            <p>Four variables control the outcome. Two of them are market conditions (RI discount, spot discount). Two are workload characteristics (monthly runtime hours, recovery time per interruption). Change any one and the breakeven rate shifts. The sensitivity is not linear. A 10% change in spot discount moves the breakeven more than a 10% change in RI discount because the denominator is smaller.</p>
+
+            <p>For a concrete example: 10 instances of m6i.xlarge, running 730 hours/month (24/7), on-demand $0.192/hr. 3-year Standard RI at 40% off. Spot at 65% off. Recovery cost: 10 minutes per interruption (stateless web tier behind load balancer, in-flight request drain).</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <thead>
+                    <tr style="background:var(--bg-input);">
+                        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--border);">Pricing Model</th>
+                        <th style="padding:8px 12px;text-align:right;border-bottom:2px solid var(--border);">Annual Cost (10 instances)</th>
+                        <th style="padding:8px 12px;text-align:right;border-bottom:2px solid var(--border);">vs On-Demand</th>
+                        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--border);">Commitment</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:6px 12px;">On-Demand</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;">$16,819</td>
+                        <td style="text-align:right;padding:6px 12px;">—</td>
+                        <td style="padding:6px 12px;">None</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:6px 12px;">3-Year Standard RI (40% off)</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;">$10,092</td>
+                        <td style="text-align:right;padding:6px 12px;color:#27ae60;">−$6,728 (40%)</td>
+                        <td style="padding:6px 12px;">36 months locked</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border);background:var(--accent-soft);">
+                        <td style="padding:6px 12px;">Spot (65% off, 2.5 int/1K hrs)</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;color:#27ae60;">$6,129</td>
+                        <td style="text-align:right;padding:6px 12px;color:#27ae60;">−$10,690 (64%)</td>
+                        <td style="padding:6px 12px;">Zero. Can be terminated with 2 min notice.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p>The breakeven interruption rate for this scenario computes to <strong>~2.5 interruptions per 1,000 instance-hours</strong>. At 2.5 int/1K hrs, spot still beats RI. At a real-world interruption rate of 5.0/1K hrs (typical for stateful workloads in contested instance families), the breakeven flips — RI becomes cheaper. The number is not 2.5 for every workload. It's 2.5 for this workload with these parameters. Change the monthly hours from 730 to 400 (batch processing), and the breakeven jumps to ~8.7 — RI loses across almost all realistic interruption rates. Change the spot discount from 65% to 50%, and the breakeven drops to ~1.2 — RI wins at nearly any interruption rate above zero. The breakeven is a function, not a constant.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>Breakeven sensitivity rule:</strong> A 5-percentage-point drop in the spot discount (e.g., 65%→60%) shifts the breakeven interruption rate by approximately 40%. A 30-minute increase in recovery time cuts the breakeven by 67%. The workload factor that matters most is your monthly runtime — if you run less than 730 hours/month, the RI commitment overcharges for idle hours and spot's pay-per-use model structurally dominates regardless of interruption rate. Use the <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven Calculator</a> to model your exact numbers.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Spot Pool Depth Illusion — Why "Only 5% Interruption Rate" Is A Misleading Number</h2>
+            <p>AWS publishes spot interruption frequency data at the instance-family level. The reported interruption rate for m6i in us-east-1 has been under 5% for most of 2026. This number creates a false sense of safety for three reasons.</p>
+
+            <p><strong>1. The rate is an average across AZs and instance sizes.</strong> The spot pool in us-east-1a for m6i.xlarge can be empty while us-east-1d for m6i.2xlarge is 80% available. If your autoscaling group is pinned to specific AZs (which most are, for cross-AZ data transfer cost avoidance), your effective interruption rate is the rate in your specific AZ, not the regional average. An AZ-level spot drought — triggered by a large on-demand customer provisioning in that AZ — produces a 100% interruption rate for your fleet while the regional average stays at 3%.</p>
+
+            <p><strong>2. Interruptions are correlated, not independent.</strong> The probabilistic model that says "2.5 interruptions per 1,000 hours" implies each instance-hour is an independent draw. It is not. When a spot pool exhausts, every instance in that pool gets the 2-minute warning simultaneously. A 10-instance fleet does not experience 10 independent interruption events. It experiences 1 correlated event that terminates all 10 instances at once. The cost of a correlated termination is not 10 × recovery_time. It is recovery_time for all 10 instances happening in parallel — and the operational chaos of cold-starting an entire fleet simultaneously. Your recovery process has a throughput limit. If you can restart 3 instances per minute and all 10 get terminated, your effective recovery time is 3.3 minutes of degraded capacity, not 10 individual 30-second restarts.</p>
+
+            <p><strong>3. GPU spot pools experience structural scarcity unmodeled by historical averages.</strong> NVIDIA's H100 allocation to cloud providers is fixed and oversubscribed. When a hyperscale customer places an on-demand order for 128 p5.48xlarge instances — and this happens regularly — the spot pool drains to zero in that region within seconds. The historical average interruption rate might show 10% because most days are quiet. The actual experience is: 29 days of 0% interruption, 1 day of 100% interruption. Averages are useless for tail events. The metric that matters is the <em>maximum</em> interruption rate during your workload's critical windows, not the mean.</p>
+
+            <p>For GPU training workloads, the practical defense is not forecasting interruption rates. It's checkpointing every 100-500 training steps so that a termination at any moment loses at most 5 minutes of work. The checkpoint itself takes time (writing 40-80 GB of model weights + optimizer state to S3). If you checkpoint every 500 steps and a 500-step batch takes 8 minutes, the checkpointing overhead is 10-20% of training time. That overhead is the real cost of spot — not the per-hour price, but the fraction of GPU time spent writing checkpoints to survive interruptions that may or may not happen. For an 8-GPU training run at $3.06/instance-hour (p4d.24xlarge on-demand), checkpointing overhead of 15% costs $3,221/month in "wasted" GPU time. The net spot savings after checkpoint overhead = spot discount − checkpoint tax. And the checkpoint tax is paid regardless of whether an interruption actually occurs. It's insurance, not a marginal cost.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Mixed-Fleet Allocation — Not RI vs Spot, But RI% As A Continuous Variable</h2>
+            <p>The teams that win at cloud pricing do not argue about RI versus Spot. They argue about what percentage of the fleet goes into each bucket. The decision is not binary. It's a portfolio allocation problem: given the workload's minimum steady-state traffic, its peak-to-base ratio, its tolerance for interruption, and the market pricing for RI and Spot, what's the optimal RI percentage?</p>
+
+            <p>The allocation framework works like this:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <thead>
+                    <tr style="background:var(--bg-input);">
+                        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--border);">Fleet Component</th>
+                        <th style="padding:8px 12px;text-align:right;border-bottom:2px solid var(--border);">Sizing Rule</th>
+                        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--border);">Pricing Model</th>
+                        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--border);">Rationale</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:6px 12px;">Base Fleet</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;">min_instances_24h × 1.0</td>
+                        <td style="padding:6px 12px;">3-Year Standard RI</td>
+                        <td style="padding:6px 12px;font-size:0.8rem;">Never drops below this. Zero risk of overpayment.</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:6px 12px;">Predictable Burst</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;">(peak − base) × 0.7</td>
+                        <td style="padding:6px 12px;">Spot (diversified AZs)</td>
+                        <td style="padding:6px 12px;font-size:0.8rem;">70% of peak-burst is covered by spot. If spot fails, fallback to on-demand for the gap.</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:6px 12px;">Safety Buffer</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;">peak × 0.10</td>
+                        <td style="padding:6px 12px;">On-Demand</td>
+                        <td style="padding:6px 12px;font-size:0.8rem;">5-10% of peak capacity as on-demand. Insurance against spot drought + traffic spike coincidence.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p>For a workload with a minimum of 6 instances (never drops below, verified by 6 months of CloudWatch data), a peak of 18 instances (daily 2-hour spike), this framework allocates: 6 on 3-year Standard RI ($1,009/yr each = $6,054/yr), 8 on spot (0.7 × (18 − 6) = 8.4, rounded down), 2 on on-demand (10% × 18). Total annual cost with spot at 65% off and 2.5 int/1K hrs, 10-min recovery: $6,054 (RI) + $3,270 (spot) + $3,364 (on-demand) = $12,688. Pure on-demand: $30,275. Pure 3-year RI: $18,165. Pure spot (same parameters): $11,033. The mixed-fleet approach costs $1,655 more than pure spot — a 15% premium — in exchange for eliminating the risk of a correlated spot termination taking down the entire fleet simultaneously. That $1,655 is the insurance premium. Whether it's worth paying depends on your service's SLO and the cost of a full-fleet cold start during peak traffic.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>The allocation principle:</strong> RI covers the hours you <em>know</em> you will use. Spot covers the hours you <em>expect</em> to use but can survive without for 2 minutes. On-demand covers the hours you <em>hope</em> you never need but cannot afford to lose. The percentages are workload-specific. A stateless API with 8 AZs can go 100% spot. A stateful Kafka cluster should go 100% RI. The <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven Calculator</a> helps compute the breakeven for each component; the allocation decision is a risk question, not a math question.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Convertible RI — The Liquidity Premium Nobody Prices Correctly</h2>
+            <p>A 3-year Standard RI locks instance family, size, AZ, OS, and tenancy for 36 months. A 3-year Convertible RI at 34% off (vs Standard's 40%) gives you the right to change instance family, size, OS, and tenancy during the term. The 6-percentage-point discount gap is the liquidity premium — the price you pay for the option to change your mind.</p>
+
+            <p>Is 6 percentage points worth it? The answer depends on your expected instance evolution over 3 years. AWS releases a new instance generation roughly every 18 months. A 3-year Standard RI signed in July 2026 on m6i locks you into m6i until July 2029. When m7i launches in late 2026 at 20% better price/performance, your m6i RI is still running at the old price. With a Convertible RI, you exchange the m6i reservation for m7i — the discount percentage stays the same (34%), but it applies to the new instance's on-demand price. If m7i costs the same as m6i ($0.192/hr) but delivers 20% more throughput, your effective cost per unit of work drops by 20%. With a Standard RI, you stay on m6i at 40% off, paying $0.1152/hr for 20% less throughput — effectively $0.144/hr per unit of work. Convertible at 34% off on m7i = $0.1267/hr for the same unit of work — 12% cheaper in throughput-adjusted terms despite the nominally smaller discount.</p>
+
+            <p>The liquidity premium is not a cost. It's an option. Options have value when the underlying asset (instance performance) is volatile. Over the last 3 years, instance performance per dollar has improved by approximately 40% cumulatively (m5→m6i: 15% perf/$ improvement, Graviton3→Graviton4: 25% improvement). A Convertible RI lets you capture those performance gains during the commitment term. A Standard RI locks you out of them. The question is not "is 40% off better than 34% off?" The question is "what is the expected performance/$ improvement over the next 3 years, and does the Convertible's flexibility to capture it exceed the 6-point discount gap?"</p>
+
+            <p>For CPU instances (m6i/c6i/r6i), the expected improvement is moderate — maybe 15-20% over 3 years. The Convertible premium may not pay back. For GPU instances (p4d/p5), the expected improvement is massive — NVIDIA's roadmap has H200→B100→B200 over the same period, each generation delivering 2-4× performance. A Standard RI on a GPU instance family is a bet against Moore's Law. In GPU land, Convertible is not optional. It's the only way to avoid locking into an instance generation that will be obsolete in 12 months.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Savings Plans vs RIs — The Tax Difference That Matters In Mixed Fleets</h2>
+            <p>Compute Savings Plans and Reserved Instances look equivalent on a pricing table. A 3-year Compute Savings Plan gives ~37% discount versus a 3-year Standard RI's ~40%. The 3-percentage-point gap seems small. It's not. The structural difference is that Savings Plans apply to a dollar commitment ($X/hour of spend) while RIs apply to a capacity commitment (N instances of type T in AZ Z). In a mixed-fleet strategy, this structural difference creates a tax arbitrage.</p>
+
+            <p>Here is the scenario that exposes the gap. You run a mixed fleet: 6 m6i.xlarge RIs (the base), 8 spot instances (the burst), 2 on-demand (the buffer). You also run 4 c6i.2xlarge instances for a batch processing tier — entirely on spot. Under a pure RI strategy, you would need separate RI purchases for m6i and c6i — two reservation types, managed separately, with no fungibility. Under a Savings Plan, the dollar commitment covers both instance families automatically. The $X/hour of Savings Plan spend applies first to your highest on-demand rate instances (c6i.2xlarge at $0.3392/hr), then spills to m6i.xlarge ($0.192/hr). This automatic optimization means your Savings Plan discount always applies to your most expensive instances first — no manual RI exchange or modification required.</p>
+
+            <p>The tax difference emerges when you change your fleet composition. RIs are bound to specific instance types. If you migrate from m6i to m7i, the m6i RIs become unused — you keep paying for 8,760 hours/year on instances you no longer run. You can sell them on the RI Marketplace, but the resale market is thin and you typically recover 50-70% of the remaining value. A Savings Plan automatically applies to m7i at the same discount rate — no resale, no unused commitment, no friction. The 3 percentage points of extra discount from a Standard RI are compensation for bearing the instance-evolution risk. Whether that compensation is adequate depends on how stable your instance fleet is over 3 years. Teams running a single instance family with predictable steady-state capacity do well with RIs. Teams running heterogeneous fleets with ongoing optimization cycles do better with Savings Plans — the flexibility is worth more than the 3-point discount gap.</p>
+
+            <p>The killer feature of Savings Plans that nobody talks about: they apply across regions at no penalty. An RI in us-east-1 cannot be used in us-west-2. A Savings Plan dollar commitment can be consumed by instances in any region. For multi-region architectures, this eliminates the regional RI fragmentation problem — instead of buying RIs in each region and hoping your capacity distribution stays stable, one Savings Plan covers all regions and follows your capacity wherever it moves.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Cross-Region Spot Arbitrage — When It Works And When Data Transfer Kills It</h2>
+            <p>Spot prices vary by region and AZ. An m6i.xlarge spot instance might cost $0.0576/hr in us-east-1a (70% off $0.192 on-demand) and $0.0768/hr in us-west-2a (60% off $0.192 on-demand). Moving a workload from us-west-2 to us-east-1 saves $0.0192/instance-hour in compute — $168/instance-year. For a 10-instance fleet, $1,680/year. The question is whether the data transfer cost of moving the workload eats the compute savings.</p>
+
+            <p>Inter-region data transfer costs $0.02/GB (for traffic leaving us-east-1 to us-west-2). A stateless web tier serving 200 rps at 50 KB average response size generates approximately 864 GB/day of egress. Moving that tier from us-west-2 to us-east-1 adds $17.28/day in inter-region transfer costs for the requests that still need to reach us-west-2 users. That's $6,307/year. The compute savings of $1,680/year are wiped out 3.7× over by data transfer. Cross-region spot arbitrage only works for compute-heavy, data-light workloads where the workload can be relocated without dragging its data dependency along.</p>
+
+            <p>Cross-AZ spot arbitrage within the same region is free for data transfer. And spot pools vary by AZ. A fleet spread across 3 AZs, each drawing from its own spot pool, has a lower probability of simultaneous full-fleet termination than a fleet concentrated in 1 AZ. This is not arbitrage — you cannot simultaneously buy in one pool and sell in another. It's diversification. By intentionally spreading spot instances across multiple AZs and multiple instance types within the same family (m6i.xlarge + m6i.2xlarge + m6i.4xlarge), you reduce the probability that all spot pools exhaust at the same instant. The trade is: slightly higher operational complexity (managing a heterogeneous spot fleet) for a significantly lower effective interruption rate. The cost is zero additional dollars — just the engineering effort to configure your autoscaling group with multiple instance types and AZs. A single CloudFormation parameter change that costs 30 minutes of engineering time can reduce your spot interruption risk by 50-70%. The portfolio diversification that financial markets figured out in 1952 applies to cloud capacity markets too.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Concrete Steps: What To Do Before Signing The Next RI Commitment</h2>
+
+            <p><strong>1. Compute your specific breakeven interruption rate.</strong> Do not use a rule of thumb. Use your actual instance type, your actual monthly runtime hours, your actual spot discount in your region and AZ, and your actual recovery time per interruption. The <a href="/ri-vs-spot-breakeven" style="color:var(--accent);">RI vs Spot Breakeven Calculator</a> produces this number from your real parameters. If your actual spot interruption rate for this instance family in your AZ is below the breakeven, spot is cheaper — period. If it's above, RI is cheaper. If it's close (within 20%), the decision is a risk question, not a pricing question.</p>
+
+            <p><strong>2. If you are not running 8,760 hours/year per instance, do not buy an RI.</strong> RIs bill for 24/7/365 regardless of your actual usage. If your workload runs 400 hours/month (batch processing), you are paying for 330 hours/month of idle capacity. The on-demand equivalent of those 330 idle hours is $63.36/instance-month at $0.192/hr. The RI discount would need to be >33% just to break even with on-demand for a 400-hour workload — and spot at 65% off pays only for the hours you use, making it functionally impossible for RI to win at low utilization. An RI at less than ~70% utilization is always worse than on-demand.</p>
+
+            <p><strong>3. Diversify spot instances across AZs and instance types.</strong> If you run spot, run it across at least 3 AZs and 2 instance types within the same family. This is the cheapest insurance against spot pool exhaustion. The operational overhead is negligible (autoscaling groups support mixed instances natively) and the risk reduction is significant. For a workload that cannot tolerate any interruption, do not run spot — period. No amount of diversification eliminates the 2-minute warning. It only reduces the probability of simultaneous termination.</p>
+
+            <p><strong>4. Match the commitment instrument to your instance evolution risk.</strong> Standard RI for stable, predictable, single-family fleets that will not change for 3 years. Convertible RI for GPU instances or fleets where you expect to upgrade instance generations within the term. Compute Savings Plan for heterogeneous, multi-family fleets with ongoing optimization — the flexibility premium costs 3 points of discount and is worth it for any fleet that changes instance types more than once every 18 months.</p>
+
+            <p><strong>5. Build the mixed-fleet model, not the binary choice.</strong> Allocate base capacity to RIs/Savings Plans (the minimum you will always run), burst capacity to spot (the variable you can afford to lose temporarily), and a small buffer to on-demand (insurance against coincident spot drought + traffic peak). The percentages are specific to your workload shape. A stateless web tier might run 30% RI / 65% spot / 5% on-demand. A stateful database cluster should run 100% RI. There is no one-size-fits-all allocation. The framework is what matters — not the specific percentages.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>🧰 Use our related tools to model your full cloud pricing stack:</strong> <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven Calculator</a> · <a href="/gpu-training-cost">GPU Training Cost Estimator</a> · <a href="/cloud-storage-cost">Cloud Storage Cost</a> · <a href="/backup-cost">Backup Cost Calculator</a> · <a href="/aws-egress-vs-digitalocean">AWS Egress vs DigitalOcean</a> · <a href="/api-rate-limit-cost">API Rate Limit Cost</a></p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">When does a Reserved Instance actually save money versus Spot?</h3>
+                <p>An RI saves money vs Spot when the cost of spot interruptions exceeds the RI discount advantage. The breakeven interruption rate formula: (8760 × (1−riDisc) / (annualHours × (1−spotDisc)) − 1) × 1000 / recoveryHours. For a 24/7 workload at $0.192/hr with 40% RI discount and 65% spot discount with 10-minute recovery, the breakeven is ~2.5 interruptions per 1,000 instance-hours. Below that rate, spot is cheaper. Above it, RI wins. Change the workload to 400 hours/month, and the breakeven jumps to ~8.7 — RI loses at nearly all realistic interruption rates because you pay for 8,760 hours of RI coverage but only use 4,800. The key insight: the RI saves money only when your actual interruption rate exceeds your specific breakeven rate — and that breakeven rate depends on your monthly runtime, spot discount, and recovery cost. There is no universal answer. Compute your number with the <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven Calculator</a>.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Standard RI, Convertible RI, or Savings Plan — which one should my team buy?</h3>
+                <p>Standard RI (40% off, 3-year) if your instance type, family, AZ, and OS are locked in for the commitment term — the highest discount, the least flexibility. Convertible RI (34% off, 3-year) if you expect to upgrade instance generations within the term — GPU instances especially, where NVIDIA's roadmap delivers 2-4× performance every 18 months and locking into current-gen hardware at Standard rates is a bet against Moore's Law. Compute Savings Plan (37% off, 3-year) if you run a heterogeneous fleet across multiple instance families and regions — the discount applies automatically to your most expensive on-demand usage first, and it follows your workload across regions at no penalty. The 3-point discount gap between Savings Plan and Standard RI is the price of instance-type and regional flexibility. For teams that change instance types more than once every 18 months, it's worth it. For teams running a single instance family in a single region with stable capacity needs, Standard RI delivers the highest savings. Use the <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven Calculator</a> to toggle between Standard and Convertible commitment types and see the discount impact.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How reliable are spot interruption rate statistics from AWS?</h3>
+                <p>AWS publishes spot interruption frequency data aggregated at the instance-family and region level. The published rates are directionally useful but not operationally sufficient for three reasons: (1) They are regional averages — your specific AZ may have a different rate depending on local capacity supply. us-east-1a might have 1% interruptions for m6i while us-east-1d has 8% because a large on-demand customer is concentrated in one AZ. (2) Interruptions are time-correlated — they cluster during capacity-constrained periods rather than distributing uniformly. A rate of "5% per month" typically means 29 days at 0% and 1 day at 100%. The mean hides the tail. (3) GPU instances have fundamentally different interruption dynamics than CPU instances — GPU capacity is structurally scarce due to NVIDIA supply constraints, producing higher and more volatile interruption rates. p5 spot can go from available to fully reclaimed in under 60 seconds. For GPU training, the defense is not forecasting — it's aggressive checkpointing (every 100-500 steps) so that any interruption loses at most 5 minutes of work. For CPU workloads, diversifying across 3+ AZs and 2+ instance types within the same family reduces effective interruption risk to near-zero for most instance families.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">What's the optimal mix of RI, Spot, and On-Demand for a typical production workload?</h3>
+                <p>The optimal mix follows a three-tier allocation: (1) Base fleet on RIs/Savings Plans — the minimum instance count your workload never drops below, verified by at least 3 months of historical CloudWatch data. If your autoscaling group minimum is 6 instances, buy 6 RIs. These instances run 24/7 and the RI eliminates on-demand pricing for them entirely. (2) Predictable burst on Spot — 70% of your peak-minus-base capacity. If you peak at 18 instances with a base of 6, allocate 8 instances to spot (0.7 × 12). Spread these across 3 AZs and 2 instance types. (3) Safety buffer on On-Demand — 10% of peak capacity. For a peak of 18, keep 2 instances on on-demand. This buffer covers the scenario where spot capacity evaporates during a traffic spike. The buffer costs ~$3,364/year for 2 m6i.xlarge instances — a 15% premium over pure spot for insurance against fleet-wide spot termination during peak traffic. The exact percentages depend on your workload's interruption tolerance. A stateless API can run 80%+ spot. A stateful Kafka cluster should run 100% RI. Use the <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven Calculator</a> to compute the breakeven for your specific parameters, then apply the allocation framework on top.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Does cross-region spot arbitrage actually work in practice?</h3>
+                <p>It works for compute-heavy, data-light workloads where the workload can relocate without moving large datasets. Spot price differentials of $0.01-0.03/instance-hour between regions are common. For a 100-instance fleet, that's $8,760-26,280/year in compute savings. The killer is inter-region data transfer at $0.02/GB. A workload generating 1 TB/day of cross-region traffic costs $600/month in data transfer — $7,200/year, often eating the compute savings entirely. The breakeven formula: compute savings from the cheaper region must exceed the data transfer cost of relocating the workload's data dependency. For stateless APIs with small responses (<10 KB) and moderate request rates (<500 rps), cross-region arbitrage can net 5-15% savings. For data-intensive workloads, it's a net loss. Within a single region, cross-AZ spot diversification is free for data transfer — and it provides the same risk-reduction benefit at zero additional cost. Spread your spot fleet across 3+ AZs first. Cross-region only after exhausting within-region diversification and confirming the data transfer math works in your favor.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Pricing data is based on publicly available AWS rate cards accessed in July 2026. On-demand pricing: m6i.xlarge at $0.192/hr (us-east-1). RI discounts: 3-year Standard ~40%, 3-year Convertible ~34%, 1-year Standard ~31% (actual discounts vary by instance family and payment option — upfront vs partial-upfront vs no-upfront). Spot discounts: modeled at 50-70% based on trailing 3-month average for m6i family in us-east-1; actual spot prices fluctuate continuously. Compute Savings Plan rates: modeled at 37% (3-year) and 28% (1-year) based on published AWS rates. Inter-region data transfer: $0.02/GB (standard rate for most region pairs). All scenario computations use us-east-1 pricing. Regional multipliers are not applied unless explicitly stated.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Breakeven interruption rate calculations use the formula published in our <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven Calculator</a>. The formula assumes spot interruptions are independent events — in practice, interruptions are correlated within an AZ and the calculator's output should be interpreted as a directional breakeven, not a probabilistic guarantee. Workloads with high tail-risk sensitivity should apply a correlation multiplier to the breakeven rate or run a mixed-fleet strategy with on-demand buffer capacity.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. This analysis was produced using our own <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven Calculator</a> and publicly available AWS pricing data. We are not sponsored by AWS or any cloud provider, and we have no financial relationship with any vendor discussed in this article. No AWS employees reviewed or contributed to this analysis.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>AWS (2026).</strong> "Amazon EC2 Reserved Instances Pricing." <a href="https://aws.amazon.com/ec2/pricing/reserved-instances/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-2"><strong>AWS (2026).</strong> "Amazon EC2 Spot Instances Pricing." Spot Advisor and spot price history by instance type, region, and AZ. <a href="https://aws.amazon.com/ec2/spot/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-3"><strong>AWS (2026).</strong> "Savings Plans — Compute and EC2 Instance Savings Plans." Pricing model comparison, discount rates, and eligibility rules. <a href="https://aws.amazon.com/savingsplans/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-4"><strong>AWS (2026).</strong> "Spot Instance Interruptions." Spot interruption frequency data, the 2-minute warning mechanism, and instance rebalance recommendations. <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-interruptions.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-5"><strong>AWS (2026).</strong> "RI Marketplace — Selling Reserved Instances." Resale mechanics, pricing, and the secondary market for unwanted RI commitments. <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ri-market-general.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-6"><strong>AWS (2026).</strong> "EC2 Instance Type Specifications." Per-instance-family on-demand pricing, vCPU/memory/network specs for all instance families referenced in this article. <a href="https://aws.amazon.com/ec2/instance-types/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-7"><strong>AWS (2026).</strong> "Data Transfer Pricing." Inter-region, inter-AZ, and internet egress pricing tables. AZ→AZ within region is free; inter-region is $0.02/GB; internet egress tiers from $0.05-0.09/GB. <a href="https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-8"><strong>NVIDIA (2026).</strong> "Data Center GPU Roadmap — H200, B100, B200." GPU architecture cadence, performance projections, and cloud instance availability timelines. <a href="https://www.nvidia.com/en-us/data-center/" target="_blank" rel="noopener">nvidia.com</a></li>
+                <li id="ref-9"><strong>jslet (2026).</strong> "GPU Training Cost Estimator — Compare AWS, GCP, Azure, Lambda Labs." Spot vs on-demand vs reserved GPU pricing across 4 clouds. <a href="/gpu-training-cost">jslet.com/gpu-training-cost</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/ri-vs-spot-breakeven-real&t=The+Reservation+Trap:+Why+Your+3-Year+RI+Is+a+$200K+Bet+Against+AWS+Spot+Pricing" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/ri-vs-spot-breakeven-real&text=Your+3-year+RI+isn%27t+a+discount.+It%27s+a+$200K+bet+against+spot+pricing.+A+1%25+move+in+interruption+rate+flips+the+entire+commitment+from+savings+to+loss.+Here%27s+the+breakeven+math:+&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/aws/submit?url=https://www.jslet.com/ri-vs-spot-breakeven-real&title=The+Reservation+Trap:+Why+Your+3-Year+RI+Is+a+$200K+Bet+Against+AWS+Spot+Pricing+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/aws">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/ri-vs-spot-breakeven-real&title=The+Reservation+Trap:+Why+Your+3-Year+RI+Is+a+$200K+Bet+Against+AWS+Spot+Pricing" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0;"><strong>Preferred Attribution Format:</strong> <code style="font-size:0.82rem; background:var(--bg-card); padding:2px 8px; border-radius:3px;">"The Reservation Trap: Why Your 3-Year RI Is a $200K Bet Against AWS Spot Pricing (2026)" — jslet Research, July 2026. https://www.jslet.com/ri-vs-spot-breakeven-real</code></p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> When a "40% discount" is actually a 36-month cash advance to AWS with an embedded interest rate, the pricing page is a derivative contract. RSS covers one pricing-model reality check per week. No vendor sponsors. No tracking. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>LLM API Pricing: Token Economics — Why Your LLM Bill Is 3× What the Pricing Page Promised (2026) — jslet</title>
+    <meta name="description" content="The pricing page says GPT-4o costs $2.50 per million input tokens. At 10,000 requests/day with a 2,000-token system prompt, your napkin math says $18.25/day. The bill says $54. This briefing deconstructs the five structural leaks — workload ratio asymmetry, tokenizer variance, unused prompt caching (90% off on Anthropic), batch discounts (50% off), and rate-limit retry overhead — that make real LLM API costs 1.8–4× higher than the sticker price. Includes self-hosted vs API breakeven math for models from 7B to 405B parameters.">
+    <meta property="og:title" content="LLM API Pricing: Token Economics — Why Your LLM Bill Is 3× What the Pricing Page Promised">
+    <meta property="og:description" content="Your napkin math says $18/day. The bill says $54. Five structural leaks between LLM pricing pages and actual costs: workload ratios, tokenizer variance, unused caching, batch discounts, and retry overhead.">
+    <meta property="og:url" content="https://www.jslet.com/llm-api-pricing-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-07-12T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-12T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="LLM API Pricing: Token Economics — Why Your Bill Is 3× the Sticker Price">
+    <meta name="twitter:description" content="Napkin math: $18/day. Actual bill: $54. Five structural leaks between LLM pricing pages and your credit card — workload ratios, tokenizer variance, unused caching, batch discounts, and retry overhead.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/llm-api-pricing-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "LLM API Pricing: Token Economics — Why Your LLM Bill Is 3× What the Pricing Page Promised (2026)",
+      "description": "Five structural leaks between LLM API pricing pages and real costs: workload ratio asymmetry, tokenizer variance, unused prompt caching, batch processing discounts, and rate-limit retry overhead. Includes self-hosted vs API breakeven analysis across model scales.",
+      "url": "https://www.jslet.com/llm-api-pricing-real",
+      "datePublished": "2026-07-12T00:00:00+00:00",
+      "dateModified": "2026-07-12T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why is my LLM API bill higher than the pricing page suggests?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Five structural reasons: (1) Output tokens cost 3-4× more than input tokens at most providers — chat applications cost more than summarization because of the ratio difference. (2) Different providers use different tokenizers — 1,000 tokens on OpenAI may be 1,100 on Google's tokenizer, creating 10%+ cost variance before per-token pricing is compared. (3) Prompt caching is underutilized — Anthropic gives 90% off cached input tokens, OpenAI 50% off. If your system prompt and few-shot examples are identical across requests (and they usually are), those tokens qualify. (4) Batch processing offers 50% off at both OpenAI and Anthropic for async workloads with 24-hour SLA. (5) Rate limits force over-provisioning or multi-provider failover, adding overhead. Combine these: a workload with 30% cacheable input, using batch processing, saves 40-65% compared to naive pricing math. Use the free LLM API Pricing Calculator at jslet.com to model your specific workload."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much does prompt caching save on LLM API costs?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Anthropic offers a 90% discount on cached input tokens (Claude Opus 4: $15/M → $1.50/M cached, Sonnet 4: $3/M → $0.30/M). OpenAI offers 50% off cached input (GPT-4o: $2.50/M → $1.25/M). Google Gemini offers free context caching for prompts under 128K tokens with a small storage charge. The real question is: what percentage of your input tokens are cacheable? In most production applications, system prompts (500–2,000 tokens), few-shot examples (500–3,000 tokens), and RAG context (2,000–8,000 tokens) are identical across requests or change rarely. At a 40% cache hit rate, a workload sending 1M requests/month through Claude Opus 4 saves approximately $6,480/month compared to uncached pricing. On Claude Sonnet 4, the same workload saves $1,296/month. The cache hit rate is the single largest cost lever in LLM API economics — and the one most teams never configure."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is it cheaper to self-host an LLM or use an API?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The breakeven depends on request volume, model size, and latency requirements. For a 7-8B parameter model (Llama 4 Scout scale), self-hosting on a single H100 ($2.50/hr reserved) costs approximately $1,800/month in GPU rental. At 1,200 requests/hour with a typical chat workload (2,000 input + 800 output tokens), GPT-4o-mini API costs ~$680/month — the API is 2.6× cheaper than self-hosting at this traffic level. At 3,200 requests/hour, self-hosting and GPT-4o-mini API reach breakeven. For a 70B model (Llama 4 Maverick scale), self-hosting requires 3 H100s (~$5,400/month). An equivalent API workload at 13,500 requests/hour costs about $13,800/month on DeepSeek-V3 or $175,000/month on Claude Sonnet 4. The breakeven against premium APIs (Anthropic, OpenAI flagship) arrives at much lower volumes — self-hosting a 70B model beats Claude Sonnet 4 at above 3% GPU utilization. The key variable most analyses miss: utilization. A self-hosted GPU running at 30% utilization because your traffic is bursty costs the same as one running at 90%. The API charges per token and automatically absorbs idle time. For spiky or low-utilization workloads, the API wins almost regardless of scale. For sustained high-throughput inference (70%+ GPU utilization, 24/7), self-hosting wins at surprisingly low thresholds. Use the calculator at jslet.com/llm-api-pricing-calculator to model your specific numbers."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which LLM provider is cheapest for production workloads?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It depends on your workload profile — there is no universal 'cheapest.' For summarization workloads (high input, low output): DeepSeek-V3 is typically cheapest at $0.27/M input + $1.10/M output, followed by GPT-4o-mini and Gemini 2.5 Flash (both at $0.15/M input + $0.60/M output). The budget tier is dominated by these three. For code generation (low input, high output): output token pricing dominates — GPT-4o-mini at $0.60/M output is the budget leader, followed by Llama 4 Scout via Groq at $0.50/M output. For chat (balanced): DeepSeek-V3's combined pricing ($0.27/$1.10) undercuts almost everyone. For high-intelligence tasks where model quality matters: Claude Sonnet 4 ($3/$15) and GPT-4o ($2.50/$10) compete on capability, not price — compare on task accuracy, not token cost. For maximum savings with optimizations: Anthropic's 90% prompt caching discount combined with 50% batch pricing makes Claude models dramatically cheaper than their sticker price for cacheable, async workloads — an effective 95%+ discount on cached tokens."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do LLM tokenizers affect API pricing across providers?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Each provider uses a different tokenizer, which means the same text produces a different token count on each platform. OpenAI uses cl100k_base (tiktoken), Anthropic uses a proprietary BPE tokenizer, Google Gemini uses SentencePiece, and DeepSeek uses a BPE tokenizer optimized for Chinese+English. The variance is typically 5-15% for English text and 15-30% for multilingual text. A practical example: a 10,000-character English technical document is approximately 2,500 tokens on OpenAI, 2,350 on Anthropic, 2,650 on Google Gemini, and 2,800 on DeepSeek. At GPT-4o pricing ($2.50/M input), the difference between 2,350 and 2,800 tokens per request translates to $0.0011/request — negligible at small scale. But at 1 million requests/month, it's $1,125/month in variance from tokenization alone, before comparing per-token prices. For cost-sensitive workloads, benchmark your actual text across 2-3 providers before committing — the provider with the higher per-token price may still be cheaper if their tokenizer is more efficient on your specific content type."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>Token <span>Economics</span></h1>
+            <p>Why Your LLM Bill Is 3× What the Pricing Page Promised — And The Math That Fixes It</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-07-12 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 17 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <section class="seo-section">
+            <h2>Executive Summary</h2>
+            <p>Every LLM provider publishes a pricing table: $X per million input tokens, $Y per million output tokens. The napkin math is seductive. 10,000 requests/day × 2,000 input tokens × $2.50/M = $18.25/day on GPT-4o. Annualized: $6,660. The CFO approves it. Three months later the bill is $54/day — $19,710/year — and nobody can explain the gap.</p>
+            <p>The gap isn't a billing error. It's five structural leaks between the pricing page and your credit card: <strong>workload ratio asymmetry</strong> (output tokens cost 3–4× more than input tokens, and your workload determines the ratio), <strong>tokenizer variance</strong> (the same text is 5–15% more tokens on one provider's tokenizer than another's), <strong>unused prompt caching</strong> (Anthropic gives 90% off cached input, OpenAI 50% — and most teams never configure it), <strong>batch processing discounts</strong> (50% off for async workloads — sitting on the table for any non-realtime use case), and <strong>rate-limit retry overhead</strong> (failed requests get retried, consuming tokens twice).</p>
+            <p>This briefing deconstructs each leak with real pricing data from OpenAI, Anthropic, Google Gemini, DeepSeek, Mistral, and Meta/Groq. We run the breakeven math for self-hosted vs API across model scales. And we provide a practical decision framework that turns the five leaks into five cost levers — things you can configure today to cut your bill by 40–65% before changing a single line of application code.</p>
+        </section>
+
+        <!-- ═══ Leak 1: Workload Ratio Asymmetry ═══ -->
+        <section class="seo-section">
+            <h2>Leak #1: Workload Ratio Asymmetry — Your Use Case Is the Multiplier</h2>
+            <p>LLM pricing pages separate input and output token costs. The ratio between them is determined by your workload — and it's the single largest variable in your final bill. Output tokens cost 3–5× more than input tokens at every major provider. The workload that minimizes output tokens (summarization) is fundamentally cheaper than the workload that maximizes them (code generation), even at the same provider with the same daily request count.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">The Workload Cost Spectrum</h3>
+            <p>Consider five canonical workloads, each at <strong>10,000 requests/day</strong> on <strong>GPT-4o ($2.50/M input, $10/M output)</strong>:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.9rem;">
+                <thead>
+                    <tr style="background:var(--bg-input);">
+                        <th style="padding:10px;text-align:left;border-bottom:2px solid var(--border);">Workload</th>
+                        <th style="padding:10px;text-align:right;border-bottom:2px solid var(--border);">In:Out Ratio</th>
+                        <th style="padding:10px;text-align:right;border-bottom:2px solid var(--border);">Input Tokens/Day</th>
+                        <th style="padding:10px;text-align:right;border-bottom:2px solid var(--border);">Output Tokens/Day</th>
+                        <th style="padding:10px;text-align:right;border-bottom:2px solid var(--border);">Daily Cost</th>
+                        <th style="padding:10px;text-align:right;border-bottom:2px solid var(--border);">Annual Cost</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">💬 Chat</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">1:0.4</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">20.0M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">8.0M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">$130.00</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$47,450</td></tr>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">📝 Summarization</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">8:1</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">80.0M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">10.0M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">$300.00</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$109,500</td></tr>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">🔍 RAG / Q&amp;A</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">7.5:1</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">60.0M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">8.0M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#e67e22;">$230.00</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$83,950</td></tr>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">🌐 Translation</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">1:1</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">30.0M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">30.0M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#e67e22;">$375.00</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$136,875</td></tr>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">💻 Code Generation</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">1:2</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">15.0M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">30.0M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#e74c3c;">$337.50</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$123,188</td></tr>
+                </tbody>
+            </table>
+
+            <p>The same 10,000 requests/day on the same GPT-4o model spans from <strong>$47,450/year (chat) to $136,875/year (translation)</strong> — a <strong>2.9× spread</strong> — driven entirely by the input-to-output token ratio. This is before comparing providers. When you layer provider choice on top, the spread widens to 10× or more.</p>
+
+            <p><strong>The fix:</strong> Measure your actual input-to-output token ratio in production before estimating costs. Most teams guess 1:1 because that's what the pricing page implies. Almost no real workload is 1:1. The <a href="/llm-api-pricing-calculator" style="color:var(--accent);">LLM API Pricing Calculator</a> includes workload presets for chat, summarization, code generation, RAG, and translation — select the one that matches your use case, then adjust token counts to your measured values.</p>
+        </section>
+
+        <!-- ═══ Leak 2: Tokenizer Variance ═══ -->
+        <section class="seo-section">
+            <h2>Leak #2: Tokenizer Variance — 1,000 Tokens Isn't Universal</h2>
+            <p>Every LLM provider uses a different tokenizer. OpenAI uses <code>cl100k_base</code> (tiktoken). Anthropic uses a proprietary BPE tokenizer optimized for conversational English. Google Gemini uses SentencePiece. DeepSeek uses a BPE tokenizer optimized for Chinese+English bilingual text. Mistral uses a SentencePiece derivative. The same 10,000-character document produces a different token count on each — and that difference compounds with every request.</p>
+
+            <p>For English text, the variance is typically <strong>5–15%</strong>. For multilingual text (especially CJK languages), the variance can reach <strong>15–30%</strong>. A Chinese legal document with interspersed English technical terms hits the worst case on several tokenizers simultaneously.</p>
+
+            <p><strong>Why this matters:</strong> When you compare per-token pricing across providers, you're comparing different units. Provider A at $2.00/M tokens with a 10% less efficient tokenizer is effectively the same price as Provider B at $2.20/M tokens — but only for your specific content type. A provider that's cheaper on English technical documentation may be more expensive on Chinese customer support transcripts.</p>
+
+            <p><strong>The fix:</strong> Before committing to a provider, benchmark your actual production text through each candidate's tokenizer. The difference is measurable in hours. If you're doing 1M+ requests/day, a 10% tokenizer efficiency gap is thousands of dollars per month — more than enough to justify the benchmarking effort.</p>
+        </section>
+
+        <!-- ═══ Leak 3: Prompt Caching ═══ -->
+        <section class="seo-section">
+            <h2>Leak #3: Prompt Caching — The 90% Discount Nobody Configures</h2>
+            <p>Anthropic introduced prompt caching in August 2024. OpenAI followed with automatic caching in late 2024. Google Gemini launched context caching in early 2025. The discounts are substantial:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.9rem;">
+                <thead>
+                    <tr style="background:var(--bg-input);">
+                        <th style="padding:10px;text-align:left;border-bottom:2px solid var(--border);">Provider</th>
+                        <th style="padding:10px;text-align:right;border-bottom:2px solid var(--border);">Standard Input Price</th>
+                        <th style="padding:10px;text-align:right;border-bottom:2px solid var(--border);">Cached Input Price</th>
+                        <th style="padding:10px;text-align:right;border-bottom:2px solid var(--border);">Discount</th>
+                        <th style="padding:10px;text-align:left;border-bottom:2px solid var(--border);">Minimum Cacheable Tokens</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">Anthropic (Claude Opus 4)</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$15.00/M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">$1.50/M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">90%</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);">1,024 tokens</td></tr>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">Anthropic (Claude Sonnet 4)</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$3.00/M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">$0.30/M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">90%</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);">1,024 tokens</td></tr>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">Anthropic (Claude Haiku 4)</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$0.25/M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">$0.025/M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">90%</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);">1,024 tokens</td></tr>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">OpenAI (GPT-4o)</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$2.50/M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">$1.25/M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">50%</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);">1,024 tokens (auto)</td></tr>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">Google (Gemini 2.5 Pro)</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$1.25/M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">$0.3125/M</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">75%</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);">32,768 tokens (storage fee applies)</td></tr>
+                </tbody>
+            </table>
+
+            <p>Now consider what's actually cacheable in a typical LLM application:</p>
+            <ul>
+                <li><strong>System prompt:</strong> 500–2,000 tokens. Identical for every request. <em>100% cacheable.</em></li>
+                <li><strong>Few-shot examples:</strong> 500–3,000 tokens. Change rarely (when you update the prompt template). <em>100% cacheable between updates.</em></li>
+                <li><strong>RAG context:</strong> 2,000–8,000 tokens. Varies per query but often shares substantial overlap (same document chunks served to multiple users asking similar questions). <em>Partially cacheable — 20–40% typical.</em></li>
+                <li><strong>Conversation history:</strong> 1,000–10,000 tokens. Unique per conversation. <em>Not cacheable.</em></li>
+            </ul>
+
+            <p><strong>Real example:</strong> A customer support chatbot with a 1,500-token system prompt, 1,000 tokens of few-shot examples, and 3,000 tokens of retrieved knowledge base articles per query. Total input: 5,500 tokens per request. Cacheable: 2,500 tokens (45%). At 10,000 requests/day on Claude Sonnet 4, with caching configured:</p>
+            <ul>
+                <li>Naive annual cost: (5,500 × 10,000 × 365 / 1e6 × $3.00) + (800 × 10,000 × 365 / 1e6 × $15.00) = $60,225 + $43,800 = <strong>$104,025/year</strong></li>
+                <li>With caching: (3,000 × 10,000 × 365 / 1e6 × $3.00) + (2,500 × 10,000 × 365 / 1e6 × $0.30) + output = $32,850 + $2,738 + $43,800 = <strong>$79,388/year</strong></li>
+                <li><strong>Savings: $24,638/year (24%) — from a single configuration change.</strong></li>
+            </ul>
+
+            <p><strong>The fix:</strong> Identify your cacheable prefix tokens (system prompt, few-shot examples, static context). Structure your API calls so they appear at the beginning of every prompt — most caching implementations require the cacheable portion to be a prefix. Anthropic requires explicit cache point marking; OpenAI and Google handle it automatically for qualifying prefixes. Measure your cache hit rate in production and feed it into the <a href="/llm-api-pricing-calculator" style="color:var(--accent);">LLM API Pricing Calculator</a> to see the savings.</p>
+        </section>
+
+        <!-- ═══ Leak 4: Batch Processing ═══ -->
+        <section class="seo-section">
+            <h2>Leak #4: Batch Processing — Half Price If You Can Wait 24 Hours</h2>
+            <p>OpenAI and Anthropic both offer batch (asynchronous) API endpoints with <strong>50% off</strong> standard pricing. The tradeoff: up to 24-hour completion SLA instead of real-time response. For offline workloads — evaluation runs, dataset labeling, embedding generation, nightly summarization jobs, synthetic data generation — there is literally no downside. The 50% discount is free money.</p>
+
+            <p>Combined with prompt caching, the stackable discounts are dramatic. On Anthropic, a batch workload with 45% cacheable input tokens achieves an effective rate of:</p>
+            <ul>
+                <li>Cached input: 50% batch discount × 90% caching discount = <strong>5% of sticker price</strong></li>
+                <li>Uncached input: 50% batch discount = <strong>50% of sticker price</strong></li>
+                <li>Output: 50% batch discount = <strong>50% of sticker price</strong></li>
+            </ul>
+
+            <p>For the customer support chatbot example above, adding batch processing where applicable (say 60% of requests are non-realtime — ticket summarization, weekly analytics, knowledge base updates):</p>
+            <ul>
+                <li>Optimized annual: $79,388 × (0.4 + 0.6 × 0.5) = <strong>$55,572/year</strong></li>
+                <li>Total savings vs naive: <strong>$48,453/year (47%)</strong></li>
+            </ul>
+
+            <p><strong>The fix:</strong> Segment your LLM traffic into realtime and async. Realtime: user-facing chat, code completion, live translation. Async: summarization, evaluation, labeling, data processing, report generation. Route async traffic to batch endpoints. The infrastructure change is an API endpoint swap — no model changes, no prompt changes, no application logic changes.</p>
+        </section>
+
+        <!-- ═══ Leak 5: Rate Limits and Retries ═══ -->
+        <section class="seo-section">
+            <h2>Leak #5: Rate Limits and Retry Overhead — Paying Twice for the Same Token</h2>
+            <p>Every LLM API has rate limits: requests per minute (RPM) and tokens per minute (TPM). When your application hits the limit, the API returns a 429 error. Most client libraries automatically retry — but the retried request consumes tokens again. A request that succeeds on the third retry consumed tokens three times for one successful output.</p>
+
+            <p>The cost of retries is not theoretical. For GPT-4o at $2.50/M input + $10/M output, each failed-and-retried 2,000-token prompt wastes $0.005 in input tokens. At 10,000 requests/day with a 2% retry rate, that's $1/day in wasted input tokens — $365/year. Small, but it compounds with scale.</p>
+
+            <p>The bigger cost is architectural: teams over-provision by deploying to multiple providers simultaneously to avoid rate limits, which means paying for capacity they don't need. Or they upgrade to higher rate-limit tiers (requiring prepaid commitments) before their usage justifies it.</p>
+
+            <p><strong>The fix:</strong> Implement exponential backoff with jitter, not naive retry. Monitor your retry rate — if it exceeds 1%, you need either higher rate limits or a queuing layer. Batch endpoints have separate (and typically much higher) rate limits — moving async traffic to batch kills two birds: the batch discount and the rate limit headroom.</p>
+        </section>
+
+        <!-- ═══ Provider-by-Provider Breakdown ═══ -->
+        <section class="seo-section">
+            <h2>Provider-by-Provider Pricing: The 2026 Landscape</h2>
+            <p>As of July 2026, the LLM API market has stratified into four tiers. The pricing below is public list pricing for on-demand API access. All prices are per 1 million tokens.</p>
+
+            <h3>Tier 1: Premium Flagship ($10–$75/M output)</h3>
+            <p><strong>Anthropic Claude Opus 4 ($15/$75):</strong> The most expensive API by a wide margin. The 90% prompt caching discount makes it competitive for cacheable workloads — effective cached input price of $1.50/M is below GPT-4o's standard input price. For workloads with high cache hit rates and batch processing, Opus can be cheaper than GPT-4o despite the 7.5× sticker price on output. <em>Best for: tasks where model quality is non-negotiable and caching is configured.</em></p>
+
+            <h3>Tier 2: Standard Flagship ($2.50–$15/M output)</h3>
+            <p><strong>OpenAI GPT-4o ($2.50/$10):</strong> The reference point. Good performance across all task types. Automatic prompt caching (50% off) without explicit configuration. Batch API available. <em>Best for: general-purpose workloads where you want a single provider and moderate cost.</em></p>
+            <p><strong>Anthropic Claude Sonnet 4 ($3/$15):</strong> 50% more expensive than GPT-4o on output, 20% more on input. The 90% caching discount narrows the gap substantially for cacheable workloads. At a 40% cache hit rate, Sonnet is cheaper than GPT-4o for input-heavy workloads. <em>Best for: cacheable workloads, code generation, long-context reasoning.</em></p>
+            <p><strong>Google Gemini 2.5 Pro ($1.25/$5):</strong> The cheapest "flagship" tier model. 75% context caching discount. Largest context window in the industry (1M+ tokens). <em>Best for: long-document processing, cost-sensitive workloads needing high capability.</em></p>
+            <p><strong>Mistral Large 2 ($3/$9):</strong> Competitive with GPT-4o on price. Strong multilingual performance. No caching or batch discounts as of mid-2026. <em>Best for: European deployments, multilingual workloads, sovereignty requirements.</em></p>
+
+            <h3>Tier 3: Budget / Efficiency ($0.15–$1.25/M output)</h3>
+            <p><strong>OpenAI GPT-4o-mini ($0.15/$0.60):</strong> The budget benchmark. 4% of GPT-4o's output price for ~80% of the capability on structured tasks. Automatic prompt caching. <em>Best for: classification, extraction, simple Q&amp;A, high-volume filtering.</em></p>
+            <p><strong>Anthropic Claude Haiku 4 ($0.25/$1.25):</strong> 2× GPT-4o-mini on output, but 90% caching discount. On cacheable workloads, competitive with GPT-4o-mini. <em>Best for: cacheable lightweight tasks, multi-turn conversations with static system context.</em></p>
+            <p><strong>Google Gemini 2.5 Flash ($0.15/$0.60):</strong> Price-matched to GPT-4o-mini. 1M token context window. <em>Best for: long-document lightweight processing, competitive with GPT-4o-mini.</em></p>
+            <p><strong>Llama 4 Scout via Groq ($0.15/$0.50):</strong> Open-weight model, lowest output price in the market. Groq's LPU inference delivers the fastest tokens/second. <em>Best for: maximum throughput, lowest cost, real-time streaming.</em></p>
+
+            <h3>Tier 4: Disruptor Pricing ($0.27–$2.19/M output)</h3>
+            <p><strong>DeepSeek-V3 ($0.27/$1.10):</strong> Flagship-capability model at below-budget-tier pricing. The price disruption that forced multiple rounds of cuts from OpenAI and Google. Chinese+English optimized tokenizer means English-only workloads may see slightly higher token counts. <em>Best for: cost-sensitive workloads needing flagship capability, Chinese-language applications.</em></p>
+            <p><strong>DeepSeek-R1 ($0.55/$2.19):</strong> Reasoning model. Even at 2× V3's price, it's cheaper than GPT-4o for reasoning-heavy tasks where it matches or exceeds flagship quality. <em>Best for: math, code reasoning, complex analysis — tasks where reasoning quality justifies the premium over V3.</em></p>
+        </section>
+
+        <!-- ═══ Self-Hosted vs API Breakeven ═══ -->
+        <section class="seo-section">
+            <h2>The Self-Hosted vs API Breakeven: When Does Buying GPUs Beat Paying Per Token?</h2>
+            <p>The question every LLM-heavy startup asks at Series A: should we rent GPUs and self-host, or keep paying the API per token? The answer depends on model size, utilization rate, and which API tier you're comparing against.</p>
+
+            <h3 style="color: var(--accent);">The GPU Cost Baseline</h3>
+            <p>GPU rental pricing (mid-2026, reserved instances, per GPU/month):</p>
+            <ul>
+                <li><strong>NVIDIA H100 (80 GB):</strong> ~$1,800/month reserved ($2.50/hr), ~$3,000/month on-demand</li>
+                <li><strong>NVIDIA A100 (80 GB):</strong> ~$1,200/month reserved, ~$2,000/month on-demand</li>
+                <li><strong>NVIDIA L40S (48 GB):</strong> ~$800/month reserved</li>
+            </ul>
+
+            <h3 style="color: var(--accent);">Model Sizing: What Fits Where</h3>
+            <ul>
+                <li><strong>7–8B parameter model (Llama 4 Scout, Mistral Small):</strong> 1× H100 or 1× L40S. VRAM: ~14 GB in FP16, fits comfortably.</li>
+                <li><strong>70B parameter model (Llama 4 Maverick):</strong> 2–4× H100 with tensor parallelism. VRAM: ~140 GB in FP16, requires multi-GPU.</li>
+                <li><strong>405B parameter model (Llama 4 Behemoth):</strong> 8–16× H100. Not practical for most teams to self-host.</li>
+            </ul>
+
+            <h3 style="color: var(--accent);">Breakeven Math: 8B Model</h3>
+            <p><strong>Self-hosted cost:</strong> 1× H100 reserved = $1,800/month. At 70% utilization (realistic for a well-tuned inference server with continuous traffic), this delivers approximately 1,500 tokens/second output. At 800 output tokens per request: ~6,750 requests/hour, ~4.86M requests/month.</p>
+            <p><strong>API equivalent</strong> (DeepSeek-V3 at $0.27/$1.10, same token volumes): (4.86M × 2,000 input tokens / 1e6 × $0.27) + (4.86M × 800 output tokens / 1e6 × $1.10) = $2,624 + $4,277 = <strong>$6,901/month</strong>.</p>
+            <p><strong>API equivalent</strong> (GPT-4o-mini at $0.15/$0.60): (4.86M × 2,000 / 1e6 × $0.15) + (4.86M × 800 / 1e6 × $0.60) = $1,458 + $2,333 = <strong>$3,791/month</strong>.</p>
+            <p>Against DeepSeek and budget APIs, <strong>self-hosting an 8B model wins at ~35% utilization</strong> (~2,400 requests/hour). Against GPT-4o-mini, self-hosting breakeven is closer to 50% utilization. Below that, the API is cheaper — and you don't manage infrastructure.</p>
+
+            <h3 style="color: var(--accent);">Breakeven Math: 70B Model</h3>
+            <p><strong>Self-hosted cost:</strong> 3× H100 reserved = $5,400/month. At 70% utilization: ~3,000 tokens/second output. At 800 output tokens/request: ~13,500 requests/hour, ~9.72M requests/month.</p>
+            <p><strong>API equivalent</strong> (DeepSeek-V3): $5,248 + $8,554 = <strong>$13,802/month</strong>. Self-hosting wins at any utilization above 40%.</p>
+            <p><strong>API equivalent</strong> (Claude Sonnet 4 at $3/$15): $58,320 + $116,640 = <strong>$174,960/month</strong>. Self-hosting wins at any utilization above 3%. The breakeven is essentially immediate for premium APIs at this scale.</p>
+
+            <h3 style="color: var(--accent);">The Utilization Reality Check</h3>
+            <p>Most teams overestimate their GPU utilization. The theoretical breakeven is not the real breakeven. Self-hosted inference servers sit idle during traffic valleys (nights, weekends, holidays). The API charges zero for idle time. The three questions that determine which side of the breakeven you're on:</p>
+            <ol>
+                <li><strong>Is your traffic steady or bursty?</strong> Steady (continuous high throughput): self-hosted wins. Bursty (business hours only, spike-driven): API wins.</li>
+                <li><strong>Can you batch requests?</strong> If yes, self-hosted utilization goes up and API costs go down (batch discount). The advantage shifts to API for most scales.</li>
+                <li><strong>Do you have GPU infra expertise on staff?</strong> Self-hosting a 70B model across 3 GPUs requires understanding of tensor parallelism, quantization (AWQ/GPTQ/FP8), continuous batching (vLLM/TGI), and GPU node management. The engineering cost is real — allocate 0.25–0.5 FTE for a production self-hosted deployment.</li>
+            </ol>
+        </section>
+
+        <!-- ═══ Multi-Provider Architecture ═══ -->
+        <section class="seo-section">
+            <h2>Multi-Provider Architecture: Hedging Your Token Bets</h2>
+            <p>Production LLM applications increasingly run across multiple providers — not for cost savings (though that's a side benefit), but for reliability. A single-provider architecture has a single point of failure: if the API is down, your application is down. Given that every major LLM provider has experienced multi-hour outages in 2025–2026, multi-provider is becoming table stakes for production deployments.</p>
+
+            <p>The architectural pattern is straightforward: a thin routing layer (LiteLLM, OpenRouter, or a hand-rolled proxy) that accepts OpenAI-format API calls and routes them to the configured backend. Fallback logic: try primary provider, if 429 or 5xx, retry on secondary, then tertiary. The routing layer also handles cost tracking per provider — essential for measuring whether your primary choice is still the right one.</p>
+
+            <p><strong>Cost implications:</strong> Multi-provider architecture adds ~5–15% to your API bill (failed requests that get retried on a fallback provider, plus the overhead of routing). But it eliminates the far more expensive outage cost. The math is simple: if a single-provider outage costs you $X in lost revenue per hour, and the outage probability is Y% per year, multi-provider is worth it when the expected loss (X × Y) exceeds the multi-provider overhead. For most revenue-generating applications, the breakeven is unambiguous.</p>
+
+            <p>Multi-provider also enables <strong>cost-aware routing</strong>: send realtime requests to the cheapest provider that meets your latency SLA, send async batch requests to the cheapest period, and reserve the expensive flagship model for the 5% of requests that actually need it. A three-tier routing strategy (budget model for 80% of traffic, standard model for 15%, flagship for 5%) can cut your blended per-token cost by 60–80% compared to routing everything to the flagship.</p>
+        </section>
+
+        <!-- ═══ Decision Framework ═══ -->
+        <section class="seo-section">
+            <h2>Practical Decision Framework: Five Questions to Ask Before You Pick a Provider</h2>
+            <ol>
+                <li><strong>What's your actual input-to-output token ratio?</strong> Measure it in production. Don't guess. The ratio is the single largest cost multiplier — and it determines which provider's pricing structure is cheapest for your specific workload.</li>
+                <li><strong>What percentage of your input tokens are cacheable?</strong> Count your system prompt, few-shot examples, and static context. If it's above 20%, Anthropic's 90% caching discount may make Claude cheaper than GPT-4o despite the higher sticker price. Run the numbers — don't compare sticker prices, compare effective prices with your actual cache hit rate.</li>
+                <li><strong>What percentage of your traffic can tolerate 24-hour latency?</strong> Offline processing, evaluation, labeling, report generation — anything that doesn't need a realtime response qualifies for batch pricing at 50% off. Moving 30% of traffic to batch cuts your blended cost by 15% with zero model quality impact.</li>
+                <li><strong>Is your traffic steady or bursty?</strong> Steady, high-throughput traffic favors self-hosting (breakeven at surprisingly low volumes). Bursty traffic favors API (you pay zero for idle GPU time). Be honest about your utilization — most teams overestimate it.</li>
+                <li><strong>Do you need multi-provider for reliability, not just cost?</strong> If yes, the cost conversation shifts: you're optimizing for blended cost across 2–3 providers with fallback logic, not the cheapest single provider. A three-tier routing strategy (budget/standard/flagship) yields the best blended cost for most production workloads.</li>
+            </ol>
+            <p style="margin-top: 16px;">Use the <a href="/llm-api-pricing-calculator" style="color:var(--accent); font-weight:600;">LLM API Pricing Calculator</a> to model your specific workload across all 12 models from 6 providers, with caching and batch optimization. All calculations are client-side — your token counts and request volumes never leave your browser.</p>
+        </section>
+
+        <!-- ═══ Related ═══ -->
+        <div class="related-tools" style="margin-top: 40px;">
+            <h3>Related Tools &amp; Reading</h3>
+            <div class="related-grid">
+                <a href="/llm-api-pricing-calculator">🖩 LLM API Pricing Calculator →</a>
+                <a href="/gpu-training-cost-real">📰 GPU Training Cost: The arXiv-to-Bill Gap →</a>
+                <a href="/gpu-training-cost">🖩 GPU Training Cost Estimator →</a>
+                <a href="/parameters-to-vram-fp16">🖩 LLM Params → FP16 VRAM →</a>
+                <a href="/context-window-vram-inflation">🖩 Context Window VRAM Inflation →</a>
+                <a href="/token-size-to-storage">🖩 Token Count → Storage →</a>
+                <a href="/observability-cost">📰 The Price of Observability →</a>
+                <a href="/system-availability-sla-economics">📰 SLA Economics: The Cost of Each 9 →</a>
+            </div>
+        </div>
+
+        <!-- ═══ Copyright ═══ -->
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Commercial republication, Bulk republishing and commercial dataset resale are prohibited without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies. Contact: research@jslet.com.</p>
+                <p style="margin:0;"><strong>Preferred Attribution Format:</strong> <code style="font-size:0.82rem; background:var(--bg-card); padding:2px 8px; border-radius:3px;">"LLM API Pricing: Token Economics — Why Your LLM Bill Is 3× What the Pricing Page Promised" — jslet Research, July 2026. https://www.jslet.com/llm-api-pricing-real</code></p>
+                <p style="margin:10px 0 0 0;"><strong>Pricing Data Disclaimer:</strong> LLM API pricing changes frequently. The prices cited in this article reflect publicly available list pricing as of July 2026 and should be verified against current provider pricing pages before making procurement decisions. This article is independent analysis — jslet has no financial relationship with any LLM provider.</p>
+            </div>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

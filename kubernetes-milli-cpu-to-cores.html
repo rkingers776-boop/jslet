@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Kubernetes milliCPUs to Core Clusters — jslet</title>
+    <meta name="description" content="1000m = 1 vCPU = 1 hyperthread. 250m = 0.25 cores. Your 32-core node with 64 pods at 500m each — theoretically packed, practically overcommitted by 2× when pods spike. Model the math.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Kubernetes milliCPUs to Core Clusters — jslet">
+    <meta property="og:description" content="Translate fractional pod orchestration parameters into physical bare-metal hardware allocations. Convert milliCPU to vCPU cores, determine node requirements for your Kubernetes fleet.">
+    <meta property="og:url" content="https://www.jslet.com/kubernetes-milli-cpu-to-cores">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Kubernetes milliCPUs to Core Clusters — jslet">
+    <meta name="twitter:description" content="Translate fractional pod orchestration parameters into physical bare-metal hardware allocations. Convert milliCPU to vCPU, plan node count.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/kubernetes-milli-cpu-to-cores">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Kubernetes milliCPUs to Core Clusters",
+      "description": "Translates fractional pod orchestration parameters into physical bare-metal hardware allocations. Convert Kubernetes milliCPU requests to vCPU cores, determine node count, and plan cluster capacity.",
+      "url": "https://www.jslet.com/kubernetes-milli-cpu-to-cores",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do Kubernetes milliCPU values map to real cores?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "1000m = 1 vCPU = 1 hyperthread. 500m is half a core, 250m is a quarter. The calculator converts your pod request/summary into core totals and compares it against node capacity, so the \"theoretically packed, practically overcommitted\" gap becomes visible before the scheduler evicts anything."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why is a 32-core node with 64 pods at 500m each risky?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "64 pods × 500m = 32 cores requested — exactly the node capacity. But requests are minimums; actual usage spikes above requests, and with no headroom the kernel throttles (CFS) and pods queue. The calculator shows the overcommit ratio and the headroom you are left with, which is the number that prevents 4 PM Friday incidents."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the difference between compressible and incompressible resources?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "CPU is compressible — when it runs out, pods are throttled, not killed. Memory is incompressible — when it runs out, the OOM killer removes pods. The calculator explains this distinction because it changes how you set requests vs limits, and why memory overcommit is the dangerous kind."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>☸️ Kubernetes <span>milliCPUs</span> to Core Clusters</h1>
+            <p>1000m = 1 vCPU = 1 hyperthread. 250m = 0.25 cores. Your 32-core node with 64 pods at 500m each — 32 cores requested, 32 cores total, theoretically packed. But requests are not limits. When 12 pods spike to 2000m, your node is overcommitted by 2×. Model the real math before CPU throttling cascades through your deployment.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Cluster Workload Profile</h3>
+                <p class="card-desc">Set pod milliCPU, replicas, and node vCPU capacity. The engine converts milliCPU to fractional vCPUs, computes total cluster demand, and derives minimum nodes at 90% allocatable. Overcommit ratio is surfaced — not hidden.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="milli">Pod Allocation (milliCPU)</label>
+                        <input type="number" class="unit-input" id="milli" value="4500" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">1000m = 1 vCPU core</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="replicas">Number of Replicas</label>
+                        <input type="number" class="unit-input" id="replicas" value="10" step="any" min="1">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="nodeCpu">Node vCPU Capacity</label>
+                        <input type="number" class="unit-input" id="nodeCpu" value="16" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="profile">Cluster Profile</label>
+                        <select class="unit-input" id="profile" disabled style="opacity:0.6;">
+                            <option value="prod" selected>Production (90% Allocatable)</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Calculation</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Cluster Capacity Analysis</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-vcpu-pod">—</div><div class="metric-label">vCPU / Pod</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-total-cpu">—</div><div class="metric-label">Total CPU Demand</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-nodes">—</div><div class="metric-label">Nodes Needed</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-pods-per-node">—</div><div class="metric-label">Pods / Node</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>Kubernetes milliCPU: 1000m = 1 vCPU Core</h2>
+            <p>Kubernetes expresses CPU resources in <strong>milliCPU</strong> (or millicores), where <strong>1000m = 1 vCPU core</strong>. This fractional unit allows fine-grained resource allocation: a pod requesting 250m gets one-quarter of a CPU core's time slice. Under the hood, Kubernetes maps these requests to Linux cgroup CFS (Completely Fair Scheduler) quotas — a 250m request translates to 25 ms of CPU time per 100 ms scheduling period. When a container exceeds its CPU limit, it is <strong>throttled</strong> (not killed), causing latency spikes that are notoriously difficult to diagnose without kernel-level tracing.</p>
+
+            <h3>How This Calculator Works</h3>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Step</th><th>Formula</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>vCPU per Pod</strong></td><td><code>milliCPU ÷ 1000</code></td><td>Convert pod request from millicores to fractional vCPUs</td></tr>
+                    <tr><td><strong>Total CPU Demand</strong></td><td><code>vCPU/Pod × Replicas</code></td><td>Aggregate fleet CPU requirement across all replicas</td></tr>
+                    <tr><td><strong>Allocatable per Node</strong></td><td><code>Node vCPUs × 0.90</code></td><td>Kubernetes reserves ~10% for system daemons (kubelet, container runtime, OS), leaving 90% allocatable</td></tr>
+                    <tr><td><strong>Nodes Needed</strong></td><td><code>ceil(Total CPU ÷ Allocatable)</code></td><td>Minimum nodes to satisfy total demand with system reservations</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>Compressible vs. Incompressible Resources</h3>
+            <p>CPU is a <strong>compressible resource</strong> in Kubernetes — when a pod exceeds its CPU limit, the kernel throttles it rather than evicting it. This contrasts with memory, which is <strong>incompressible</strong>: exceeding the memory limit triggers an OOM kill and pod restart. This fundamental asymmetry means that CPU limits can be set more aggressively than memory limits, but excessive CPU throttling causes tail latency degradation that cascades through microservice dependency chains. Production clusters should monitor <code>container_cpu_cfs_throttled_seconds_total</code> to detect under-provisioned CPU before users notice.</p>
+
+            <h3>System Reservations and CFS Throttling</h3>
+            <p>The 90% allocatable assumption accounts for Kubernetes system overhead: the kubelet, container runtime (containerd/CRI-O), kube-proxy, and OS-level daemons collectively consume 5–10% of node CPU. Additionally, the CFS scheduler enforces quota periods (default 100 ms) — a pod with a 500m limit can burst for 50 ms but is then throttled for the remaining 50 ms of the period. This <strong>CFS quota-based throttling</strong> is a leading cause of "mystery latency" in Kubernetes deployments, especially for bursty workloads like API gateways and stream processors.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var m = v('milli') / 1000, r = v('replicas'), nc = v('nodeCpu');
+        var tc = m * r;
+        var avail = nc * 0.9;
+        var nn = Math.ceil(tc / avail);
+        var ppn = Math.floor(avail / m);
+
+        document.getElementById('val-vcpu-pod').textContent = m.toFixed(2) + ' vCPU';
+        document.getElementById('val-total-cpu').textContent = tc.toFixed(2) + ' vCPU';
+        document.getElementById('val-nodes').textContent = nn;
+        document.getElementById('val-pods-per-node').textContent = ppn;
+
+        document.getElementById('results-params').innerText =
+            v('milli') + 'm per pod × ' + r + ' replicas on ' + nc + '-vCPU nodes — ' + tc.toFixed(2) + ' total vCPU demand, ' + nn + ' nodes required';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', compute);
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>AWS Cross-AZ Data Transfer Cost Calculator — jslet</title>
+    <meta name="description" content="Cross-AZ traffic is charged $0.01/GB in each direction — a 10K rps three-tier app can burn ~$5,260/month on east-west traffic alone. Model your AZ-boundary spend and quantify what AZ-affinity routing saves.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="AWS Cross-AZ Data Transfer Cost Calculator — jslet">
+    <meta property="og:description" content="Model AWS cross-Availability-Zone transfer costs ($0.01/GB each direction), see what chatty east-west traffic really costs, and quantify AZ-affinity savings.">
+    <meta property="og:url" content="https://www.jslet.com/aws-cross-az-data-transfer-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AWS Cross-AZ Data Transfer Cost Calculator — jslet">
+    <meta name="twitter:description" content="Model cross-AZ east-west traffic costs and quantify AZ-affinity savings.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/aws-cross-az-data-transfer-cost">
+    <style>
+        .az-mode-switch { display: flex; gap: 10px; margin: 14px 0; flex-wrap: wrap; }
+        .az-mode-switch button { padding: 8px 16px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: transparent; cursor: pointer; font-weight: 700; font-size: 0.85rem; color: var(--text-body); }
+        .az-mode-switch button.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 1.55rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .preset-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; }
+        .preset-chip { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-card); font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s; }
+        .preset-chip:hover { border-color: var(--accent); color: var(--accent); }
+        .preset-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .savings-box { background: var(--success-soft, rgba(5,150,105,0.08)); border: 1px solid rgba(5,150,105,0.3); border-radius: var(--radius-sm); padding: 14px 18px; margin-top: 14px; }
+        .savings-box .sv-val { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 1.3rem; font-weight: 800; color: var(--success); }
+        .fmt-note { font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "AWS Cross-AZ Data Transfer Cost Calculator",
+      "url": "https://www.jslet.com/aws-cross-az-data-transfer-cost",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any (browser-based, 100% client-side)",
+      "description": "Model AWS cross-Availability-Zone data transfer costs at $0.01/GB per direction. Convert request volume to monthly east-west traffic, compare AZ-affinity vs random placement, and quantify potential savings.",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "featureList": "Request-to-GB conversion, cross-AZ cost modeling, AZ-affinity savings comparison, scenario presets, tiered volume discount"
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What does AWS charge for cross-AZ data transfer?",
+          "acceptedAnswer": { "@type": "Answer", "text": "AWS charges $0.01/GB for data transfer between Availability Zones in the same region, and it bills in BOTH directions — a round trip effectively costs $0.02/GB. The charge applies to EC2, RDS, Redshift, ElastiCache, DAX, and Elastic Network Interfaces. Traffic between S3, EBS direct APIs, DynamoDB, SQS, SNS, Kinesis and EC2 within the same region is free." }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I calculate cross-AZ traffic from request volume?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Multiply requests per second by average payload size (request + response) to get bytes/sec, then convert to GB/month using 3,600 seconds/hour and 730 hours/month. Example: 10,000 req/s at 10 KB average payload = 100 MB/s = ~263 TB/month, which at $0.01/GB per direction costs roughly $5,260/month." }
+        },
+        {
+          "@type": "Question",
+          "name": "Why is cross-AZ traffic the hidden line item most teams miss?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Teams optimize compute and egress but forget that east-west traffic between AZs is billable. A three-tier app with a load balancer in one AZ and instances in another generates continuous cross-AZ traffic on every request. A chatty microservice doing many small calls can spend more on cross-AZ transfer than on compute — at 263 TB/month it is $5,260/month that AZ-affinity routing can mostly eliminate." }
+        },
+        {
+          "@type": "Question",
+          "name": "How can I reduce cross-AZ transfer costs?",
+          "acceptedAnswer": { "@type": "Answer", "text": "The biggest lever is AZ-affinity routing: place consumers and their dependencies in the same AZ and route requests there. On Application and Network Load Balancers you can disable cross-zone load balancing so traffic stays in the AZ it arrived in. Put RDS read replicas and ElastiCache nodes in the same AZ as the instances that use them. For stateless workloads this can cut cross-AZ spend by 50-100% with zero performance impact." }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><a href="#main-content" class="skip-link">Skip to content</a><nav class="site-nav"><div class="nav-inner"><a href="/" class="nav-brand"><svg class="nav-logo-icon" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#1d3f66"/><g fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M 19 6 C 15.5 6 13.5 8.2 13.5 10.5 L 13.5 13 C 13.5 14.8 12.3 15.8 10.5 16 C 12.3 16.2 13.5 17.2 13.5 19 L 13.5 21.5 C 13.5 23.8 15.5 26 19 26"/><path d="M 13 6 C 16.5 6 18.5 8.2 18.5 10.5 L 18.5 13 C 18.5 14.8 19.7 15.8 21.5 16 C 19.7 16.2 18.5 17.2 18.5 19 L 18.5 21.5 C 18.5 23.8 16.5 26 13 26"/></g><rect x="14.2" y="13.2" width="3.6" height="5.6" rx="1.2" fill="#E60023"/></svg> jslet</a><div class="nav-links"><a href="/">Home</a><div class="nav-dropdown-wrap"><span class="nav-link">🟢 JS Tools ▾</span><div class="nav-dropdown" role="menu"><a href="/json-tools" role="menuitem">{ } JSON / CSV</a><a href="/regex-tools" role="menuitem">.* Regex</a><a href="/encoding-tools" role="menuitem">🔣 Encoding</a><a href="/timestamp-tools" role="menuitem">🕐 Timestamp</a><a href="/css-tools" role="menuitem">🎨 CSS / Color</a><a href="/dev-tools" role="menuitem">🔧 More Dev Tools</a></div></div><div class="nav-dropdown-wrap"><span class="nav-link">🔵 Cloud ▾</span><div class="nav-dropdown" role="menu"><a href="/core-calculators" role="menuitem">🎛️ Core Calculators</a><a href="/ai-gpu-compute" role="menuitem">🤖 AI &amp; GPU</a><a href="/data-magnitude" role="menuitem">📊 Data Magnitude</a><a href="/network-economics" role="menuitem">🌐 Network Economics</a><a href="/cloud-quotas" role="menuitem">☁️ Cloud Quotas</a><a href="/decision-matrix" role="menuitem">🛠️ Decision Matrix</a><a href="/security-sre" role="menuitem">🔒 Security &amp; SRE</a><a href="/devops-utilities" role="menuitem">🔧 DevOps Utilities</a></div></div><a href="/articles" class="nav-link __nav-articles__">Articles</a><a href="/about" class="nav-link __nav-about__">About</a></div><div class="nav-actions"><a href="/search" class="nav-cta">🔍 Search</a><button class="btn-theme" id="btn-theme" title="Toggle dark/light mode" aria-label="Toggle dark mode">☽</button></div></div></nav></noscript>
+    </div>
+
+    <main class="container" id="main-content">
+        <h1>AWS Cross-AZ Data Transfer Cost Calculator</h1>
+        <p class="subtitle" style="color:var(--text-secondary); max-width:760px; line-height:1.6;">Cross-AZ traffic is charged <strong style="color:var(--accent);">$0.01/GB in each direction</strong> — a round trip is $0.02/GB. The 10K-rps three-tier app below burns ~$5,260/month on east-west traffic alone. Model your boundary, then measure what AZ-affinity routing saves.</p>
+
+        <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:22px 24px;">
+            <label for="mode-select" style="display:block; font-weight:700; font-size:0.9rem; margin-bottom:6px;">Input mode</label>
+            <div class="az-mode-switch" role="group" aria-label="Input mode">
+                <button type="button" data-mode="requests" class="active">🚀 From requests / throughput</button>
+                <button type="button" data-mode="volume">📦 From GB / month</button>
+            </div>
+
+            <div id="inputs-requests">
+                <div class="multi-input-row" style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+                    <div class="input-group">
+                        <label for="in-rps">Requests per second (req/s)</label>
+                        <input type="number" id="in-rps" value="10000" min="0" step="100" style="width:100%;">
+                    </div>
+                    <div class="input-group">
+                        <label for="in-payload">Average payload — request + response (KB)</label>
+                        <input type="number" id="in-payload" value="10" min="0" step="0.5" style="width:100%;">
+                    </div>
+                </div>
+                <p class="fmt-note">💡 Payload = request + response bytes crossing the AZ boundary. Chatty microservices often move 5-20 KB per call even for tiny payloads.</p>
+            </div>
+
+            <div id="inputs-volume" style="display:none;">
+                <div class="input-group">
+                    <label for="in-gb">Cross-AZ traffic (GB / month)</label>
+                    <input type="number" id="in-gb" value="50000" min="0" step="500" style="width:100%;">
+                </div>
+                <p class="fmt-note">💡 Prefer monitoring data or flow logs? Enter GB/month directly.</p>
+            </div>
+
+            <div class="preset-chips" role="group" aria-label="Scenario presets">
+                <button type="button" class="preset-chip active" data-preset="tier3">3-tier · 10K rps</button>
+                <button type="button" class="preset-chip" data-preset="micro">Chatty microservices</button>
+                <button type="button" class="preset-chip" data-preset="api">Public API · 1K rps</button>
+                <button type="button" class="preset-chip" data-preset="replica">RDS replica sync</button>
+            </div>
+
+            <div class="metric-grid">
+                <div class="metric-tile"><div class="metric-val" id="out-gbps">—</div><div class="metric-label">Avg throughput</div></div>
+                <div class="metric-tile"><div class="metric-val" id="out-tb">—</div><div class="metric-label">GB / month</div></div>
+                <div class="metric-tile"><div class="metric-val" id="out-cost">—</div><div class="metric-label">Cross-AZ cost / mo</div></div>
+                <div class="metric-tile"><div class="metric-val" id="out-year">—</div><div class="metric-label">Annualized</div></div>
+            </div>
+
+            <div class="savings-box">
+                <div style="font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--success);">🟢 With AZ-affinity routing (100% same-AZ)</div>
+                <div style="margin-top:4px;">Potential monthly saving: <span class="sv-val" id="out-savings">—</span> <span style="font-size:0.8rem; color:var(--text-secondary);">— 0% of current spend</span></div>
+                <div style="font-size:0.78rem; color:var(--text-muted); margin-top:6px;">Real-world: disabling cross-zone load balancing on ALB/NLB + co-locating RDS replicas and ElastiCache nodes can recover 50-100% of this line item.</div>
+            </div>
+        </div>
+
+        <div class="seo-section">
+            <h2>The east-west bill nobody budgets for</h2>
+            <p>Compute and internet egress get all the attention, but <strong>cross-AZ data transfer is a billable boundary inside your own region</strong>. AWS charges $0.01/GB in each direction between Availability Zones for EC2, RDS, Redshift, ElastiCache, DAX and Elastic Network Interfaces. Every request that crosses an AZ boundary is a metered event.</p>
+            <p>At production scale this is not noise. A three-tier application at 10,000 req/s with a 10 KB average payload moves about 100 MB/s across the boundary — roughly <strong>263 TB/month</strong>, or <strong>~$5,260/month</strong> at $0.01/GB per direction (round-trip $0.02/GB). That is a real line item that architecture choices control.</p>
+            <h3>The fix: AZ-affinity routing</h3>
+            <p>For stateless workloads, the single fastest reduction is <strong>disabling cross-zone load balancing</strong> on Application and Network Load Balancers — AWS now lets you do this independently per load balancer, routing each request to instances in the AZ it arrived from. Stateful pairs should co-locate: put RDS read replicas and ElastiCache nodes in the same AZ as the consumers that query them. Traffic between S3, DynamoDB, SQS, SNS and EC2 in the same region stays free — the billable boundary is between EC2-class services across AZs.</p>
+            <p>See also: <a href="/alb-nlb-cost-calculator">AWS ALB vs NLB Cost Calculator</a> · <a href="/terabytes-egress-to-aws-cost">AWS Egress Bandwidth Cost Estimator</a> · <a href="/concurrent-users-to-bandwidth">Concurrent Users → Bandwidth</a> · <a href="/network-economics">Network Economics</a> · <a href="/cross-az-tax-real">📰 The AZ Tax (Full Briefing)</a></p>
+        </div>
+    </main>
+
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        'use strict';
+
+        // Pricing: $0.01/GB per direction, round-trip = $0.02/GB
+        var PRICE_PER_GB_DIR = 0.01;
+        var HOURS_PER_MONTH = 730;
+        var SECONDS_PER_HOUR = 3600;
+        var GB_PER_TB = 1000;
+
+        var mode = 'requests';
+        var elRps = document.getElementById('in-rps');
+        var elPayload = document.getElementById('in-payload');
+        var elGb = document.getElementById('in-gb');
+
+        function fmtMoney(n) {
+            if (!isFinite(n) || n < 0) return '—';
+            if (n >= 1000) return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+            return '$' + n.toFixed(2);
+        }
+
+        function fmtNum(n) {
+            if (!isFinite(n)) return '—';
+            if (n >= 1e12) return (n / 1e12).toFixed(2) + 'T';
+            if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+            if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+            if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+            return String(Math.round(n));
+        }
+
+        function calc() {
+            var gbPerMonth, throughputMbps;
+            if (mode === 'requests') {
+                var rps = parseFloat(elRps.value) || 0;
+                var kb = parseFloat(elPayload.value) || 0;
+                var bytesPerSec = rps * kb * 1024;
+                gbPerMonth = (bytesPerSec * SECONDS_PER_HOUR * HOURS_PER_MONTH) / (1024 * 1024 * 1024);
+                throughputMbps = (bytesPerSec * 8) / (1024 * 1024);
+            } else {
+                gbPerMonth = parseFloat(elGb.value) || 0;
+                var bytesPerSecVol = (gbPerMonth * 1024 * 1024 * 1024) / (SECONDS_PER_HOUR * HOURS_PER_MONTH);
+                throughputMbps = (bytesPerSecVol * 8) / (1024 * 1024);
+            }
+
+            var monthly = gbPerMonth * PRICE_PER_GB_DIR * 2; // each direction
+            var annual = monthly * 12;
+            var saving = monthly; // 100% same-AZ theoretical max
+
+            document.getElementById('out-gbps').textContent = (throughputMbps >= 1000 ? (throughputMbps / 1000).toFixed(2) + ' Gbps' : Math.round(throughputMbps) + ' Mbps');
+            document.getElementById('out-tb').textContent = fmtNum(gbPerMonth) + ' GB';
+            document.getElementById('out-cost').textContent = fmtMoney(monthly) + ' / mo';
+            document.getElementById('out-year').textContent = fmtMoney(annual) + ' / yr';
+            document.getElementById('out-savings').textContent = fmtMoney(saving) + ' / mo';
+            var pctEl = document.getElementById('out-savings').nextElementSibling;
+            if (pctEl) {
+                var pct = monthly > 0 ? Math.round((saving / monthly) * 100) : 0;
+                pctEl.textContent = '— ' + pct + '% of current spend';
+            }
+        }
+
+        // Mode switch
+        var modeBtns = document.querySelectorAll('.az-mode-switch button');
+        modeBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                mode = btn.getAttribute('data-mode');
+                modeBtns.forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                document.getElementById('inputs-requests').style.display = mode === 'requests' ? '' : 'none';
+                document.getElementById('inputs-volume').style.display = mode === 'volume' ? '' : 'none';
+                calc();
+            });
+        });
+
+        // Presets
+        var presets = {
+            tier3: { rps: 10000, payload: 10 },
+            micro: { rps: 5000, payload: 25 },
+            api: { rps: 1000, payload: 8 },
+            replica: { rps: 0, payload: 0, gb: 20000 }
+        };
+        var presetBtns = document.querySelectorAll('.preset-chip');
+        presetBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                presetBtns.forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                var p = presets[btn.getAttribute('data-preset')];
+                if (p.gb !== undefined) {
+                    mode = 'volume';
+                    modeBtns.forEach(function(b) { b.classList.toggle('active', b.getAttribute('data-mode') === 'volume'); });
+                    document.getElementById('inputs-requests').style.display = 'none';
+                    document.getElementById('inputs-volume').style.display = '';
+                    elGb.value = p.gb;
+                } else {
+                    mode = 'requests';
+                    modeBtns.forEach(function(b) { b.classList.toggle('active', b.getAttribute('data-mode') === 'requests'); });
+                    document.getElementById('inputs-requests').style.display = '';
+                    document.getElementById('inputs-volume').style.display = 'none';
+                    elRps.value = p.rps;
+                    elPayload.value = p.payload;
+                }
+                calc();
+            });
+        });
+
+        ['input', 'change'].forEach(function(ev) {
+            [elRps, elPayload, elGb].forEach(function(el) {
+                el.addEventListener(ev, calc);
+            });
+        });
+
+        calc();
+    })();
+    </script>
+</body>
+</html>

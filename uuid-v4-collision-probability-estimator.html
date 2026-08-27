@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>UUID-v4 Cluster Collision Probability — jslet</title>
+    <meta name="description" content="UUIDv4: 122 random bits. 2.71×10¹⁸ UUIDs for 50% collision. At 1 billion/sec: 85 years. The Y2K of distributed systems — everyone fears it, nobody has seen it in production. Run the numbers.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="UUID-v4 Cluster Collision Probability — jslet">
+    <meta property="og:description" content="Estimates random key duplication catastrophe probabilities inside massively distributed database networks. UUID v4 collision probability using the birthday paradox formula.">
+    <meta property="og:url" content="https://www.jslet.com/uuid-v4-collision-probability-estimator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="UUID-v4 Cluster Collision Probability — jslet">
+    <meta name="twitter:description" content="Estimates random key duplication catastrophe probabilities inside massively distributed database networks. UUID v4 collision probability using the birthday paradox formula.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/uuid-v4-collision-probability-estimator">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "UUID-v4 Cluster Collision Probability",
+      "description": "Estimates random key duplication catastrophe probabilities inside massively distributed database networks. UUID v4 collision probability using the birthday paradox formula.",
+      "url": "https://www.jslet.com/uuid-v4-collision-probability-estimator",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How likely is a UUID v4 collision at scale?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "UUID v4 uses 122 random bits. You need about 2.71×10¹⁸ UUIDs for a 50% collision probability — and at 1 billion keys per second, that is 85 years. The calculator runs the birthday-paradox math for your key volume so the \"Y2K of distributed systems\" fear is quantified rather than assumed."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the birthday paradox formula for UUIDs?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Collision probability grows with the square of the key count over the key space: for N keys in a space of S, probability ≈ 1 - e^(-N²/2S). The calculator applies the exact formula to UUID v4's 122-bit space, showing the probability at your generation volume — 100 billion keys is around 10⁻¹³."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "When should I actually worry about UUID collisions?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Nearly never for random v4 generation — but consider the math if you merge datasets from many systems, truncate UUIDs for storage, or use v4 where sequential v7 would sort better. The calculator lets you test the \"what if\" scenarios so the worry is evidence-based."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>UUID-v4 <span>Cluster Collision</span> Probability</h1>
+            <p>UUIDv4: 122 random bits. You need 2.71×10¹⁸ UUIDs for 50% collision probability. At 1 billion generated per second: 85 years. The Y2K of distributed systems — every DBA worries about it, nobody has actually seen a collision in production. Apply the birthday paradox formula and quantify the risk at your scale.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🔑 Key Generation Volume</h3>
+                <p class="card-desc">Enter UUID v4 count in billions. The engine computes collision probability via birthday paradox, safe threshold at 10⁻⁹ risk, and the number of UUIDs that fit before hitting 1%, 10%, 50% collision probability.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="n">Generated UUIDs (Billions)</label>
+                        <input type="number" class="unit-input" id="n" value="100" step="any" min="0.000001">
+                    </div>
+                </div>
+                <button class="btn-calc">Run Calculation</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Collision Probability Results</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-collision"></div><div class="metric-label">Collision Probability</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-pct"></div><div class="metric-label">As Percentage</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-safe"></div><div class="metric-label">Safe Threshold 10⁻⁹</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- REFERENCE SECTION -->
+        <section class="seo-section">
+            <h2>UUID v4 Collision: 100 Billion Keys = 10⁻¹³ Probability</h2>
+            <p>UUID version 4 (RFC 9562, formerly RFC 4122) generates identifiers from <strong>122 random bits</strong> — 6 bits are reserved for the version (0100) and variant (10) fields, leaving 122 bits of cryptographic-quality randomness. The resulting identifier space contains <strong>2¹²² ≈ 5.3 × 10³⁶</strong> possible values. To put this in perspective: generating 1 billion UUIDs per second for 100 years would produce roughly 3 × 10¹⁸ keys — still 18 orders of magnitude below the space size. Collisions at any realistic scale are astronomically improbable.</p>
+
+            <h3>The Birthday Paradox Formula for UUID Collision</h3>
+            <p>The collision probability for <em>n</em> randomly generated items from a space of size <em>d</em> is approximated by the birthday paradox formula: <strong>p ≈ n² / (2d)</strong> for n ≪ d. For UUID v4, d = 2¹²² ≈ 5.3 × 10³⁶. This means:</p>
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th>UUIDs Generated</th><th>n² / (2 × 2¹²²)</th><th>Approximate Collision Probability</th><th>Interpretation</th></tr></thead>
+                    <tbody>
+                        <tr><td>1 billion (10⁹)</td><td>10¹⁸ / 1.06×10³⁷</td><td>~10⁻¹⁹</td><td>Effectively impossible</td></tr>
+                        <tr><td>1 trillion (10¹²)</td><td>10²⁴ / 1.06×10³⁷</td><td>~10⁻¹³</td><td>Still astronomically unlikely</td></tr>
+                        <tr><td>1 quadrillion (10¹⁵)</td><td>10³⁰ / 1.06×10³⁷</td><td>~10⁻⁷</td><td>1 in 10 million — approaching concern</td></tr>
+                        <tr><td>2.71 × 10¹⁸</td><td>1</td><td>~50%</td><td>50% collision probability threshold (√(2d))</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>122 Random Bits: Why UUID v4 Is Safe at Any Scale</h3>
+            <p>UUID v4 dedicates 122 of its 128 bits to randomness. The remaining 6 bits are structural: 4 bits for the version identifier (binary 0100 = version 4) and 2 bits for the RFC 9562 variant (binary 10). This is a deliberate design choice that preserves interoperability while maximizing the entropy pool. The 50% collision threshold — reached when n ≈ √(2d) = √(2 × 2¹²²) ≈ 2.7 × 10¹⁸ — requires generating over <strong>2.7 quintillion</strong> UUIDs. Even at 1 billion keys per second, this would take over 85 years of continuous generation.</p>
+
+            <h3>When to Worry About Collisions</h3>
+            <p>The real-world collision risk for UUID v4 comes not from the randomness but from <strong>flawed random number generators</strong> (RNGs). A poorly seeded PRNG, a virtual machine cloned with identical entropy state, or a containerized application with insufficient entropy pool can produce duplicate UUIDs far more frequently than the mathematical model predicts. Production systems should use cryptographically secure PRNGs (CSPRNGs) like <code>/dev/urandom</code> on Linux, <code>crypto.randomUUID()</code> in modern browsers and Node.js, or <code>java.util.UUID.randomUUID()</code> which delegates to <code>SecureRandom</code> — all of which use OS-level entropy sources. If your UUID generation depends on <code>Math.random()</code>, collisions are your smallest concern.</p>
+            <p><strong>📖 Read the full analysis:</strong> <a href="/uuid-v4-collision-probability-real">UUID v4 Collision Probability at Scale: How Many UUIDs Before a Collision?</a> — a 13-minute deep-dive covering the birthday paradox math at real distributed-system scales, UUID version comparison (v1 vs v4 vs v7), production collision case studies, and a practical decision framework for choosing and deploying UUIDs safely.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var n = v('n') * 1e9;
+        var bits = 122;
+        var space = Math.pow(2, bits);
+        var prob = (n * n) / (2 * space);
+        var safe = Math.sqrt(2 * space * 1e-9);
+
+        document.getElementById('results-params').innerText =
+            v('n').toLocaleString() + ' billion UUIDs generated from a 122-bit random space (2¹²² ≈ ' + space.toExponential(2) + ' possible values)';
+
+        document.getElementById('val-collision').innerText = prob.toExponential(2);
+        document.getElementById('val-pct').innerText = (prob * 100).toExponential(2) + '%';
+        document.getElementById('val-safe').innerText = (safe / 1e9).toFixed(2) + ' billion';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

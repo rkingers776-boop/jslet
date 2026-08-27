@@ -1,0 +1,307 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Character Counter —Count Characters, Words, Lines, UTF-8 Bytes —jslet</title>
+    <meta name="description" content="Free online character counter. Count characters, words, lines, sentences, paragraphs, and UTF-8 bytes in real time. Shows Twitter/X 280, SMS 160, SEO title 60, and meta description 160 limits. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/char-counter">
+    <meta property="og:title" content="Character Counter —Count Characters, Words, Lines, Bytes">
+    <meta property="og:description" content="Count characters, words, lines, sentences, paragraphs, and UTF-8 bytes in real time. See Twitter/X (280), SMS (160), SEO limits. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/char-counter">
+    <meta property="og:type" content="website"><meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Character Counter —Count Characters, Words, Bytes">
+    <meta name="twitter:description" content="Real-time character counter with Twitter/X, SMS, SEO limits. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Character Counter","description":"Count characters, words, lines, sentences, paragraphs, and UTF-8 bytes in real time. Shows platform-specific limits: Twitter/X 280, SMS 160, SEO title 60, meta description 160. 100% client-side.","url":"https://www.jslet.com/char-counter","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <style>
+        .tool-layout { display: flex; gap: 20px; min-height: 380px; }
+        @media (max-width: 768px) { .tool-layout { flex-direction: column; } }
+        .input-panel { flex: 1.5; display: flex; flex-direction: column; }
+        .input-panel label { font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; color: var(--text-body); }
+        .input-panel textarea { flex: 1; min-height: 320px; font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 0.85rem; padding: 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); resize: vertical; line-height: 1.6; }
+        .input-panel textarea:focus { border-color: var(--accent); outline: none; }
+        .stats-panel { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+        .stat-card { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; }
+        .stat-card .stat-label { font-size: 0.82rem; color: var(--text-body); font-weight: 600; }
+        .stat-card .stat-value { font-size: 1.2rem; font-weight: 700; font-family: 'Cascadia Code','Consolas',monospace; color: var(--accent); }
+        .limit-section { margin-top: 8px; }
+        .limit-section h3 { font-size: 0.85rem; color: var(--text-body); margin-bottom: 8px; }
+        .limit-bar-wrap { margin-bottom: 10px; }
+        .limit-bar-label { display: flex; justify-content: space-between; font-size: 0.78rem; margin-bottom: 3px; }
+        .limit-bar-label .limit-count { font-family: 'Cascadia Code','Consolas',monospace; }
+        .limit-bar { height: 20px; background: var(--border); border-radius: 10px; overflow: hidden; position: relative; }
+        .limit-bar-fill { height: 100%; border-radius: 10px; transition: width 0.2s; }
+        .limit-bar-fill.safe { background: #27ae60; }
+        .limit-bar-fill.warning { background: #f39c12; }
+        .limit-bar-fill.over { background: #e74c3c; }
+        .limit-bar-max { position: absolute; right: 8px; top: 0; line-height: 20px; font-size: 0.7rem; color: var(--text-muted); font-weight: 700; }
+        .btn-row { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+    </style>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What limits does the character counter track?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It counts characters, words, lines, sentences, paragraphs, and UTF-8 bytes in real time, and it tracks the limits that actually matter for publishing: Twitter/X 280, SMS 160, SEO title 60, and meta description 160. As you type, it shows how close you are to each limit, so you never discover a truncated tweet or title after publishing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does the counter handle emoji and multi-byte characters correctly?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. The UTF-8 byte count reflects how emoji and CJK characters actually consume bytes on the wire — an emoji is often 4 bytes, not 1 character — which matters for SMS gateways and API payload limits that bill by byte. The character and word counts follow what a reader sees, while the byte count follows what the network charges."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is the character count calculated locally?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "100% client-side. Your text never leaves the browser, so you can safely paste draft posts, code snippets, or sensitive copy. There is no server, no account, and no rate limit on how much you analyze."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>Character <span>Counter</span></h1><p>Count characters, words, lines, sentences, paragraphs, and UTF-8 bytes in real time. Includes platform-specific limits: Twitter/X (280), SMS (160), SEO title (60), and meta description (160).</p></header>
+
+        <div class="btn-row">
+            <button class="btn btn-outline" onclick="clearAll()">🗑 Clear</button>
+            <button class="btn btn-outline" onclick="copyText()">🟢📋 Copy Text</button>
+        </div>
+
+        <div class="tool-layout">
+            <div class="input-panel">
+                <label for="text-input">🟢📝 Text Input</label>
+                <textarea id="text-input" placeholder="Type or paste your text here...&#10;Character counting happens in real time as you type." oninput="updateCounts()"></textarea>
+            </div>
+            <div class="stats-panel" id="stats-panel">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">🟢📖 Character Count Limits Explained</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <table class="claims-table"><tr><th scope="row">Twitter/X (280)</th><td>Counts Unicode code points (not UTF-16 code units). URLs count as 23 characters regardless of length (t.co wrapped). CJK characters count as 2. This counter shows raw character count.</td></tr><tr><th scope="row">SMS (160)</th><td>Standard GSM-7 encoded SMS maxes at 160 characters. Messages using non-GSM characters (like CJK, emoji) are UCS-2 encoded and limited to 70 chars. Multi-part SMS split at 153 chars (GSM-7) or 67 chars (UCS-2).</td></tr><tr><th scope="row">SEO title (60)</th><td>Google's display limit for title tags in SERPs. Titles longer than ~600px (roughly 60 chars) get truncated with "—. Pixel width matters more than character count —W is wider than i.</td></tr><tr><th scope="row">Meta description (160)</th><td>Google displays up to ~920px (roughly 155-160 chars) of meta description in search results. Longer descriptions are truncated. In 2026, Google may dynamically generate snippets from page content regardless.</td></tr></table>
+                <p><strong>UTF-8 bytes</strong> matter for database storage, API payloads, and CSV encoding. ASCII characters are 1 byte, Latin-1 supplement characters are 2 bytes, CJK characters are 3 bytes, and emoji/supplementary characters are 4 bytes. A 140-character tweet with emojis could be 500+ bytes in UTF-8.</p>
+                <p>See also: <a href="/markdown-preview">Markdown Preview</a> · <a href="/char-counter">Character Counter</a></p>
+            </div>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var textInput = document.getElementById('text-input');
+        var statsPanel = document.getElementById('stats-panel');
+
+        function getUtf8Bytes(str) {
+            var bytes = 0;
+            for (var i = 0; i < str.length; i++) {
+                var code = str.charCodeAt(i);
+                if (code <= 0x7F) bytes += 1;
+                else if (code <= 0x7FF) bytes += 2;
+                else if (code >= 0xD800 && code <= 0xDBFF) {
+                    // Surrogate pair (4 bytes)
+                    bytes += 4;
+                    i++; // Skip next code unit
+                } else {
+                    bytes += 3;
+                }
+            }
+            return bytes;
+        }
+
+        function getLines(str) {
+            // Count lines by splitting on \n (handles \r\n and \n)
+            if (str === '') return 0;
+            var lines = str.split(/\r?\n/);
+            return lines.length;
+        }
+
+        function getSentences(str) {
+            if (str.trim() === '') return 0;
+            // Count sentences by sentence-ending punctuation
+            var matches = str.match(/[.!?]+[\s\n]|$/g);
+            if (!matches) return 0;
+            // Filter out trailing matches on empty strings
+            var count = 0;
+            for (var i = 0; i < matches.length; i++) {
+                if (matches[i].trim().length > 0 || (i < matches.length - 1)) count++;
+            }
+            // Ensure at least 1 for non-empty text without punctuation
+            if (count === 0 && str.trim().length > 0) count = 1;
+            return count;
+        }
+
+        function getParagraphs(str) {
+            if (str.trim() === '') return 0;
+            var paras = str.split(/\n\s*\n/);
+            var count = 0;
+            for (var i = 0; i < paras.length; i++) {
+                if (paras[i].trim().length > 0) count++;
+            }
+            return count || 1;
+        }
+
+        function makeLimitBar(label, limit, current) {
+            var pct = Math.min(100, Math.round((current / limit) * 100));
+            var cls = pct <= 70 ? 'safe' : (pct <= 100 ? 'warning' : 'over');
+            var remaining = limit - current;
+            var status = remaining >= 0 ? remaining + ' left' : Math.abs(remaining) + ' over';
+            return '<div class="limit-bar-wrap">' +
+                '<div class="limit-bar-label"><span>' + label + '</span><span class="limit-count">' + current + ' / ' + limit + ' (' + status + ')</span></div>' +
+                '<div class="limit-bar"><div class="limit-bar-fill ' + cls + '" style="width:' + pct + '%"></div><span class="limit-bar-max">' + limit + '</span></div>' +
+                '</div>';
+        }
+
+        window.updateCounts = function() {
+            var text = textInput.value;
+
+            var chars = text.length;
+            var words = text.trim() === '' ? 0 : (text.trim().split(/\s+/).length);
+            var lines = getLines(text);
+            var sentences = getSentences(text);
+            var paragraphs = getParagraphs(text);
+            var utf8Bytes = getUtf8Bytes(text);
+
+            var html = '';
+            html += '<div class="stat-card"><span class="stat-label">🟢📝 Characters</span><span class="stat-value">' + chars.toLocaleString() + '</span></div>';
+            html += '<div class="stat-card"><span class="stat-label">🟢📚 Words</span><span class="stat-value">' + words.toLocaleString() + '</span></div>';
+            html += '<div class="stat-card"><span class="stat-label">🟢📏 Lines</span><span class="stat-value">' + lines.toLocaleString() + '</span></div>';
+            html += '<div class="stat-card"><span class="stat-label">🟢📖 Sentences</span><span class="stat-value">' + sentences.toLocaleString() + '</span></div>';
+            html += '<div class="stat-card"><span class="stat-label">🟢📑 Paragraphs</span><span class="stat-value">' + paragraphs.toLocaleString() + '</span></div>';
+            html += '<div class="stat-card"><span class="stat-label">🟢💾 UTF-8 Bytes</span><span class="stat-value">' + utf8Bytes.toLocaleString() + '</span></div>';
+
+            html += '<div class="limit-section"><h3>🟢📊 Platform Limits</h3>';
+            html += makeLimitBar('Twitter / X', 280, chars);
+            html += makeLimitBar('SMS (GSM-7)', 160, chars);
+            html += makeLimitBar('SEO Title', 60, chars);
+            html += makeLimitBar('Meta Description', 160, chars);
+            html += '</div>';
+
+            statsPanel.innerHTML = html;
+        };
+
+        window.clearAll = function() {
+            textInput.value = '';
+            updateCounts();
+        };
+
+        window.copyText = function() {
+            if (textInput.value) navigator.clipboard.writeText(textInput.value);
+        };
+
+        // Sample text and auto-run
+        textInput.value = 'The quick brown fox jumps over the lazy dog.\n' +
+            'This sentence contains exactly 280 characters for a perfect tweet.\n\n' +
+            'Here is a second paragraph with more content. It demonstrates paragraph counting, sentence detection with periods! And exclamation marks! ' +
+            'How about question marks? Yes, those too. Unicode characters: café résumé naïve 🟢😀🟢👋.\n\n' +
+            'A third paragraph just to push the counts higher and show the stats working. Line breaks, words, characters —everything counts. ' +
+            'The UTF-8 byte count will be higher because of multi-byte characters like emoji and accented letters.';
+        updateCounts();
+    })();
+    </script>
+</body>
+</html>
+

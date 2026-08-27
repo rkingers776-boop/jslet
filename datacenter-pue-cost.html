@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Datacenter PUE ↔ Power Cost Calculator — Monthly &amp; Annual Electricity Cost — jslet</title>
+    <meta name="description" content="PUE 1.6: 60¢ overhead per $1 of compute. PUE 1.2: 20¢. At $10M/year IT load, that PUE delta saves $4M/year. The efficiency ratio is the single largest variable in your colocation bill.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Datacenter PUE ↔ Power Cost Calculator — Monthly &amp; Annual Electricity Cost">
+    <meta property="og:description" content="Convert PUE, IT load, and electricity rates into monthly datacenter power costs. Model cooling overhead savings from PUE improvements.">
+    <meta property="og:url" content="https://www.jslet.com/datacenter-pue-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Datacenter PUE ↔ Power Cost Calculator — Monthly &amp; Annual Electricity Cost">
+    <meta name="twitter:description" content="Convert PUE, IT load, and electricity rates into monthly datacenter power costs. Model cooling overhead savings from PUE improvements.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/datacenter-pue-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+        input[type="range"] {
+            width: 100%; -webkit-appearance: none; appearance: none;
+            height: 8px; border-radius: 4px; background: var(--border);
+            outline: none; margin: 8px 0; cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 22px; height: 22px; border-radius: 50%;
+            background: var(--accent); cursor: pointer;
+            border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        }
+        [data-theme="dark"] input[type="range"]::-webkit-slider-thumb { border-color: #161b22; }
+
+        .pue-display {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 2.4rem; font-weight: 700; color: var(--accent);
+            text-align: center; margin: 4px 0;
+            transition: color 0.3s;
+        }
+        .pue-display.world-class { color: #059669; }
+        .pue-display.efficient { color: #10b981; }
+        .pue-display.average { color: #f59e0b; }
+        .pue-display.legacy { color: #ef4444; }
+
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.5rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-val.savings { color: #059669; }
+        .metric-tile .metric-val.overhead { color: #ef4444; }
+        .metric-tile .metric-val.warning { color: #f59e0b; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+        .cost-bar-wrap { display: flex; gap: 4px; align-items: flex-end; height: 140px; margin: 16px 0 8px 0; }
+        .cost-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .cost-bar-fill {
+            width: 100%; border-radius: 4px 4px 0 0; transition: height 0.5s ease;
+            display: flex; align-items: flex-start; justify-content: center;
+            font-size: 0.7rem; font-weight: 700; color: #fff; padding-top: 6px;
+            min-height: 20px;
+        }
+        .cost-bar-label { font-size: 0.65rem; color: var(--text-muted); text-align: center; line-height: 1.2; }
+        .cost-bar-value { font-size: 0.72rem; font-weight: 700; color: var(--text-heading); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+
+        .power-flow-bar-wrap {
+            background: var(--bg-input); border-radius: var(--radius-sm);
+            height: 36px; position: relative; overflow: hidden;
+            margin: 12px 0;
+        }
+        .power-flow-it {
+            position: absolute; left: 0; top: 0; height: 100%;
+            background: linear-gradient(90deg, #2563eb, #3b82f6);
+            border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+            transition: width 0.5s ease;
+            display: flex; align-items: center; padding-left: 12px;
+            font-size: 0.78rem; font-weight: 700; color: #fff;
+            white-space: nowrap; overflow: hidden;
+        }
+        .power-flow-overhead {
+            position: absolute; right: 0; top: 0; height: 100%;
+            background: linear-gradient(90deg, #f87171, #ef4444);
+            border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+            transition: width 0.5s ease;
+            display: flex; align-items: center; justify-content: flex-end; padding-right: 12px;
+            font-size: 0.78rem; font-weight: 700; color: #fff;
+            white-space: nowrap; overflow: hidden;
+        }
+
+        .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 12px; }
+        .preset-chip {
+            padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            cursor: pointer; transition: border-color 0.2s, background 0.2s;
+            font-size: 0.8rem; text-align: center; background: var(--bg-input);
+        }
+        .preset-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+        .preset-chip .preset-name { font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 2px; }
+        .preset-chip .preset-pue { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.76rem; color: var(--accent); }
+
+        .ref-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .ref-table th { background: var(--bg-input); text-align: left; padding: 8px 12px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .ref-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .ref-table .num { text-align: right; font-weight: 700; color: var(--accent); }
+
+        .savings-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin-top: 14px; }
+        .savings-table th { background: var(--bg-input); text-align: left; padding: 10px 14px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .savings-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+        .savings-table .num { text-align: right; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-weight: 700; }
+        .savings-table .savings-positive { color: #059669; }
+        .savings-table tr.best-row { background: #ecfdf522; }
+        .savings-table tr.best-row td { border-bottom: 2px solid var(--success); font-weight: 700; }
+        [data-theme="dark"] .savings-table tr.best-row { background: #022c2233; }
+        .savings-table tr.best-row td:first-child::before { content: "★ "; color: var(--success); }
+
+        .pue-badge {
+            display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 3px; margin-right: 4px;
+        }
+        .badge-green { background: #05966922; color: #059669; }
+        .badge-yellow { background: #f59e0b22; color: #f59e0b; }
+        .badge-red { background: #ef444422; color: #ef4444; }
+        .badge-blue { background: #3b82f622; color: #3b82f6; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Datacenter PUE ↔ Power Cost Calculator",
+      "description": "Convert PUE, IT load, and electricity rates into monthly and annual datacenter power costs. Model cooling overhead savings from PUE improvements.",
+      "url": "https://www.jslet.com/datacenter-pue-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      "name": "How to Calculate Datacenter Power Costs from PUE",
+      "description": "Convert PUE, IT load, and electricity rates into monthly and annual power costs. See how PUE improvements translate to dollar savings.",
+      "step": [
+        {
+          "@type": "HowToStep",
+          "position": 1,
+          "name": "Enter your IT load",
+          "text": "Input your total IT equipment power draw in kilowatts — servers, storage, and networking only, not cooling or UPS losses. If you only know total facility load, divide by PUE first."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 2,
+          "name": "Set your PUE",
+          "text": "Enter your facility's Power Usage Effectiveness. Industry average is 1.58. Hyperscale clouds operate at 1.10-1.20. A PUE of 2.0 means you spend as much on overhead as on IT."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 3,
+          "name": "Enter your electricity rate",
+          "text": "Input your blended rate in $/kWh. US industrial averages ~$0.08/kWh. This single variable drives the entire cost calculation — a 1-cent difference at 1 MW scale is $87,600 per year."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 4,
+          "name": "Review the cost breakdown and PUE scenario table",
+          "text": "The calculator outputs total facility power, monthly and annual cost, and a PUE comparison table. The savings column quantifies each 0.1 PUE improvement in dollars — use this to justify cooling upgrades."
+        }
+      ]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "At what PUE does improving efficiency stop being worth the investment?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Above 1.40 at US industrial rates (~$0.08/kWh), each 0.1 PUE improvement pays for itself within 18 months. Below 1.15, the marginal cost of direct liquid cooling or 415V distribution exceeds power savings unless your facility exceeds 5 MW. Run the PUE scenario table for your IT load to see the exact dollar crossover."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is a good PUE for a datacenter in 2025?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The Uptime Institute 2025 survey reports a global average of 1.58. Below 1.30 is efficient for enterprise facilities. Sub-1.15 is hyperscale territory. New colocation facilities typically advertise 1.20-1.40. A facility above 2.0 at 500+ kW IT load is leaving six figures annually on the table."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does PUE include the power consumed by the IT equipment itself?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. PUE is total facility power divided by IT equipment power. An ideal PUE of 1.0 means every watt goes to IT. The portion above 1.0 is infrastructure overhead — cooling, UPS losses, lighting. At PUE 1.50 with 100 kW IT: 100 kW IT + 50 kW overhead = 150 kW total."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">›</span> <a href="/decision-matrix">Decision Matrix</a> <span class="breadcrumb-sep">›</span> Datacenter PUE ↔ Power Cost Calculator</nav>
+        <header>
+            <h1>Datacenter PUE <span>↔ Power Cost</span> Calculator</h1>
+            <p>PUE 1.6: 60 cents overhead for every dollar of compute. PUE 1.2: 20 cents. At $10M/year IT load, that 0.4 PUE delta saves $4M/year in electricity alone. The efficiency ratio isn't a facilities KPI — it's the single largest variable in your colocation bill. Model the spread from legacy 2.0 to hyperscale 1.1.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>⚡ Datacenter Power Profile</h3>
+                <p class="card-desc">Set IT load (kW), PUE, and $/kWh electricity rate. Drag the PUE slider to see the dollar impact of every 0.1 improvement. The engine computes total facility draw, monthly/annual cost, and PUE optimization payback.</p>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="it-load-kw">IT Equipment Load (kW)</label>
+                        <input type="number" class="unit-input" id="it-load-kw" value="500" step="any" min="0.1">
+                    </div>
+                    <div class="input-group">
+                        <label for="preset-select">Scenario Preset</label>
+                        <select class="unit-input" id="preset-select">
+                            <option value="custom">Custom Configuration</option>
+                            <option value="small-colocation" selected>Small Colocation Rack (5 kW)</option>
+                            <option value="enterprise-datahall">Enterprise Data Hall (500 kW)</option>
+                            <option value="hyperscale-zone">Hyperscale Availability Zone (5,000 kW)</option>
+                            <option value="mega-campus">Mega Campus (50,000 kW / 50 MW)</option>
+                            <option value="edge-micro">Edge Micro-DC (20 kW)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="input-group" style="margin-top: 8px;">
+                    <label for="pue-slider">Power Usage Effectiveness (PUE): <strong id="pue-value-label">1.60</strong></label>
+                    <input type="range" class="unit-input" id="pue-slider" value="1.60" min="1.05" max="2.50" step="0.01" style="padding: 0; border: none; box-shadow: none;">
+                    <div class="pue-display average" id="pue-display">1.60</div>
+                </div>
+
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="electricity-rate">Electricity Rate ($/kWh)</label>
+                        <input type="number" class="unit-input" id="electricity-rate" value="0.10" step="0.001" min="0.001">
+                    </div>
+                    <div class="input-group">
+                        <label for="rate-region">Rate Region Preset</label>
+                        <select class="unit-input" id="rate-region">
+                            <option value="custom">Custom Rate</option>
+                            <option value="us-avg" selected>US Industrial Avg (~$0.08)</option>
+                            <option value="us-commercial">US Commercial (~$0.12)</option>
+                            <option value="eu-avg">EU Industrial Avg (~$0.18)</option>
+                            <option value="de-industrial">Germany Industrial (~$0.25)</option>
+                            <option value="ie-industrial">Ireland DC Hub (~$0.14)</option>
+                            <option value="sg-industrial">Singapore (~$0.15)</option>
+                            <option value="jp-industrial">Japan Industrial (~$0.16)</option>
+                            <option value="va-nova">N. Virginia DC Alley (~$0.06)</option>
+                            <option value="or-dalles">Oregon / Dalles (~$0.05)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="pue-improvement-target">PUE Target for Comparison</label>
+                        <select class="unit-input" id="pue-improvement-target">
+                            <option value="none">No Target — Baseline Only</option>
+                            <option value="1.10">Hyperscale Target — 1.10</option>
+                            <option value="1.20" selected>Efficient Target — 1.20</option>
+                            <option value="1.40">Average Target — 1.40</option>
+                            <option value="1.80">Legacy → Current Std — 1.80</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn-calc">Run Power Cost Projection Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Power Cost Analysis</h3>
+                <p class="card-desc" id="results-params"></p>
+
+                <!-- Power flow visual -->
+                <h4 style="margin-top: 16px; margin-bottom: 4px; font-size:0.82rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">🔌 Total Facility Power Breakdown</h4>
+                <div class="power-flow-bar-wrap">
+                    <div class="power-flow-it" id="power-flow-it">IT Load ████</div>
+                    <div class="power-flow-overhead" id="power-flow-overhead">Cooling + Overhead ████</div>
+                </div>
+
+                <!-- Key metrics -->
+                <div class="metric-grid" id="volume-metrics"></div>
+
+                <!-- PUE improvement savings bar chart -->
+                <h4 style="margin-top: 20px; margin-bottom: 4px; font-size:0.82rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">💰 Annual Power Cost by PUE Scenario</h4>
+                <div class="cost-bar-wrap" id="cost-bar-chart"></div>
+
+                <!-- PUE comparison savings table -->
+                <div class="table-scroll">
+                <table class="savings-table" id="savings-table">
+                    <thead>
+                        <tr><th>PUE Scenario</th><th class="num">Total Facility (kW)</th><th class="num">Monthly Cost</th><th class="num">Annual Cost</th><th class="num">vs. Baseline Savings/yr</th><th class="num">Savings %</th><th>Description</th></tr>
+                    </thead>
+                    <tbody id="savings-tbody"></tbody>
+                </table>
+                </div>
+            </div>
+
+            <!-- REFERENCE CARD: PUE Tiers -->
+            <div class="calculator-card">
+                <h3>📋 PUE Efficiency Tiers Reference</h3>
+                <p class="card-desc">Published industry benchmarks for datacenter Power Usage Effectiveness across facility classes. PUE = Total Facility Power ÷ IT Equipment Power. A PUE of 1.0 means zero overhead (no cooling, no power distribution loss) — theoretical ideal.</p>
+                <div class="table-scroll">
+                <table class="ref-table">
+                    <thead>
+                        <tr><th>Tier</th><th class="num">PUE Range</th><th class="num">Overhead %</th><th>Cooling Architecture</th><th>Typical Facility</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><span class="pue-badge badge-green">ELITE</span> Hyperscale</td><td class="num">1.05–1.15</td><td class="num">5–15%</td><td>Direct liquid cooling, free air, 415V distribution</td><td>Google / Microsoft / AWS AZs, Nordic colo</td></tr>
+                        <tr><td><span class="pue-badge badge-green">TIER I</span> World-Class</td><td class="num">1.15–1.30</td><td class="num">15–30%</td><td>Hot-aisle containment, VFD fans, economizers</td><td>Equinix IBX Gen 4+, Digital Realty modern halls</td></tr>
+                        <tr><td><span class="pue-badge badge-yellow">TIER II</span> Efficient</td><td class="num">1.30–1.60</td><td class="num">30–60%</td><td>CRAC/CRAH with variable-speed, cold aisle containment</td><td>Most colocation providers, enterprise DCs built post-2015</td></tr>
+                        <tr><td><span class="pue-badge badge-yellow">TIER III</span> Average</td><td class="num">1.60–2.00</td><td class="num">60–100%</td><td>Legacy CRAC units, partial containment, raised floor</td><td>Enterprise on-prem DCs built 2005–2015</td></tr>
+                        <tr><td><span class="pue-badge badge-red">TIER IV</span> Legacy</td><td class="num">2.00–2.50+</td><td class="num">100–150%+</td><td>Old perimeter cooling, no containment, oversized UPS</td><td>Pre-2005 enterprise DCs, non-optimized server rooms</td></tr>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+
+            <!-- REFERENCE CARD: Regional Electricity Rates -->
+            <div class="calculator-card">
+                <h3>📋 Regional Industrial Electricity Rates ($/kWh) — 2026 Estimates</h3>
+                <p class="card-desc">Illustrative industrial/commercial electricity rates for major datacenter regions. Actual rates vary by utility contract, renewable energy PPAs, time-of-use metering, and demand charges. Hyperscalers often negotiate rates 20–40% below published industrial tariffs through long-term power purchase agreements (PPAs).</p>
+                <div class="table-scroll">
+                <table class="ref-table">
+                    <thead>
+                        <tr><th>Region</th><th class="num">Industrial ($/kWh)</th><th class="num">Commercial ($/kWh)</th><th>Notes</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>🇺🇸 N. Virginia (Ashburn)</td><td class="num">$0.055–$0.07</td><td class="num">$0.08–$0.10</td><td>Largest DC market globally; Dominion Energy</td></tr>
+                        <tr><td>🇺🇸 Oregon / The Dalles</td><td class="num">$0.04–$0.06</td><td class="num">$0.06–$0.09</td><td>Hydro power; Google / AWS mega campuses</td></tr>
+                        <tr><td>🇺🇸 US Industrial Average</td><td class="num">$0.07–$0.09</td><td class="num">$0.10–$0.14</td><td>EIA 2026 estimate; varies by state</td></tr>
+                        <tr><td>🇺🇸 California (Silicon Valley)</td><td class="num">$0.12–$0.16</td><td class="num">$0.18–$0.24</td><td>PG&amp;E; high renewable mix</td></tr>
+                        <tr><td>🇪🇺 Frankfurt / Amsterdam</td><td class="num">$0.14–$0.18</td><td class="num">$0.18–$0.25</td><td>Major FLAP DC markets; Germany EEG surcharge</td></tr>
+                        <tr><td>🇮🇪 Ireland (Dublin)</td><td class="num">$0.12–$0.16</td><td class="num">$0.15–$0.20</td><td>AWS / Microsoft Azure regions; wind PPAs</td></tr>
+                        <tr><td>🇸🇪 Sweden (Luleå)</td><td class="num">$0.04–$0.06</td><td class="num">$0.06–$0.08</td><td>Hydro-heavy; Facebook / Google Nordic DCs</td></tr>
+                        <tr><td>🇸🇬 Singapore</td><td class="num">$0.13–$0.17</td><td class="num">$0.16–$0.22</td><td>LNG-dependent; Equinix / Global Switch hubs</td></tr>
+                        <tr><td>🇯🇵 Tokyo / Osaka</td><td class="num">$0.14–$0.18</td><td class="num">$0.18–$0.24</td><td>Post-Fukushima; high LNG import dependency</td></tr>
+                        <tr><td>🇨🇳 Beijing / Shanghai</td><td class="num">$0.06–$0.09</td><td class="num">$0.08–$0.12</td><td>State-grid subsidized; Alibaba / Tencent zones</td></tr>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>Datacenter Power Economics: Why PUE Is the Multiplier on Every Kilowatt</h2>
+            <p>Power Usage Effectiveness (PUE) is the ratio of total facility power to IT equipment power. It measures how efficiently a datacenter delivers energy to computing equipment versus losing it to cooling, power distribution, lighting, and other overhead. A PUE of 1.60 means for every 1 kW that reaches IT equipment, an additional 0.60 kW is consumed by facility infrastructure — cooling towers, chillers, UPS losses, PDUs, and fans. For a 5 MW IT load, that's 3 MW of overhead: <strong>enough power to run 600 average American homes</strong>.</p>
+
+            <h3>How This Calculator Works</h3>
+            <p>The engine computes monthly power cost using the core formula:</p>
+            <p style="text-align:center;font-family:'SF Mono','Cascadia Code',Consolas,monospace;font-size:1.1rem;padding:14px;background:var(--bg-input);border-radius:var(--radius-sm);margin:12px 0;">
+                <strong>Monthly Cost ($) = PUE × IT_Load (kW) × Electricity_Rate ($/kWh) × 730.5 hours</strong>
+            </p>
+            <p>Where 730.5 hours = 24 hours × 30.4375 mean days/month (accounting for leap years). The total facility draw is PUE × IT_Load. Of this total, IT_Load kW goes to computing equipment, and (PUE − 1) × IT_Load kW is the facility overhead — primarily cooling, but also including UPS losses (3–10%), power distribution losses (1–3%), and lighting/controls (1–2%).</p>
+
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Component</th><th>Formula</th><th>Typical Share of Overhead</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Total Facility Power (kW)</strong></td><td><code>PUE × IT_Load</code></td><td>—</td></tr>
+                    <tr><td><strong>IT Equipment Power (kW)</strong></td><td><code>IT_Load (input)</code></td><td>—</td></tr>
+                    <tr><td><strong>Total Overhead (kW)</strong></td><td><code>(PUE − 1) × IT_Load</code></td><td>100% of overhead</td></tr>
+                    <tr><td><strong>Cooling Overhead (kW)</strong></td><td><code>~70–85% of overhead</code></td><td>Chillers, CRAC/CRAH, cooling towers, pumps</td></tr>
+                    <tr><td><strong>UPS + Distribution Loss (kW)</strong></td><td><code>~10–20% of overhead</code></td><td>Double-conversion UPS, PDU step-down, wiring I²R</td></tr>
+                    <tr><td><strong>Lighting / Controls / Misc (kW)</strong></td><td><code>~3–8% of overhead</code></td><td>Overhead lighting, BMS, security, fire suppression</td></tr>
+                    <tr><td><strong>Monthly Cost ($)</strong></td><td><code>Total_Facility_kW × Rate × 730.5</code></td><td>—</td></tr>
+                    <tr><td><strong>Annual Cost ($)</strong></td><td><code>Monthly_Cost × 12</code></td><td>—</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3>PUE Improvement: The Financial Impact</h3>
+            <p>Each 0.1 PUE reduction represents significant recurring savings at scale. The relationship is linear — reducing PUE from 1.80 to 1.20 on a 2 MW IT load at $0.10/kWh saves:</p>
+            <p style="text-align:center;font-family:'SF Mono','Cascadia Code',Consolas,monospace;font-size:1.05rem;padding:10px;background:var(--bg-input);border-radius:var(--radius-sm);margin:10px 0;">
+                ΔOverhead = (1.80 − 1.20) × 2,000 kW × 0.10 $/kWh × 8,766 hrs/yr = <strong>$105,192/year saved</strong>
+            </p>
+            <p>This savings is pure operating expense reduction — it compounds every year for the life of the facility. At hyperscale (50 MW IT load), the same PUE improvement saves over <strong>$2.6 million/year</strong>.</p>
+
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>PUE Improvement</th><th>500 kW DC<br>Annual Savings (@$0.10/kWh)</th><th>5 MW DC<br>Annual Savings (@$0.10/kWh)</th><th>50 MW DC<br>Annual Savings (@$0.10/kWh)</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>2.00 → 1.80</strong></td><td class="num">$8,766</td><td class="num">$87,660</td><td class="num">$876,600</td></tr>
+                    <tr><td><strong>2.00 → 1.40</strong></td><td class="num">$26,298</td><td class="num">$262,980</td><td class="num">$2,629,800</td></tr>
+                    <tr><td><strong>1.80 → 1.20</strong></td><td class="num">$26,298</td><td class="num">$262,980</td><td class="num">$2,629,800</td></tr>
+                    <tr><td><strong>1.60 → 1.10</strong></td><td class="num">$21,915</td><td class="num">$219,150</td><td class="num">$2,191,500</td></tr>
+                    <tr><td><strong>1.30 → 1.10</strong></td><td class="num">$8,766</td><td class="num">$87,660</td><td class="num">$876,600</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3>PUE Design: What Drives the Number?</h3>
+            <p>PUE is determined primarily by cooling architecture and electrical distribution topology. The biggest levers:</p>
+            <ul style="margin: 12px 0 12px 24px; color: var(--text-body); font-size: 0.93rem; line-height: 1.9;">
+                <li><strong>Cooling technology:</strong> Air-cooled (CRAC/CRAH, PUE 1.4–2.0) → chilled water (PUE 1.3–1.6) → direct liquid cooling / immersion (PUE 1.05–1.15) → free air economization (PUE 1.05–1.15 in cool climates).</li>
+                <li><strong>Air containment:</strong> Hot/cold aisle containment alone can improve PUE by 0.15–0.30 vs. uncontained raised-floor designs. It prevents mixing of hot exhaust with cold supply air — the single largest efficiency loss in legacy DCs.</li>
+                <li><strong>UPS topology:</strong> Double-conversion (85–93% efficient) → line-interactive (95–98%) → offline/bypass (99%+). Each conversion stage loses 3–8% of total power as heat. Modern 415V distribution skips one step-down transformer, saving 1–2% losses.</li>
+                <li><strong>Supply air temperature:</strong> ASHRAE TC 9.9 allows inlet temperatures up to 27°C (80°F) for most equipment. Running at 24–27°C instead of 18–20°C can reduce chiller energy by 20–40% — directly improving PUE by 0.15–0.25.</li>
+                <li><strong>Climate / geography:</strong> A free-air-cooled DC in Oregon (mild, dry) can achieve PUE 1.05–1.10 year-round. The same design in Singapore (hot, humid) might reach only 1.25–1.35 because compressors run more hours.</li>
+                <li><strong>IT load factor:</strong> PUE is measured at the operating point. A DC running at 20% of design capacity has worse PUE than at 80% because fixed losses (lighting, BMS, UPS idle draw) are amortized over less IT load. PUE should be evaluated at the expected steady-state utilization.</li>
+            </ul>
+
+            <h3>Beyond PUE: The Case for WUE and CUE</h3>
+            <p>PUE measures energy efficiency but ignores water consumption and carbon intensity. Modern datacenter sustainability uses three complementary metrics:</p>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Metric</th><th>Full Name</th><th>Formula</th><th>What It Measures</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>PUE</strong></td><td>Power Usage Effectiveness</td><td>Total Facility Power ÷ IT Power</td><td>Energy efficiency of the facility</td></tr>
+                    <tr><td><strong>WUE</strong></td><td>Water Usage Effectiveness</td><td>Annual Water Use (L) ÷ IT Energy (kWh)</td><td>Water consumed per unit of computing</td></tr>
+                    <tr><td><strong>CUE</strong></td><td>Carbon Usage Effectiveness</td><td>CO₂ Emissions (kg) ÷ IT Energy (kWh)</td><td>Carbon intensity of the energy supply</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p style="margin-top:12px;">A DC with PUE 1.10 might still be environmentally poor if it achieves this via evaporative cooling in a water-scarce region (high WUE) or is powered by a coal-heavy grid (high CUE). Microsoft's Arizona DCs achieve PUE 1.15 with zero-water adiabatic cooling, targeting both low PUE and near-zero WUE. This calculator focuses on PUE-driven power cost; water and carbon are modeled separately in sustainability TCO tools.</p>
+
+            <h3>Demand Charges: The Hidden 30–50% of Your Power Bill</h3>
+            <p>Commercial and industrial electricity tariffs often include demand charges — fees based on the <em>peak</em> power draw (in kW) during a billing period, not just the energy consumed (kWh). This can add 30–50% to the effective cost per kWh. Example: a DC drawing 1,000 kW continuously at $0.08/kWh pays ~$58,440/month for energy, plus ~$15,000–$25,000/month in demand charges (at $15–$25/kW-peak). This calculator shows energy-only cost; multiply by ~1.3–1.5× for a demand-charge-inclusive estimate in commercial tariff regions.</p>
+            <p>Strategies to manage demand charges: (1) flatten load by distributing batch workloads, (2) use on-site battery storage to shave peaks (Tesla Megapack / Fluence), (3) negotiate interruptible-tariff rates with the utility, (4) site in regions with low or no demand charges (some industrial tariffs are energy-only).</p>
+
+            <h3>Renewable PPAs and Carbon-Neutral Power</h3>
+            <p>Hyperscalers (Google, Microsoft, Amazon) increasingly bypass grid tariffs entirely via long-term Power Purchase Agreements (PPAs) with wind/solar farms, locking in $0.02–$0.04/kWh for 10–20 years. These PPAs decouple the effective electricity cost from local utility rates — a DC in a high-rate region like Germany (€0.25/kWh grid) can achieve an effective blended rate of €0.06–€0.08/kWh with a PPA + grid backup. When modeling cost, use the <strong>blended effective rate</strong> (PPA price × % renewable + grid price × % grid), not the published grid tariff.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/gpu-training-cost">GPU Training Cost Estimator &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost Comparison &rarr;</a>
+                <a href="/backup-cost">Backup Strategy Cost Estimator &rarr;</a>
+                <a href="/api-rate-limit-cost">API Rate Limit ↔ Cost &rarr;</a>
+                <a href="/log-storage-cost">Log Storage &amp; Retention Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time Planner &rarr;</a>
+                <a href="/container-resource-limit">Container Resource Limit Calculator &rarr;</a>
+                <a href="/latency-budget-calculator">Latency Budget Calculator &rarr;</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="margin-top:24px;">
+            <h2>📎 Embed This Calculator</h2>
+            <p style="font-size:0.88rem; margin-bottom:12px; color:var(--text-secondary);">Add the PUE cost calculator to your team wiki, internal docs, or blog. No API key, no tracking, no dependencies. The embed runs entirely client-side — your visitors' inputs never leave their machines.</p>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px; position:relative;">
+                <pre style="margin:0; font-size:0.78rem; overflow-x:auto; white-space:pre-wrap; font-family:'SF Mono','Cascadia Code',Consolas,monospace;"><code>&lt;iframe src="https://www.jslet.com/embed/datacenter-pue-cost" width="100%" height="600" style="border:none;border-radius:10px;" title="Datacenter PUE Cost Calculator" loading="lazy"&gt;&lt;/iframe&gt;</code></pre>
+            </div>
+        </section>
+
+        <div class="social-share-bar"><span>Share:</span><a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/datacenter-pue-cost&t=Datacenter+PUE+to+Power+Cost+Calculator" class="share-btn hn" target="_blank" rel="noopener noreferrer">HN</a><a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/datacenter-pue-cost&text=PUE+1.6:+60¢+overhead+per+dollar+of+compute.+PUE+1.2:+20¢.+At+$10M/year+IT+load,+a+0.4+PUE+delta+saves+$4M/year.+See+your+numbers.&via=jslet" class="share-btn twitter" target="_blank" rel="noopener noreferrer">X</a><a href="https://www.reddit.com/r/sysadmin/submit?url=https://www.jslet.com/datacenter-pue-cost&title=Datacenter+PUE+to+Power+Cost+Calculator" class="share-btn reddit" target="_blank" rel="noopener noreferrer">Reddit</a><a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/datacenter-pue-cost&title=Datacenter+PUE+to+Power+Cost+Calculator" class="share-btn linkedin" target="_blank" rel="noopener noreferrer">LinkedIn</a></div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Constants ──
+    var HOURS_PER_MONTH = 24 * 30.4375; // 730.5 hours/month
+
+    // PUE scenarios for comparison
+    var PUE_SCENARIOS = [
+        { pue: 1.10, label: 'Hyperscale (1.10)', desc: 'Direct liquid cooling, free air, 415V distro', color: '#059669', tier: 'elite' },
+        { pue: 1.20, label: 'World-Class (1.20)', desc: 'Hot-aisle containment, economizers, VFD fans', color: '#10b981', tier: 'tier1' },
+        { pue: 1.40, label: 'Efficient (1.40)', desc: 'Cold-aisle containment, efficient CRAC/CRAH', color: '#22c55e', tier: 'tier2' },
+        { pue: 1.60, label: 'Average (1.60)', desc: 'Legacy CRAC, partial containment, raised floor', color: '#f59e0b', tier: 'tier3' },
+        { pue: 1.80, label: 'Below Avg (1.80)', desc: 'Old perimeter cooling, oversized UPS', color: '#f97316', tier: 'tier3' },
+        { pue: 2.00, label: 'Legacy (2.00)', desc: 'Pre-2010 design, no containment, fixed-speed fans', color: '#ef4444', tier: 'tier4' },
+        { pue: 2.30, label: 'Poor (2.30)', desc: 'Non-optimized server room, residential AC', color: '#dc2626', tier: 'tier4' }
+    ];
+
+    var PRESETS = {
+        'small-colocation':  { itKw: 5,     pue: 1.60, rate: 0.10, region: 'us-avg' },
+        'enterprise-datahall': { itKw: 500, pue: 1.60, rate: 0.10, region: 'us-avg' },
+        'hyperscale-zone':   { itKw: 5000,  pue: 1.20, rate: 0.08, region: 'us-avg' },
+        'mega-campus':       { itKw: 50000, pue: 1.12, rate: 0.05, region: 'or-dalles' },
+        'edge-micro':        { itKw: 20,    pue: 1.50, rate: 0.12, region: 'us-commercial' }
+    };
+
+    var REGION_RATES = {
+        'custom':       { rate: null, label: 'Custom' },
+        'us-avg':       { rate: 0.08, label: 'US Industrial Avg' },
+        'us-commercial':{ rate: 0.12, label: 'US Commercial' },
+        'eu-avg':       { rate: 0.18, label: 'EU Industrial Avg' },
+        'de-industrial':{ rate: 0.25, label: 'Germany Industrial' },
+        'ie-industrial':{ rate: 0.14, label: 'Ireland DC Hub' },
+        'sg-industrial':{ rate: 0.15, label: 'Singapore' },
+        'jp-industrial':{ rate: 0.16, label: 'Japan Industrial' },
+        'va-nova':      { rate: 0.06, label: 'N. Virginia DC Alley' },
+        'or-dalles':    { rate: 0.05, label: 'Oregon / The Dalles' }
+    };
+
+    function fmtNum(n, decimals) {
+        if (decimals === undefined) decimals = 2;
+        return n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    function fmtCurrency(n) {
+        if (Math.abs(n) < 0.01) return '$0.00';
+        if (Math.abs(n) >= 1e6) return '$' + fmtNum(n / 1e6, 2) + ' M';
+        return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function fmtPower(n) {
+        if (n >= 1000) return fmtNum(n / 1000, 2) + ' MW';
+        return fmtNum(n, 1) + ' kW';
+    }
+
+    function updatePueDisplay(pue) {
+        var display = document.getElementById('pue-display');
+        var label = document.getElementById('pue-value-label');
+        display.textContent = fmtNum(pue, 2);
+        label.textContent = fmtNum(pue, 2);
+
+        display.classList.remove('world-class', 'efficient', 'average', 'legacy');
+        if (pue <= 1.15) {
+            display.classList.add('world-class');
+        } else if (pue <= 1.30) {
+            display.classList.add('efficient');
+        } else if (pue <= 1.80) {
+            display.classList.add('average');
+        } else {
+            display.classList.add('legacy');
+        }
+    }
+
+    function computeCosts() {
+        var itKw = parseFloat(document.getElementById('it-load-kw').value) || 0;
+        var pue = parseFloat(document.getElementById('pue-slider').value) || 1.0;
+        var rate = parseFloat(document.getElementById('electricity-rate').value) || 0;
+        var improvementTarget = document.getElementById('pue-improvement-target').value;
+
+        updatePueDisplay(pue);
+
+        // Core calculations
+        var totalFacilityKw = pue * itKw;
+        var overheadKw = (pue - 1) * itKw;
+        var itPct = (1 / pue) * 100;  // % of total power that is IT
+        var overheadPct = ((pue - 1) / pue) * 100;  // % of total power that is overhead
+
+        var monthlyCost = totalFacilityKw * rate * HOURS_PER_MONTH;
+        var annualCost = monthlyCost * 12;
+
+        // Cooling estimate (70-85% of overhead)
+        var coolingKw = overheadKw * 0.78;
+        var upsKw = overheadKw * 0.15;
+        var miscKw = overheadKw * 0.07;
+
+        // Results card
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-params').innerText =
+            fmtPower(itKw) + ' IT load · PUE ' + fmtNum(pue, 2) + ' · ' +
+            fmtNum(rate, 3) + ' $/kWh · ' + fmtPower(totalFacilityKw) + ' total facility draw';
+
+        // Power flow bar
+        var itBarWidth = Math.max(5, itPct);
+        var overheadBarWidth = Math.max(5, overheadPct);
+        document.getElementById('power-flow-it').style.width = itBarWidth + '%';
+        document.getElementById('power-flow-it').textContent = 'IT Load: ' + fmtPower(itKw) + ' (' + fmtNum(itPct, 0) + '%)';
+        document.getElementById('power-flow-overhead').style.width = overheadBarWidth + '%';
+        document.getElementById('power-flow-overhead').textContent = 'Overhead: ' + fmtPower(overheadKw) + ' (' + fmtNum(overheadPct, 0) + '%)';
+
+        // Key metrics
+        document.getElementById('volume-metrics').innerHTML =
+            '<div class="metric-tile"><div class="metric-val">' + fmtPower(totalFacilityKw) + '</div><div class="metric-label">Total Facility Power Draw</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtPower(itKw) + '</div><div class="metric-label">IT Equipment Load</div></div>' +
+            '<div class="metric-tile"><div class="metric-val overhead">' + fmtPower(overheadKw) + '</div><div class="metric-label">Facility Overhead (Cooling + UPS + Misc)</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtCurrency(monthlyCost) + '</div><div class="metric-label">Monthly Power Cost</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtCurrency(annualCost) + '</div><div class="metric-label">Annual Power Cost</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtNum(rate, 3) + ' $/kWh</div><div class="metric-label">Electricity Rate</div></div>' +
+            '<div class="metric-tile"><div class="metric-val" style="color:#f59e0b;">' + fmtPower(coolingKw) + '</div><div class="metric-label">Est. Cooling Overhead (~78%)</div></div>' +
+            '<div class="metric-tile"><div class="metric-val" style="color:#f59e0b;">' + fmtPower(upsKw) + '</div><div class="metric-label">Est. UPS + Distro Loss (~15%)</div></div>';
+
+        // Build all PUE scenario costs and filter/order them
+        var scenarios = PUE_SCENARIOS.map(function(s) {
+            var totalKw = s.pue * itKw;
+            var costMonthly = totalKw * rate * HOURS_PER_MONTH;
+            var costAnnual = costMonthly * 12;
+            var savingsAnnual = annualCost - costAnnual;
+            var savingsPct = annualCost > 0 ? ((annualCost - costAnnual) / annualCost) * 100 : 0;
+            return {
+                scenario: s,
+                totalKw: totalKw,
+                costMonthly: costMonthly,
+                costAnnual: costAnnual,
+                savingsAnnual: savingsAnnual,
+                savingsPct: savingsPct
+            };
+        });
+
+        // Find best (lowest cost among computed)
+        var minAnnual = Infinity;
+        scenarios.forEach(function(r) { if (r.costAnnual < minAnnual) minAnnual = r.costAnnual; });
+
+        // Cost bar chart
+        var maxCost = 0;
+        scenarios.forEach(function(r) { if (r.costAnnual > maxCost) maxCost = r.costAnnual; });
+        var barMax = Math.max(maxCost, 1);
+
+        var barHtml = '';
+        scenarios.forEach(function(r) {
+            var pct = Math.max(2, (r.costAnnual / barMax) * 100);
+            var isBest = r.costAnnual === minAnnual;
+            var isCurrent = Math.abs(r.scenario.pue - pue) < 0.005;
+            barHtml += '<div class="cost-bar-col">' +
+                '<div class="cost-bar-value">' + fmtCurrency(r.costAnnual) + '</div>' +
+                '<div class="cost-bar-fill" style="height:' + pct + '%;background:' + r.scenario.color + ';' + (isBest ? 'border:2px solid var(--success);' : '') + (isCurrent ? 'border:2px dashed #fff;' : '') + '">' +
+                    (pct > 15 ? (isCurrent ? '◀ CURRENT' : (isBest ? '★ BEST' : '')) : '') +
+                '</div>' +
+                '<div class="cost-bar-label">PUE ' + fmtNum(r.scenario.pue, 2) + '</div>' +
+            '</div>';
+        });
+        document.getElementById('cost-bar-chart').innerHTML = barHtml;
+
+        // Savings comparison table
+        var tbodyHtml = '';
+        scenarios.forEach(function(r) {
+            var isCurrent = Math.abs(r.scenario.pue - pue) < 0.005;
+            var isBest = r.costAnnual === minAnnual;
+            var rowClass = isCurrent ? 'best-row' : '';
+            var savingsClass = r.savingsAnnual >= 0 ? 'savings-positive' : '';
+            var savingsSign = r.savingsAnnual >= 0 ? 'Save ' : '−';
+
+            var tierBadge = '';
+            switch(r.scenario.tier) {
+                case 'elite': tierBadge = '<span class="pue-badge badge-green">ELITE</span>'; break;
+                case 'tier1': tierBadge = '<span class="pue-badge badge-green">TIER I</span>'; break;
+                case 'tier2': tierBadge = '<span class="pue-badge badge-blue">TIER II</span>'; break;
+                case 'tier3': tierBadge = '<span class="pue-badge badge-yellow">TIER III</span>'; break;
+                case 'tier4': tierBadge = '<span class="pue-badge badge-red">TIER IV</span>'; break;
+            }
+
+            tbodyHtml += '<tr class="' + rowClass + '">' +
+                '<td>' + tierBadge + ' ' + r.scenario.label + (isCurrent ? ' ◀ BASELINE' : '') + '</td>' +
+                '<td class="num">' + fmtPower(r.totalKw) + '</td>' +
+                '<td class="num">' + fmtCurrency(r.costMonthly) + '</td>' +
+                '<td class="num">' + fmtCurrency(r.costAnnual) + '</td>' +
+                '<td class="num ' + savingsClass + '">' + (r.savingsAnnual >= 0 ? savingsSign + fmtCurrency(r.savingsAnnual) : fmtCurrency(Math.abs(r.savingsAnnual))) + '</td>' +
+                '<td class="num ' + savingsClass + '">' + (r.savingsAnnual > 0 ? fmtNum(r.savingsPct, 1) + '%' : '—') + '</td>' +
+                '<td style="font-size:0.75rem;color:var(--text-muted);">' + r.scenario.desc + '</td>' +
+            '</tr>';
+        });
+        document.getElementById('savings-tbody').innerHTML = tbodyHtml;
+
+        // Scroll to results
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function applyPreset(presetKey) {
+        var preset = PRESETS[presetKey];
+        if (!preset) return;
+        document.getElementById('it-load-kw').value = preset.itKw;
+        document.getElementById('pue-slider').value = preset.pue;
+        document.getElementById('electricity-rate').value = preset.rate;
+        document.getElementById('rate-region').value = preset.region;
+        computeCosts();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Compute on load with default preset
+        applyPreset('enterprise-datahall');
+
+        // Preset change
+        document.getElementById('preset-select').addEventListener('change', function() {
+            var val = this.value;
+            if (val === 'custom') return;
+            applyPreset(val);
+        });
+
+        // Rate region change
+        document.getElementById('rate-region').addEventListener('change', function() {
+            var val = this.value;
+            var region = REGION_RATES[val];
+            if (region && region.rate !== null) {
+                document.getElementById('electricity-rate').value = region.rate;
+                document.getElementById('preset-select').value = 'custom';
+                computeCosts();
+            }
+        });
+
+        // Recompute button
+        document.querySelector('.btn-calc').addEventListener('click', computeCosts);
+
+        // PUE slider live update
+        document.getElementById('pue-slider').addEventListener('input', function() {
+            updatePueDisplay(parseFloat(this.value));
+            document.getElementById('preset-select').value = 'custom';
+        });
+        document.getElementById('pue-slider').addEventListener('change', function() {
+            document.getElementById('preset-select').value = 'custom';
+            computeCosts();
+        });
+
+        // Auto-recompute on input changes
+        var numberInputs = document.querySelectorAll('#it-load-kw, #electricity-rate');
+        numberInputs.forEach(function(input) {
+            input.addEventListener('input', function() {
+                document.getElementById('preset-select').value = 'custom';
+                document.getElementById('rate-region').value = 'custom';
+                computeCosts();
+            });
+        });
+        var selects = document.querySelectorAll('#pue-improvement-target');
+        selects.forEach(function(select) {
+            select.addEventListener('change', function() {
+                document.getElementById('preset-select').value = 'custom';
+                computeCosts();
+            });
+        });
+    });
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

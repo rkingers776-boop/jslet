@@ -1,0 +1,626 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Search Tools &amp; Articles —jslet</title>
+    <meta name="description" content="Search across 100+ developer tools and engineering calculators. Find GPU cost estimators, RAID calculators, K8s pod density math, cloud egress pricing, and more.">
+    <meta property="og:title" content="Search Tools &amp; Articles —jslet">
+    <meta property="og:description" content="Search across 100+ developer tools and engineering calculators for distributed systems architects and SRE engineers.">
+    <meta property="og:url" content="https://www.jslet.com/search">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Search Tools &amp; Articles —jslet">
+    <meta name="twitter:description" content="Search across 100+ developer tools and engineering calculators.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/search">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* ──── Search Page Specific ──── */
+        .search-hero {
+            text-align: center;
+            padding: 48px 24px 32px;
+            max-width: 720px;
+            margin: 0 auto;
+        }
+        .search-hero h1 {
+            font-size: 1.8rem;
+            color: var(--text-heading);
+            margin: 0 0 8px;
+        }
+        .search-hero p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin: 0 0 24px;
+        }
+        .search-box-wrap {
+            position: relative;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .search-box {
+            width: 100%;
+            padding: 14px 48px 14px 20px;
+            font-size: 1.1rem;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg-card);
+            color: var(--text-heading);
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .search-box:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 4px var(--accent-glow);
+        }
+        .search-box-icon {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.2rem;
+            pointer-events: none;
+            color: var(--text-muted);
+        }
+        .search-hints {
+            margin-top: 12px;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+        }
+        .search-hints button {
+            background: var(--bg-input);
+            border: 1px solid var(--border-light);
+            border-radius: 20px;
+            padding: 4px 14px;
+            margin: 3px;
+            cursor: pointer;
+            font-size: 0.76rem;
+            font-family: inherit;
+            color: var(--text-secondary);
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .search-hints button:hover {
+            background: var(--accent-soft);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+        /* ──── Results ──── */
+        .search-stats {
+            text-align: center;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            margin: 8px 0 24px;
+            display: none;
+        }
+        .search-stats.visible { display: block; }
+        .result-group {
+            margin-bottom: 32px;
+        }
+        .result-group-heading {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin: 0 0 12px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .result-card {
+            display: block;
+            padding: 14px 18px;
+            margin-bottom: 6px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius-sm);
+            text-decoration: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .result-card:hover,
+        .result-card:focus {
+            border-color: var(--accent);
+            box-shadow: var(--shadow-sm);
+            outline: none;
+        }
+        .result-card:focus { box-shadow: 0 0 0 3px var(--accent-glow); }
+        .result-card-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: var(--text-heading);
+            margin: 0 0 4px;
+        }
+        .result-card em {
+            font-style: normal;
+            background: rgba(255, 235, 59, 0.35);
+            padding: 1px 2px;
+            border-radius: 2px;
+        }
+        [data-theme="dark"] .result-card em {
+            background: rgba(255, 235, 59, 0.22);
+        }
+        .result-card-desc {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            margin: 0 0 6px;
+            line-height: 1.45;
+        }
+        .result-card-meta {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .result-tag {
+            display: inline-block;
+            font-size: 0.68rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .result-tag.article { background: #e8f5e9; color: #2e7d32; }
+        [data-theme="dark"] .result-tag.article { background: rgba(46,125,50,0.2); color: #66bb6a; }
+        .result-tag.page { background: #fff3e0; color: #e65100; }
+        [data-theme="dark"] .result-tag.page { background: rgba(230,81,0,0.2); color: #ff9800; }
+        /* ──── Empty State ──── */
+        .no-results {
+            display: none;
+            text-align: center;
+            padding: 48px 24px;
+        }
+        .no-results.visible { display: block; }
+        .no-results-icon { font-size: 2.5rem; margin-bottom: 12px; }
+        .no-results h2 { font-size: 1.1rem; color: var(--text-heading); margin: 0 0 8px; }
+        .no-results p { font-size: 0.88rem; color: var(--text-secondary); max-width: 480px; margin: 0 auto 16px; }
+        .no-results-suggestions { font-size: 0.78rem; color: var(--text-muted); }
+        .no-results-suggestions strong { color: var(--text-secondary); }
+        /* ──── No-JS Fallback ──── */
+        .no-js-msg {
+            display: none;
+            text-align: center;
+            padding: 32px;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        noscript .no-js-msg { display: block; }
+        /* ──── URL bar (shown when query comes from URL) ──── */
+        .url-bar {
+            text-align: center;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            display: none;
+        }
+        .url-bar.visible { display: block; }
+    </style>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "jslet",
+        "url": "https://www.jslet.com/",
+        "description": "High-precision engineering calculators and technical intelligence briefings for distributed systems architects.",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://www.jslet.com/search?q={search_term_string}",
+            "query-input": "required name=search_term_string"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <!-- Hero Search -->
+        <div class="search-hero">
+            <h1>Search jslet</h1>
+            <p>136 free tools and research briefings. Find the math you need.</p>
+            <div class="search-box-wrap">
+                <input type="search" id="search-input" aria-label="Search tools and articles" class="search-box" placeholder="Try: GPU training cost, RAID rebuild, K8s pod density..." autofocus autocomplete="off">
+                <span class="search-box-icon">&#128269;</span>
+            </div>
+            <div class="search-hints" id="search-hints">
+                <span style="font-size:0.72rem;color:var(--text-muted);margin-right:4px;">Quick:</span>
+                <button data-q="GPU">GPU</button>
+                <button data-q="RAID">RAID</button>
+                <button data-q="CDN">CDN</button>
+                <button data-q="Kubernetes">Kubernetes</button>
+                <button data-q="egress cost">egress cost</button>
+                <button data-q="VRAM">VRAM</button>
+                <button data-q="SLA">SLA</button>
+                <button data-q="password">password</button>
+                <button data-q="database pool">database pool</button>
+            </div>
+        </div>
+
+        <!-- Stats line -->
+        <p class="search-stats" id="search-stats"></p>
+
+        <!-- Results container -->
+        <div id="results-container"></div>
+
+        <!-- Empty state -->
+        <div class="no-results visible" id="no-results-initial">
+            <div class="no-results-icon">&#128270;</div>
+            <h2>Search across all tools and articles</h2>
+            <p>Type a few keywords above. The index covers all 136 tools, calculators, and tech-intel briefings. Everything runs in your browser —your query never leaves your machine.</p>
+        </div>
+        <div class="no-results" id="no-results-empty">
+            <div class="no-results-icon">&#128533;</div>
+            <h2>Nothing matched that query</h2>
+            <p>Try a different term, or browse by category from the Tools menu above. The search covers tool names, descriptions, and technical keywords.</p>
+            <p class="no-results-suggestions">Try: <strong>GPU, CDN, RAID, K8s, PUE, cost, bandwidth, latency, storage, SLA</strong></p>
+        </div>
+
+        <!-- No-JS Message -->
+        <noscript><div class="no-js-msg">Search requires JavaScript to load the index and filter results. Please enable JavaScript or <a href="/">browse tools by category</a>.</div></noscript>
+    </div>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        'use strict';
+
+        var searchInput = document.getElementById('search-input');
+        var resultsContainer = document.getElementById('results-container');
+        var searchStats = document.getElementById('search-stats');
+        var noResultsInitial = document.getElementById('no-results-initial');
+        var noResultsEmpty = document.getElementById('no-results-empty');
+        var hintsContainer = document.getElementById('search-hints');
+        var indexData = null;
+        var indexLoaded = false;
+
+        // ──── Load index ────
+        function loadIndex() {
+            if (indexLoaded) return;
+            // Check sessionStorage cache first
+            try {
+                var cached = sessionStorage.getItem('ctx-search-index');
+                if (cached) {
+                    indexData = JSON.parse(cached);
+                    indexLoaded = true;
+                    return;
+                }
+            } catch(e) { /* stale cache, refetch */ }
+
+            fetch('/search-index.json')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    indexData = data;
+                    indexLoaded = true;
+                    try {
+                        sessionStorage.setItem('ctx-search-index', JSON.stringify(data));
+                    } catch(e) { /* quota exceeded, no big deal */ }
+                    // If there's already a query in the input, search now
+                    if (searchInput.value.trim()) {
+                        doSearch(searchInput.value.trim());
+                    }
+                })
+                .catch(function() {
+                    resultsContainer.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:32px;">Could not load search index. Try refreshing the page —if the issue persists, <a href="/">browse tools by category</a>.</p>';
+                });
+        }
+
+        // ──── Search ────
+        function doSearch(query) {
+            if (!indexData) return;
+
+            var q = query.toLowerCase().trim();
+
+            // Hide initial state
+            noResultsInitial.classList.remove('visible');
+
+            if (!q) {
+                // Empty query —show initial state
+                resultsContainer.innerHTML = '';
+                searchStats.classList.remove('visible');
+                noResultsInitial.classList.add('visible');
+                noResultsEmpty.classList.remove('visible');
+                clearHighlights();
+                return;
+            }
+
+            var tokens = q.split(/\s+/).filter(Boolean);
+
+            var results = [];
+            indexData.forEach(function(entry) {
+                var haystack = (entry.title + ' ' + entry.desc + ' ' + (entry.keywords || []).join(' ')).toLowerCase();
+                var score = 0;
+                var matchedTokens = [];
+
+                tokens.forEach(function(token) {
+                    var idx = haystack.indexOf(token);
+                    if (idx !== -1) {
+                        // Exact match in title = high score
+                        if (entry.title.toLowerCase().indexOf(token) !== -1) {
+                            score += 10;
+                        }
+                        // Match in keywords = medium
+                        if ((entry.keywords || []).some(function(k) { return k.toLowerCase().indexOf(token) !== -1; })) {
+                            score += 5;
+                        }
+                        // Match in description = lower
+                        if (entry.desc.toLowerCase().indexOf(token) !== -1) {
+                            score += 3;
+                        }
+                        score += 1; // base match
+                        matchedTokens.push(token);
+                    }
+                });
+
+                if (score > 0) {
+                    results.push({ entry: entry, score: score, matchedTokens: matchedTokens });
+                }
+            });
+
+            // Sort by score descending
+            results.sort(function(a, b) { return b.score - a.score; });
+
+            // Render
+            if (results.length === 0) {
+                resultsContainer.innerHTML = '';
+                searchStats.classList.remove('visible');
+                noResultsInitial.classList.remove('visible');
+                noResultsEmpty.classList.add('visible');
+                return;
+            }
+
+            noResultsEmpty.classList.remove('visible');
+            noResultsInitial.classList.remove('visible');
+            searchStats.classList.add('visible');
+            searchStats.textContent = results.length + ' result' + (results.length !== 1 ? 's' : '') + ' for "' + escapeHTML(query) + '"';
+
+            // Group by type
+            var groups = { tool: [], article: [], page: [] };
+            results.forEach(function(r) {
+                groups[r.entry.type] = groups[r.entry.type] || [];
+                groups[r.entry.type].push(r);
+            });
+
+            var groupOrder = [
+                { key: 'tool', label: 'Tools & Calculators' },
+                { key: 'article', label: 'Research & Intel Briefings' },
+                { key: 'page', label: 'Pages' }
+            ];
+
+            var html = '';
+            groupOrder.forEach(function(g) {
+                var items = groups[g.key];
+                if (!items || items.length === 0) return;
+                html += '<div class="result-group">';
+                html += '<h2 class="result-group-heading">' + g.label + '</h2>';
+                items.forEach(function(r) {
+                    html += renderResultCard(r.entry, r.matchedTokens);
+                });
+                html += '</div>';
+            });
+
+            resultsContainer.innerHTML = html;
+
+            // Scroll results into view if using URL parameter
+            if (results.length > 0 && window.location.search.indexOf('q=') !== -1) {
+                var firstGroup = document.querySelector('.result-group');
+                if (firstGroup) {
+                    firstGroup.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+        }
+
+        function renderResultCard(entry, matchedTokens) {
+            var title = highlightMatches(entry.title, matchedTokens);
+            var desc = highlightMatches(entry.desc, matchedTokens);
+            var tagClass = entry.type === 'article' ? ' article' : (entry.type === 'page' ? ' page' : '');
+            var tagLabel = entry.type === 'article' ? 'Article' : (entry.type === 'page' ? 'Page' : entry.category || 'Tool');
+
+            return '<a href="' + entry.url + '" class="result-card">' +
+                '<div class="result-card-title">' + title + '</div>' +
+                '<p class="result-card-desc">' + desc + '</p>' +
+                '<div class="result-card-meta">' +
+                    '<span class="result-tag' + tagClass + '">' + escapeHTML(tagLabel) + '</span>' +
+                '</div>' +
+            '</a>';
+        }
+
+        function highlightMatches(text, tokens) {
+            if (!tokens || tokens.length === 0) return escapeHTML(text);
+            var escaped = escapeHTML(text);
+            tokens.forEach(function(token) {
+                if (!token) return;
+                // Case-insensitive replace of the token
+                var re = new RegExp('(' + escapeRegex(token) + ')', 'gi');
+                escaped = escaped.replace(re, '<em>$1</em>');
+            });
+            return escaped;
+        }
+
+        function escapeHTML(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function escapeRegex(str) {
+            return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function clearHighlights() {
+            // no-op —results are fully re-rendered
+        }
+
+        // ──── Debounce ────
+        var debounceTimer;
+        function onInput() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function() {
+                doSearch(searchInput.value);
+            }, 100);
+        }
+
+        // ──── URL query param ────
+        function getUrlQuery() {
+            var m = window.location.search.match(/[?&]q=([^&]+)/);
+            return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : '';
+        }
+
+        // ──── Hint chips ────
+        function bindHints() {
+            if (!hintsContainer) return;
+            hintsContainer.addEventListener('click', function(e) {
+                var btn = e.target.closest('button');
+                if (!btn) return;
+                var q = btn.getAttribute('data-q');
+                if (q) {
+                    searchInput.value = q;
+                    searchInput.focus();
+                    doSearch(q);
+                }
+            });
+        }
+
+        // ──── Keyboard nav ────
+        function bindKeyboard() {
+            document.addEventListener('keydown', function(e) {
+                // Slash to focus search
+                if (e.key === '/' && document.activeElement !== searchInput &&
+                    document.activeElement.tagName !== 'INPUT' &&
+                    document.activeElement.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    searchInput.focus();
+                    searchInput.select();
+                }
+            });
+        }
+
+        // ──── Init ────
+        function init() {
+            bindHints();
+            bindKeyboard();
+            loadIndex();
+
+            var urlQuery = getUrlQuery();
+            if (urlQuery) {
+                searchInput.value = urlQuery;
+            }
+
+            searchInput.addEventListener('input', onInput);
+
+            // Handle Escape to clear
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && searchInput.value) {
+                    searchInput.value = '';
+                    doSearch('');
+                }
+            });
+
+            // Initial search if URL has query
+            if (urlQuery && indexLoaded) {
+                doSearch(urlQuery);
+            } else if (urlQuery) {
+                // Index not loaded yet —the fetch callback will search
+                // Check periodically
+                var checkInterval = setInterval(function() {
+                    if (indexLoaded) {
+                        clearInterval(checkInterval);
+                        doSearch(urlQuery);
+                    }
+                }, 100);
+                // Stop checking after 5 seconds
+                setTimeout(function() { clearInterval(checkInterval); }, 5000);
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    })();
+    </script>
+</body>
+</html>
+

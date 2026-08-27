@@ -1,0 +1,397 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>GPU Training →Cost —GPU Training Cost Estimator —Cloud GPU Pricing | jslet</title>
+    <meta name="description" content="A100-80GB ranges from $1.10 to $3.06/hr depending on provider. Spot, reserved, on-demand —the spread is 3×. Model real training costs with checkpoint overhead baked in. 6 providers compared.">
+    <!-- Open Graph -->
+    <meta property="og:title" content="GPU Training Cost Estimator —Cloud GPU Pricing Comparison">
+    <meta property="og:description" content="Compare GPU training costs across 6 cloud providers. Model cost for single-GPU experiments to multi-node distributed training runs.">
+    <meta property="og:url" content="https://www.jslet.com/gpu-training-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="GPU Training Cost Estimator —Cloud GPU Pricing Comparison">
+    <meta name="twitter:description" content="The arXiv paper says 72 GPU-hours. Your cloud bill will say more. Spot preemption, checkpoint overhead, Xid errors —they add 20—0%.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <!-- Canonical + RSS -->
+    <link rel="canonical" href="https://www.jslet.com/gpu-training-cost">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) { .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; } }
+        select.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono","Cascadia Code",Consolas,monospace; transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer; }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .gpu-compare-table { width: 100%; margin-top: 16px; font-size: 0.82rem; }
+        .gpu-compare-table th:first-child { text-align: left; }
+        .gpu-compare-table td:first-child { font-weight: 600; color: var(--text-heading); }
+        .gpu-compare-table .best { color: var(--success); font-weight: 700; }
+        .cost-highlight { font-size: 1.3rem; font-weight: 700; color: var(--accent); font-family: "SF Mono","Cascadia Code",Consolas,monospace; }
+        .gpu-spec-badge { display: inline-block; font-size: 0.7rem; padding: 3px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin-left: 6px; font-weight: 600; }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "GPU Training Cost Estimator",
+      "description": "Compare cloud GPU pricing across 6 providers. Model A100/H100 training runs.",
+      "url": "https://www.jslet.com/gpu-training-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      "name": "How to Estimate GPU Training Costs Across Cloud Providers",
+      "description": "Compare on-demand, reserved, and spot GPU pricing across AWS, GCP, Azure, and Lambda Labs. Model total training run cost including utilization overhead.",
+      "step": [
+        {
+          "@type": "HowToStep",
+          "position": 1,
+          "name": "Select your GPU type",
+          "text": "Choose from A100 (40GB/80GB), H100, or consumer GPUs. The per-hour price varies 3-5x across providers for the same silicon —Lambda Labs is typically cheapest, AWS/Azure charge a premium for ecosystem integration."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 2,
+          "name": "Set GPU count and training duration",
+          "text": "Enter the number of GPUs and estimated training hours. Remember that published results rarely include failed runs, hyperparameter sweeps, or debugging time. Multiply the paper's reported hours by 1.5-3x for a realistic budget."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 3,
+          "name": "Pick a pricing model",
+          "text": "On-demand gives flexibility. Reserved (1-3 year commitment) saves 30-50%. Spot/preemptible saves 60-80% but risks mid-training interruption. The calculator's RI vs Spot breakeven analysis shows how many interruptions you can tolerate before spot stops being cheaper."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 4,
+          "name": "Review per-provider cost comparison",
+          "text": "The results table shows total cost per provider and pricing model, with a 'lowest cost' highlight. The savings scenario table shows how much you'd save moving from on-demand to spot or reserved."
+        }
+      ]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How much more should I budget beyond the paper's reported training time?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Budget 1.5-3x the reported training hours. A paper saying 'trained on 8×A100 for 3 days' ($4,896 on-demand) typically doesn't include debugging runs, hyperparameter sweeps, or the 47 failed attempts that preceded the final run. Spot instances add interruption risk —at 15% interruption rate, multiply by another 1.2x."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which cloud provider is cheapest for GPU training?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Lambda Labs consistently offers the lowest on-demand GPU pricing ($1.10/hr for A100 80GB vs $3.06/hr on AWS). For spot/preemptible: GCP tends to have the best availability for A100, while AWS spot capacity for H100 is tight. Reserved instances flip the equation at 1-year commitments —AWS reserved can beat Lambda on-demand for long-running workloads."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Are spot instances safe for training runs?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Spot saves 60-80% but your instance can be reclaimed with as little as 30 seconds notice. For training runs under 4 hours with checkpointing every 30 minutes, spot is usually worth it. For 24+ hour runs without checkpointing, on-demand or reserved is safer. Use the RI vs Spot Breakeven calculator to model your specific interruption tolerance."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">—</span> <a href="/core-calculators">Core Calculators</a> <span class="breadcrumb-sep">—</span> GPU Training Cost Estimator</nav>
+        <header><h1>GPU Training <span>→Cost Estimator</span></h1><p>The paper says 72 hours on 8×A100. Budget for 90. Spot preemption, checkpoint I/O, and that one GPU throwing Xid errors —they all add 20—0%. Model real training economics across 6 providers. Not the idealized numbers in the arXiv methodology section.</p></header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column:1/-1;">
+                <h3>🟢📐 Training Run Parameters</h3>
+                <p class="card-desc">Configure your estimated training workload. GPU pricing fluctuates; this calculator provides order-of-magnitude estimates for budgeting.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group"><label for="gpu-model">GPU Model</label><select class="unit-input" id="gpu-model"><option value="h100-80gb">NVIDIA H100 (80 GB)</option><option value="a100-80gb" selected>NVIDIA A100 (80 GB)</option><option value="a100-40gb">NVIDIA A100 (40 GB)</option><option value="l40s">NVIDIA L40S (48 GB)</option><option value="a6000">NVIDIA RTX A6000 (48 GB)</option><option value="rtx4090">NVIDIA RTX 4090 (24 GB)</option><option value="rtx6000ada">NVIDIA RTX 6000 Ada (48 GB)</option></select></div>
+                    <div class="input-group"><label for="gpu-count">GPU Count</label><input type="number" class="unit-input" id="gpu-count" value="8" step="1" min="1" max="1024"></div>
+                    <div class="input-group"><label for="training-hours">Estimated Training Time (hours)</label><input type="number" class="unit-input" id="training-hours" value="72" step="any" min="0.1"></div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group"><label for="pricing-model">Pricing Model</label><select class="unit-input" id="pricing-model"><option value="on-demand" selected>On-Demand (Standard)</option><option value="reserved-1yr">Reserved —1 Year</option><option value="reserved-3yr">Reserved —3 Year</option><option value="spot">Spot / Preemptible (60% off avg)</option></select></div>
+                    <div class="input-group"><label for="utilization">Utilization Factor</label><select class="unit-input" id="utilization"><option value="1.0">100% (GPU-bound training, no idle)</option><option value="0.85" selected>85% (Typical —checkpointing + I/O overhead)</option><option value="0.7">70% (I/O-heavy datasets)</option><option value="0.5">50% (Debug / hyperparameter search)</option></select></div>
+                </div>
+                <button class="btn-calc">Compute Cost Across Providers</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column:1/-1;display:none;" id="results-card">
+                <h3>🟢💰 Provider Cost Comparison</h3>
+                <p class="card-desc" id="results-subtitle"></p>
+                <div class="table-scroll"><table class="gpu-compare-table"><thead><tr><th>Provider / GPU Tier</th><th>$/GPU·hr</th><th>Compute Subtotal</th><th>Est. Storage/Net</th><th>Total Run Cost</th><th>Annualized</th></tr></thead><tbody id="vendor-results-body"></tbody></table></div>
+                <div style="margin-top:18px;padding:14px 18px;background:var(--bg-input);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;"><span style="font-weight:700;color:var(--text-heading);">🟢🏷 Lowest Cost:</span><span class="cost-highlight" id="cheapest-label">—</span></div>
+            </div>
+
+            <!-- SAVINGS SCENARIOS -->
+            <div class="calculator-card">
+                <h3>🟢📉 Savings Scenarios</h3>
+                <p class="card-desc">Compare how pricing model choice changes your total bill. Spot instances offer the deepest discount but can be preempted mid-training —only suitable for checkpoint-resumable workloads.</p>
+                <div class="table-scroll"><table><thead><tr><th>Scenario</th><th>Discount</th><th>Est. Total Cost</th><th>Risk</th></tr></thead><tbody id="scenario-body"></tbody></table></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>Cloud GPU Pricing Landscape (2026)</h2>
+            <p>GPU pricing for ML training is undergoing a structural shift. Three forces are reshaping the market: <strong>H100/B200 supply ramp</strong> is pushing down A100 pricing on tier-2 clouds; <strong>Lambda Labs and RunPod</strong> have built reservation-free GPU clouds that undercut hyperscaler on-demand rates by 40—0%; and <strong>AMD MI300X and Intel Gaudi 3</strong> are creating credible alternatives to NVIDIA for specific workloads.</p>
+            <p>This calculator models the six most relevant providers for independent ML teams. AWS/GCP/Azure are included for enterprise procurement comparisons, but most independent teams will find the best pricing on Lambda Labs, RunPod, or Vast.ai.</p>
+            <div class="table-scroll"><table><thead><tr><th>GPU Model</th><th>VRAM</th><th>FP16 TFLOPS</th><th>Typical $/hr (On-Demand)</th><th>Best-For</th></tr></thead><tbody>
+                <tr><td>H100 (80 GB)</td><td>80 GB HBM3</td><td>990</td><td>$2.50—5.00</td><td>Large-scale LLM training (70B+ params)</td></tr>
+                <tr><td>A100 (80 GB)</td><td>80 GB HBM2e</td><td>312</td><td>$1.10—3.00</td><td>Foundation model training, diffusion models</td></tr>
+                <tr><td>A100 (40 GB)</td><td>40 GB HBM2e</td><td>312</td><td>$0.80—2.50</td><td>7B—3B model fine-tuning</td></tr>
+                <tr><td>L40S (48 GB)</td><td>48 GB GDDR6</td><td>362</td><td>$0.60—1.50</td><td>Inference + light fine-tuning</td></tr>
+                <tr><td>RTX A6000 (48 GB)</td><td>48 GB GDDR6</td><td>192</td><td>$0.40—1.00</td><td>LoRA fine-tuning, inference serving</td></tr>
+                <tr><td>RTX 4090 (24 GB)</td><td>24 GB GDDR6X</td><td>330</td><td>$0.30—0.70</td><td>Small model training, experiments</td></tr>
+                <tr><td>RTX 6000 Ada (48 GB)</td><td>48 GB GDDR6</td><td>364</td><td>$0.50—1.20</td><td>Fine-tuning 7B—3B, quantized inference</td></tr>
+            </tbody></table></div>
+        </section>
+
+        <section class="seo-section">
+            <h2>How to Use This Estimator for Training Budget Planning</h2>
+            <h3>1. Estimate GPU-Hours Honestly</h3>
+            <p>Most teams underestimate training time by 2—×. Factor in: hyperparameter sweeps (multiply by N), failed runs (10—0% overhead), checkpointing I/O time (5—5% of wall clock), and debugging iterations (2— reruns per model version). Apply the Utilization Factor to model these overheads.</p>
+            <h3>2. Spot vs. On-Demand Trade-off</h3>
+            <p>Spot/preemptible instances are 50—0% cheaper but can be terminated at any time. For training runs longer than 24 hours, ensure your training loop supports resumable checkpoints to object storage (S3/GCS). Without checkpointing, spot savings are a false economy —a preemption 60 hours into a 72-hour run wastes everything.</p>
+            <h3>3. Don't Forget Egress and Storage</h3>
+            <p>Training a 70B-parameter model generates ~140 GB of checkpoints per save. Over 72 hours with hourly checkpointing, that's ~10 TB of writes. This calculator includes a rough storage + network allowance per provider, but for production budgeting, use the <a href="/cloud-storage-cost">Cloud Storage Cost Comparison</a> tool to model storage costs separately.</p>
+        </section>
+
+        <div class="related-tools" style="margin-top:0;">
+            <h3>🟢📰 Related Research</h3>
+            <div style="padding:12px 16px; background:var(--bg-card); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); margin-bottom:24px;">
+                <p style="margin:0; font-size:0.85rem; color:var(--text-body); line-height:1.55;"><strong>Deep-dive briefing:</strong> The arXiv paper says 72 GPU-hours. The bill says 120. Every failed run, spot interruption, and misconfigured checkpoint adds real dollars. This briefing unpacks the gap between published results and actual cloud GPU spend.</p>
+                <a href="/gpu-training-cost-real" style="display:inline-block; margin-top:8px; font-size:0.8rem; font-weight:700; color:var(--accent); text-decoration:none;">Read the full briefing →</a>
+            </div>
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/vram-gb-to-mib">VRAM GB →GiB &rarr;</a>
+                <a href="/tflops-to-pflops">TFLOPS →PFLOPS &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="margin-top:24px;">
+            <h2>🟢📎 Embed This Calculator</h2>
+            <p style="font-size:0.88rem; margin-bottom:12px; color:var(--text-secondary);">Add the GPU training cost estimator to your team docs, internal wiki, or blog. No API key. No tracking. 100% client-side —inputs never leave the browser.</p>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
+                <pre style="margin:0; font-size:0.78rem; overflow-x:auto; white-space:pre-wrap; font-family:'SF Mono','Cascadia Code',Consolas,monospace;"><code>&lt;iframe src="https://www.jslet.com/embed/gpu-training-cost" width="100%" height="700" style="border:none;border-radius:10px;" title="GPU Training Cost Estimator" loading="lazy"&gt;&lt;/iframe&gt;</code></pre>
+            </div>
+        </section>
+
+        <div class="social-share-bar"><span>Share:</span><a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/gpu-training-cost&t=GPU+Training+Cost+Estimator+—Compare+cloud+GPU+pricing+across+6+providers" class="share-btn hn" target="_blank" rel="noopener noreferrer">HN</a><a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/gpu-training-cost&text=Compare+GPU+cloud+pricing+across+AWS,+GCP,+Azure,+Lambda+Labs.+On-demand+vs+spot+vs+reserved+—see+which+cloud+wastes+the+least+money+per+training+run.&via=jslet" class="share-btn twitter" target="_blank" rel="noopener noreferrer">X</a><a href="https://www.reddit.com/r/MachineLearning/submit?url=https://www.jslet.com/gpu-training-cost&title=GPU+Training+Cost+Estimator+—Compare+cloud+GPU+pricing+across+6+providers" class="share-btn reddit" target="_blank" rel="noopener noreferrer">Reddit</a><a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/gpu-training-cost&title=GPU+Training+Cost+Estimator" class="share-btn linkedin" target="_blank" rel="noopener noreferrer">LinkedIn</a></div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ──── GPU Pricing Database (USD / GPU·hour, approximate 2026) ────
+    var PROVIDERS = [
+        { name:'AWS',    h100:4.96, a100_80:3.06, a100_40:2.45, l40s:1.40, a6000:0.95, rtx4090:0.65, rtx6000ada:1.05, storageNetPct:0.08 },
+        { name:'GCP',    h100:4.50, a100_80:2.75, a100_40:2.20, l40s:1.25, a6000:0.85, rtx4090:0.55, rtx6000ada:0.95, storageNetPct:0.09 },
+        { name:'Azure',  h100:5.10, a100_80:3.20, a100_40:2.60, l40s:1.45, a6000:1.00, rtx4090:0.70, rtx6000ada:1.10, storageNetPct:0.10 },
+        { name:'Lambda Labs', h100:2.49, a100_80:1.29, a100_40:1.10, l40s:0.70, a6000:0.50, rtx4090:0.35, rtx6000ada:0.60, storageNetPct:0.05 },
+        { name:'RunPod', h100:2.69, a100_80:1.49, a100_40:1.19, l40s:0.79, a6000:0.55, rtx4090:0.39, rtx6000ada:0.69, storageNetPct:0.05 },
+        { name:'Vast.ai', h100:1.80, a100_80:0.95, a100_40:0.75, l40s:0.45, a6000:0.35, rtx4090:0.25, rtx6000ada:0.45, storageNetPct:0.03 }
+    ];
+
+    var GPU_KEYS = { 'h100-80gb':'h100','a100-80gb':'a100_80','a100-40gb':'a100_40','l40s':'l40s','a6000':'a6000','rtx4090':'rtx4090','rtx6000ada':'rtx6000ada' };
+
+    function computeGpuCost() {
+        var model = document.getElementById('gpu-model').value;
+        var count = parseInt(document.getElementById('gpu-count').value) || 8;
+        var hours = parseFloat(document.getElementById('training-hours').value) || 72;
+        var pricing = document.getElementById('pricing-model').value;
+        var util = parseFloat(document.getElementById('utilization').value) || 0.85;
+
+        var gpuHours = count * hours * util;
+        var key = GPU_KEYS[model];
+        var modelLabel = document.getElementById('gpu-model').selectedOptions[0].text;
+
+        // Pricing multipliers
+        var pricingMult = 1.0;
+        var pricingLabel = 'On-Demand';
+        if (pricing === 'reserved-1yr') { pricingMult = 0.60; pricingLabel = 'Reserved 1-Year'; }
+        else if (pricing === 'reserved-3yr') { pricingMult = 0.40; pricingLabel = 'Reserved 3-Year'; }
+        else if (pricing === 'spot') { pricingMult = 0.40; pricingLabel = 'Spot/Preemptible (~60% off)'; }
+
+        var results = PROVIDERS.map(function(p) {
+            var gpuRate = p[key];
+            var computeCost = gpuHours * gpuRate * pricingMult;
+            var storageNetCost = computeCost * p.storageNetPct;
+            var totalCost = computeCost + storageNetCost;
+            return {
+                name: p.name,
+                rate: gpuRate * pricingMult,
+                computeCost: computeCost,
+                storageNetCost: storageNetCost,
+                totalCost: totalCost,
+                annualized: totalCost * (8760 / (count * hours)) * 0.15 // rough projection
+            };
+        });
+
+        var cheapest = results.reduce(function(min, r) { return r.totalCost < min.totalCost ? r : min; }, results[0]);
+
+        document.getElementById('results-subtitle').innerText =
+            count + ' × ' + modelLabel + ' · ' + hours + ' hrs @ ' + (util*100).toFixed(0) + '% util · ' + pricingLabel;
+
+        document.getElementById('vendor-results-body').innerHTML = results.map(function(r) {
+            var isCheapest = r === cheapest;
+            return '<tr>' +
+                '<td>' + r.name + (isCheapest ? ' 🟢🏆' : '') + '</td>' +
+                '<td>$' + r.rate.toFixed(2) + '</td>' +
+                '<td>$' + r.computeCost.toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>' +
+                '<td>$' + r.storageNetCost.toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>' +
+                '<td style="font-weight:700;color:' + (isCheapest ? 'var(--success)' : 'var(--text-heading)') + '">$' + r.totalCost.toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>' +
+                '<td>$' + r.annualized.toLocaleString(undefined, {minimumFractionDigits:0,maximumFractionDigits:0}) + '/yr</td>' +
+                '</tr>';
+        }).join('');
+
+        document.getElementById('cheapest-label').innerText = cheapest.name + ' —$' + cheapest.totalCost.toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) + ' total';
+
+        // Savings scenarios
+        var onDemandCost = computeScenario(pricingMult === 1.0 ? results : null);
+        var spotCost = computeScenarioAlt(0.40);
+        var reserved1Cost = computeScenarioAlt(0.60);
+        var reserved3Cost = computeScenarioAlt(0.40);
+
+        document.getElementById('scenario-body').innerHTML =
+            '<tr><td>On-Demand (Standard)</td><td>0%</td><td style="font-weight:600;">$' + computeScenarioAlt(1.0).toLocaleString(undefined,{minimumFractionDigits:2}) + '</td><td>No preemption risk</td></tr>' +
+            '<tr><td>Spot / Preemptible</td><td>~60%</td><td style="font-weight:600;color:var(--success);">$' + computeScenarioAlt(0.40).toLocaleString(undefined,{minimumFractionDigits:2}) + '</td><td>⚠?Preemption possible —requires checkpointing</td></tr>' +
+            '<tr><td>Reserved —1 Year</td><td>~40%</td><td style="font-weight:600;">$' + computeScenarioAlt(0.60).toLocaleString(undefined,{minimumFractionDigits:2}) + '</td><td>Upfront commitment required</td></tr>' +
+            '<tr><td>Reserved —3 Year</td><td>~60%</td><td style="font-weight:600;">$' + computeScenarioAlt(0.40).toLocaleString(undefined,{minimumFractionDigits:2}) + '</td><td>Long-term commitment —best for ongoing training</td></tr>';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior:'smooth' });
+    }
+
+    function computeScenario(resultSet) {
+        // Already computed above; use cheapest provider's on-demand
+        return computeScenarioAlt(1.0);
+    }
+
+    function computeScenarioAlt(mult) {
+        var model = document.getElementById('gpu-model').value;
+        var count = parseInt(document.getElementById('gpu-count').value) || 8;
+        var hours = parseFloat(document.getElementById('training-hours').value) || 72;
+        var util = parseFloat(document.getElementById('utilization').value) || 0.85;
+        var key = GPU_KEYS[model];
+        var gpuHours = count * hours * util;
+        // Use Lambda Labs as baseline (usually cheapest on-demand)
+        var rate = PROVIDERS[3][key];
+        return gpuHours * rate * mult * 1.05; // 1.05 = rough storage/net
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { computeGpuCost(); });
+    document.querySelector('.btn-calc').addEventListener('click', computeGpuCost);
+    </script>
+    <script src="nav.js"></script>
+</body>
+</html>
+

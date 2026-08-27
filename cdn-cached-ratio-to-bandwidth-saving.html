@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>CDN Edge Caching Bandwidth Offload Calculator — jslet</title>
+    <meta name="description" content="Cache ratio → bandwidth offload → dollar savings chain. Model CDN edge caching impact on origin egress. Input requests, hit ratio, response size. Output cost impact in dollars before procurement.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="CDN Edge Caching Bandwidth Offload Calculator — jslet">
+    <meta property="og:description" content="Cache ratio → bandwidth offload → dollar savings chain. Model CDN edge caching impact on origin egress. Input requests, hit ratio, response size. Output cost impact in dollars before procurement.">
+    <meta property="og:url" content="https://www.jslet.com/cdn-cached-ratio-to-bandwidth-saving">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="CDN Edge Caching Bandwidth Offload Calculator — jslet">
+    <meta name="twitter:description" content="Cache ratio → bandwidth offload → dollar savings chain. Model CDN edge caching impact on origin egress. Input requests, hit ratio, response size. Output cost impact in dollars before procurement.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/cdn-cached-ratio-to-bandwidth-saving">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "CDN Edge Caching Bandwidth Offload Calculator",
+      "description": "Cache ratio → bandwidth offload → dollar savings chain. Model CDN edge caching impact on origin egress. Input requests, hit ratio, response size. Output cost impact in dollars before procurement.",
+      "url": "https://www.jslet.com/cdn-cached-ratio-to-bandwidth-saving",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much does a 90% CDN cache hit ratio actually save?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A 90% hit ratio means only 10% of requests reach your origin — a 10× reduction in origin bandwidth and egress cost. This calculator models the full chain: requests × hit ratio × response size → origin bytes offloaded → dollar savings, so you can quantify the CDN decision before procurement instead of guessing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What cache hit ratios should I expect for different content?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Ratios vary by content type — static assets like images, CSS, and JS typically hit 90%+ when caching headers are set correctly, while personalized or API content often sits much lower. The calculator includes benchmark ranges by content type so you can model realistic scenarios, plus the CloudFront free-tier nuance that changes the cost picture for small workloads."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does edge caching reduce origin egress cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Each cache hit is served from the edge, so the origin never transmits those bytes and your origin egress bill shrinks proportionally. Bandwidth that would have crossed your cloud provider's paid egress is replaced by CDN delivery, which is usually billed at a lower rate or included in the CDN plan. The calculator separates offload savings from egress savings so both appear in the bottom line."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>🌐 CDN Edge <span>Caching Bandwidth</span> Offload</h1>
+            <p>90% cache hit ratio means 10% of traffic still hits origin. At 10M requests/month with 50 KB average response, that is 50 GB of origin egress. At $0.09/GB, that is $4.50. Not scary. At 1B requests with 500 KB average, it is $45,000/month. Model it before you budget.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📦 Cache Configuration</h3>
+                <p class="card-desc">Requests/month × average response size × cache-hit split. Total traffic, CDN-offloaded GB, residual origin traffic, and the dollar cost of what the cache does not absorb. Four numbers that anchor your CDN procurement conversation.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="req">Total Requests (Millions/month)</label>
+                        <input type="number" class="unit-input" id="req" value="10" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="cache">CDN Cache Hit Ratio (%)</label>
+                        <input type="number" class="unit-input" id="cache" value="90" step="any" min="0" max="100">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="avgKB">Avg Response Size (KB)</label>
+                        <input type="number" class="unit-input" id="avgKB" value="50" step="any" min="0">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">API responses 1-10 KB · Images 50-500 KB · Video chunks 500+ KB</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="egressRate">Origin Egress Rate ($/GB)</label>
+                        <input type="number" class="unit-input" id="egressRate" value="0.09" step="any" min="0">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">AWS ~$0.09, CloudFront ~$0.085</span>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Calculation</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📉 Cache Offload Breakdown</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid" id="metric-results"></div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>CDN Cache Hit Ratio: 90% Caching = 10× Origin Cost Reduction</h2>
+            <p>Content Delivery Networks (CDNs) operate on a simple but powerful premise: serve cached content from edge locations close to users, and only forward cache-miss requests to the origin server. Each percentage point of <strong>cache hit ratio</strong> directly reduces origin egress traffic, server load, and infrastructure cost. At a 90% cache hit ratio, only 10% of total traffic touches the origin — a 10× reduction in origin bandwidth demand and associated egress charges.</p>
+
+            <h3>How This Calculator Models Cache Offload</h3>
+            <p>The calculation is straightforward yet often overlooked during architecture planning:</p>
+            <ul style="margin-left:24px;margin-bottom:14px;color:var(--text-body);line-height:2;">
+                <li><strong>Total Traffic (GB)</strong> = Total Requests × Average Response Size (KB) ÷ 1,000,000</li>
+                <li><strong>CDN Offloaded (GB)</strong> = Total Traffic × Cache Hit Ratio</li>
+                <li><strong>Origin Traffic (GB)</strong> = Total Traffic − CDN Offloaded</li>
+                <li><strong>Origin Egress Cost ($)</strong> = Origin Traffic × Per-GB Egress Rate</li>
+            </ul>
+            <p>Note: this calculator uses a flat per-GB rate for origin egress. For AWS tiered pricing (which applies volume discounts at scale), use the <a href="/terabytes-egress-to-aws-cost">AWS Egress Cost Estimator</a> for a more precise multi-band calculation.</p>
+
+            <h3>Cache Hit Ratio Benchmarks by Content Type</h3>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Content Type</th><th>Typical Cache Hit Ratio</th><th>Key Factors</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Static Assets (CSS, JS, images, fonts)</strong></td><td>95–99%</td><td>Versioned URLs (fingerprinted filenames) enable indefinite caching. Immutable assets hit cache on every request after the first.</td></tr>
+                    <tr><td><strong>API Responses (semi-static data)</strong></td><td>80–95%</td><td>Product catalogs, configuration, and reference data change infrequently. Set short TTLs (60–300s) with stale-while-revalidate to balance freshness and cache efficiency.</td></tr>
+                    <tr><td><strong>User-Generated Content (profiles, posts)</strong></td><td>50–80%</td><td>Popular content is read frequently; tail content is rarely accessed. Cache warming and selective TTLs help optimize the Pareto distribution of requests.</td></tr>
+                    <tr><td><strong>Personalized / Authenticated Responses</strong></td><td>0–20%</td><td>Per-user data is difficult to cache at the edge. Edge-side includes (ESI) or client-side personalization can separate cached templates from dynamic data.</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>CloudFront Free Tier: The Hidden Cost Advantage</h3>
+            <p>AWS CloudFront includes a generous <strong>free tier</strong>: 1 TB of data transfer out per month, 10 million HTTP/HTTPS requests per month, and 2 million CloudFront Function invocations — all free, every month, indefinitely. For workloads under these limits, the CDN layer is effectively free, making the origin egress savings pure profit. Even beyond the free tier, CloudFront egress ($0.085/GB in the US) is often cheaper than direct S3/EC2 egress ($0.09/GB) for the first 10 TB — and the cache hit ratio multiplies those savings by reducing origin traffic.</p>
+
+            <h3>Edge Caching Strategies for Maximum Offload</h3>
+            <p>Maximizing cache hit ratio requires deliberate engineering. Use <strong>content-addressable URLs</strong> (hash in filename) for immutable assets to enable long-term caching. Apply <strong>Cache-Control: public, max-age=31536000, immutable</strong> for fingerprinted assets. For dynamic content, implement <strong>stale-while-revalidate</strong> (RFC 5861) to serve stale cached content while asynchronously refreshing — users never wait for origin latency. Configure <strong>origin shield</strong> (regional cache layers in CloudFront) to collapse multiple concurrent cache-miss requests into a single origin fetch, reducing origin load by an additional 60-80% for popular cacheable content.</p>
+        </section>
+
+        <!-- Related Tools -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var r = v('req') * 1e6;
+        var ch = v('cache') / 100;
+        var a = v('avgKB');
+        var er = v('egressRate');
+        var t = r * a / 1e6;
+        var off = t * ch;
+        var orig = t - off;
+
+        document.getElementById('results-params').innerText =
+            v('req').toLocaleString() + 'M requests/month · ' + (ch * 100).toFixed(0) + '% cache hit · ' + a + ' KB avg response · $' + er.toFixed(2) + '/GB egress';
+
+        document.getElementById('metric-results').innerHTML =
+            '<div class="metric-tile"><div class="metric-val">' + t.toFixed(2) + ' GB</div><div class="metric-label">Total Traffic</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + off.toFixed(2) + ' GB</div><div class="metric-label">CDN Offloaded</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + orig.toFixed(2) + ' GB</div><div class="metric-label">Origin Traffic</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">$' + (orig * er).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0}) + '</div><div class="metric-label">Origin Egress Cost</div></div>';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

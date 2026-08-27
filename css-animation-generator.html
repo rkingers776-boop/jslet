@@ -1,0 +1,330 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>CSS Animation Generator — Visual Keyframes Tool Online — jslet</title>
+    <meta name="description" content="Generate CSS keyframe animations visually. 12 compositor-safe presets (fade, slide, bounce, pulse, spin, shake). Duration, easing, delay, iteration, direction and fill-mode controls with live preview and copy-ready CSS. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/css-animation-generator">
+    <meta property="og:title" content="CSS Animation Generator — Visual Keyframes"><meta property="og:description" content="Build CSS keyframe animations visually. 12 presets, full animation controls, live preview. Every preset is compositor-safe (transform + opacity only). 100% client-side."><meta property="og:url" content="https://www.jslet.com/css-animation-generator"><meta property="og:type" content="website"><meta property="og:site_name" content="jslet"><meta property="og:image" content="https://www.jslet.com/og-image.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="CSS Animation Generator"><meta name="twitter:description" content="Visual CSS keyframe animation generator with live preview and copy-ready code. 100% client-side."><meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"CSS Animation Generator","description":"Visually design CSS keyframe animations: choose from 12 compositor-safe presets (fade, slide, bounce, pulse, spin, shake, zoom) and control duration, easing, delay, iteration, direction and fill-mode with a live preview. Generates copy-ready @keyframes and animation CSS. Runs 100% in the browser.","url":"https://www.jslet.com/css-animation-generator","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Which CSS properties are safe to animate?","acceptedAnswer":{"@type":"Answer","text":"transform and opacity. These run on the GPU compositor thread and never trigger layout, so they stay at 60fps even when the main thread is busy. Animating width, height, top, left, margin or padding forces a layout (reflow) on every frame — in our benchmark, animating width on 3,000 elements triggered 110 layout passes in 1.8s (273ms of layout work), while the same transform animation triggered zero."}},{"@type":"Question","name":"What does animation-fill-mode: forwards do?","acceptedAnswer":{"@type":"Answer","text":"Without a fill mode, the element snaps back to its pre-animation style the instant the animation ends — an entrance animation like fade-in appears to flash and vanish. forwards holds the final keyframe's computed values after the animation ends. backwards applies the first keyframe during the delay period, and both does both. Entrance animations should default to forwards."}},{"@type":"Question","name":"Why won't my CSS animation restart on click?","acceptedAnswer":{"@type":"Answer","text":"Re-applying the same animation name to an element doesn't restart it — the browser considers it already applied. To replay, remove the animation, force a reflow, then re-add it: el.style.animation = 'none'; void el.offsetHeight; el.style.animation = 'animName 1s ease';. This tool uses exactly that technique for its Replay button."}},{"@type":"Question","name":"What is the difference between transitions and animations?","acceptedAnswer":{"@type":"Answer","text":"Transitions animate between two states and need a trigger (a :hover, a class toggle). Animations use @keyframes to define multi-step sequences that can run on load, loop forever, and describe complex motion. Use transitions for simple state changes (hover effects); use animations for entrances, spinners and continuous motion."}},{"@type":"Question","name":"How fast should UI animations be?","acceptedAnswer":{"@type":"Answer","text":"Entrance animations should finish in 200-400ms — anything over 500ms reads as sluggish on modern UIs. Hover micro-interactions run 100-200ms. Decorative loops (spinners, pulses) can be slower but should stay under 2s per cycle. Duration + easing matter more than distance: a quick ease-out arrival feels natural, a long linear slide feels robotic."}}]}</script>
+    <style>
+        .an-preview-wrap { background: var(--bg-card, #fff); border: 1px solid var(--border); border-radius: 12px; padding: 28px 24px; margin-bottom: 18px; text-align: center; }
+        .an-preview-box { display: inline-flex; align-items: center; justify-content: center; width: 96px; height: 96px; border-radius: 14px; font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.85rem; font-weight: 700; color: #fff; background: var(--accent); }
+        .an-preview-box.btn-shape { width: 120px; height: 44px; border-radius: 8px; font-size: 0.8rem; }
+        .an-preview-box.text-shape { width: auto; height: auto; padding: 8px 4px; background: transparent; color: var(--text-heading); font-size: 1.1rem; }
+        .preset-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+        .preset-chip { padding: 6px 13px; border: 2px solid var(--border); border-radius: 20px; font-size: 0.8rem; font-weight: 600; cursor: pointer; color: var(--text-muted); }
+        .preset-chip:hover, .preset-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft, rgba(234,88,12,0.08)); }
+        .controls-panel { background: var(--bg-card, #fff); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
+        .slider-group { display: flex; align-items: center; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+        .slider-group label { font-size: 0.85rem; font-weight: 600; color: var(--text-heading); min-width: 110px; }
+        .slider-group input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+        .slider-group .val { font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.85rem; color: var(--accent); min-width: 52px; text-align: right; }
+        .align-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 10px 0; }
+        .align-item label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 3px; }
+        .align-item select { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-input); color: var(--text-body); font-size: 0.82rem; }
+        .css-output { font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.8rem; line-height: 1.6; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin: 12px 0; white-space: pre; overflow-x: auto; cursor: pointer; color: var(--text-body); }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); } .btn-outline:hover { background: var(--accent-soft, rgba(234,88,12,0.08)); }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .an-safe { display: inline-flex; align-items: center; gap: 5px; font-size: 0.75rem; color: #16a34a; border: 1px solid rgba(22,163,74,0.4); background: rgba(22,163,74,0.07); border-radius: 20px; padding: 3px 10px; }
+        .an-easing-curve { font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.72rem; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>CSS Animation <span>Generator</span></h1><p>Design keyframe animations visually — pick a preset, tune the timing, and copy production-ready CSS. Every preset here animates only <code>transform</code> and <code>opacity</code>, so everything you build is compositor-safe.</p></header>
+
+        <div class="preset-row" role="group" aria-label="Animation presets" id="preset-row"></div>
+
+        <div class="an-preview-wrap">
+            <div class="an-preview-box" id="an-preview">jslet</div>
+        </div>
+
+        <div class="controls-panel">
+            <div class="slider-group">
+                <label for="an-duration">Duration</label>
+                <input type="range" id="an-duration" min="100" max="5000" step="100" value="800" oninput="updateAnim()">
+                <span class="val" id="val-duration">0.8s</span>
+            </div>
+            <div class="slider-group">
+                <label for="an-delay">Delay</label>
+                <input type="range" id="an-delay" min="0" max="2000" step="100" value="0" oninput="updateAnim()">
+                <span class="val" id="val-delay">0s</span>
+            </div>
+            <div class="align-row">
+                <div class="align-item">
+                    <label for="an-easing">Easing</label>
+                    <select id="an-easing" onchange="updateAnim()">
+                        <option value="ease" selected>ease</option>
+                        <option value="ease-in">ease-in</option>
+                        <option value="ease-out">ease-out</option>
+                        <option value="ease-in-out">ease-in-out</option>
+                        <option value="linear">linear</option>
+                        <option value="cubic-bezier(0.34,1.56,0.64,1)">back-out (overshoot)</option>
+                    </select>
+                </div>
+                <div class="align-item">
+                    <label for="an-iter">Iterations</label>
+                    <select id="an-iter" onchange="updateAnim()">
+                        <option value="1" selected>1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="infinite">infinite</option>
+                    </select>
+                </div>
+                <div class="align-item">
+                    <label for="an-dir">Direction</label>
+                    <select id="an-dir" onchange="updateAnim()">
+                        <option value="normal" selected>normal</option>
+                        <option value="reverse">reverse</option>
+                        <option value="alternate">alternate</option>
+                        <option value="alternate-reverse">alternate-reverse</option>
+                    </select>
+                </div>
+                <div class="align-item">
+                    <label for="an-fill">Fill mode</label>
+                    <select id="an-fill" onchange="updateAnim()">
+                        <option value="forwards" selected>forwards</option>
+                        <option value="none">none</option>
+                        <option value="backwards">backwards</option>
+                        <option value="both">both</option>
+                    </select>
+                </div>
+                <div class="align-item">
+                    <label for="an-shape">Preview shape</label>
+                    <select id="an-shape" onchange="updateShape()">
+                        <option value="box" selected>Box</option>
+                        <option value="btn-shape">Button</option>
+                        <option value="text-shape">Text</option>
+                    </select>
+                </div>
+            </div>
+            <p class="an-safe">🟢 Compositor-safe — animates transform/opacity only</p>
+        </div>
+
+        <div class="css-output" id="an-output" onclick="copyAnimCSS()" title="Click to copy CSS">Click to copy CSS &rarr;</div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="copyAnimCSS()">&#x1F4CB; Copy CSS</button>
+            <button class="btn-outline" onclick="replayAnim()">&#x21BA; Replay</button>
+            <span class="an-easing-curve" id="easing-hint"></span>
+        </div>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">&#x1F4D6; Animation Fundamentals</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>The compositor rule: animate transform and opacity, nothing else.</strong> These two property groups run on the GPU compositor thread — the browser composites pre-painted layers without touching the main thread, so animation stays at 60fps even while JavaScript is busy. Everything else that affects geometry — width, height, top, left, margin, padding — invalidates layout, and the browser recomputes positions every frame. Our benchmark of a 3,000-element animation: the width version triggered 110 layout passes in 1.8 seconds (273ms of layout work, on top of 213ms of paint); the transform version triggered <strong>zero</strong> layout passes. The same animation, one property swap, and the tax disappears. That's the full argument for this generator's presets being transform/opacity-only.</p>
+                <p><strong>Easing is a motion curve, not a mood.</strong> <code>ease-out</code> front-loads the movement and decelerates into the resting frame — it reads as a natural arrival and is the right default for entrances. <code>ease-in</code> starts slow and accelerates — good for exits (things leaving feel like they're falling away). <code>linear</code> is constant speed — correct for spinners, wrong for almost everything else, because real objects don't move at constant velocity. For attention-grabbing pops, a slight overshoot like <code>cubic-bezier(0.34, 1.56, 0.64, 1)</code> (this tool's "back-out") gives the springy feel without JavaScript. Duration should scale inversely with the size of the motion: big hero entrances 300-500ms, micro-interactions 100-200ms, decorative loops up to 2s.</p>
+                <p><strong>Fill-mode is the setting that makes entrance animations work.</strong> Without a fill mode, the element returns to its pre-animation style the instant the animation ends — a fade-in appears to flash and vanish. <code>forwards</code> holds the final keyframe's computed values in place after the run ends, which is why every entrance preset in this generator defaults to it. <code>backwards</code> applies the first keyframe during the delay (so a delayed fade-in starts invisible), and <code>both</code> does both. If you've ever seen an entrance animation "blink", it was the missing fill-mode.</p>
+                <p><strong>The replay gotcha: same name, no restart.</strong> Re-applying an animation name to an element doesn't restart it — the browser treats it as already applied. The reliable pattern is remove, force reflow, re-add: <code>el.style.animation = 'none'; void el.offsetHeight; el.style.animation = 'fadeIn 1s ease forwards';</code>. This generator's Replay button does exactly that.</p>
+                <p><strong>Transitions vs animations — pick by trigger.</strong> Transitions animate between two states on a trigger (:hover, class toggle) — perfect for hover effects and state changes. Animations with @keyframes run multi-step sequences on load or loop — entrances, spinners, attention effects. When something must run once on page load, it's an animation, not a transition. When it must react to an interaction, a transition is usually simpler and cheaper.</p>
+                <p><strong>will-change is a hint, not a performance drug.</strong> <code>will-change: transform</code> promotes the element to its own compositor layer ahead of time, which can smooth an animation that's about to start. But each promoted layer costs memory, and too many will-change hints can make pages slower — GPU memory and layer-management overhead — and cause scrollbar jumps. Use it on one or two elements you're about to animate, and remove it when the animation ends. Browsers promote transform/opacity animations automatically, so will-change is rarely needed for the patterns in this generator.</p>
+                <p>Read the full math in <a href="/layout-tax-real">The Layout Tax</a> and its companion <a href="/animation-tax-real">The Animation Tax</a> — the measured cost of animating the wrong properties. See also: <a href="/css-grid-generator">CSS Grid Generator</a> &middot; <a href="/flexbox-generator">Flexbox Generator</a> &middot; <a href="/gradient-editor">CSS Gradient Editor</a> &middot; <a href="/box-shadow-generator">Box Shadow Generator</a> &middot; <a href="/css-tools">All CSS Tools</a></p>
+            </div>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        // ── Presets: all compositor-safe (transform/opacity only) ──
+        var PRESETS = [
+            { name: 'fade-in', label: 'Fade In', kf: '@keyframes fade-in {\n  from { opacity: 0; }\n  to { opacity: 1; }\n}' },
+            { name: 'fade-out', label: 'Fade Out', kf: '@keyframes fade-out {\n  from { opacity: 1; }\n  to { opacity: 0; }\n}' },
+            { name: 'slide-up', label: 'Slide Up', kf: '@keyframes slide-up {\n  from { transform: translateY(24px); opacity: 0; }\n  to { transform: translateY(0); opacity: 1; }\n}' },
+            { name: 'slide-down', label: 'Slide Down', kf: '@keyframes slide-down {\n  from { transform: translateY(-24px); opacity: 0; }\n  to { transform: translateY(0); opacity: 1; }\n}' },
+            { name: 'slide-left', label: 'Slide Left', kf: '@keyframes slide-left {\n  from { transform: translateX(24px); opacity: 0; }\n  to { transform: translateX(0); opacity: 1; }\n}' },
+            { name: 'slide-right', label: 'Slide Right', kf: '@keyframes slide-right {\n  from { transform: translateX(-24px); opacity: 0; }\n  to { transform: translateX(0); opacity: 1; }\n}' },
+            { name: 'bounce', label: 'Bounce', kf: '@keyframes bounce {\n  0%, 100% { transform: translateY(0); }\n  40% { transform: translateY(-18px); }\n  70% { transform: translateY(-6px); }\n}' },
+            { name: 'pulse', label: 'Pulse', kf: '@keyframes pulse {\n  0%, 100% { transform: scale(1); opacity: 1; }\n  50% { transform: scale(1.08); opacity: 0.85; }\n}' },
+            { name: 'spin', label: 'Spin', kf: '@keyframes spin {\n  from { transform: rotate(0deg); }\n  to { transform: rotate(360deg); }\n}' },
+            { name: 'shake', label: 'Shake', kf: '@keyframes shake {\n  0%, 100% { transform: translateX(0); }\n  20% { transform: translateX(-8px); }\n  40% { transform: translateX(8px); }\n  60% { transform: translateX(-5px); }\n  80% { transform: translateX(5px); }\n}' },
+            { name: 'zoom-in', label: 'Zoom In', kf: '@keyframes zoom-in {\n  from { transform: scale(0.6); opacity: 0; }\n  to { transform: scale(1); opacity: 1; }\n}' },
+            { name: 'flip-x', label: 'Flip X', kf: '@keyframes flip-x {\n  from { transform: perspective(400px) rotateX(90deg); opacity: 0; }\n  to { transform: perspective(400px) rotateX(0); opacity: 1; }\n}' }
+        ];
+
+        var preview = document.getElementById('an-preview');
+        var output = document.getElementById('an-output');
+        var current = PRESETS[0];
+
+        function renderPresets() {
+            var row = document.getElementById('preset-row');
+            var html = '';
+            for (var i = 0; i < PRESETS.length; i++) {
+                html += '<span class="preset-chip' + (i === 0 ? ' active' : '') + '" id="chip-' + i + '" onclick="selectPreset(' + i + ')">' + PRESETS[i].label + '</span>';
+            }
+            row.innerHTML = html;
+        }
+
+        function currentVal(id) { return document.getElementById(id).value; }
+
+        function buildAnimationCss() {
+            var dur = parseInt(currentVal('an-duration'), 10) / 1000;
+            var delay = parseInt(currentVal('an-delay'), 10) / 1000;
+            var easing = currentVal('an-easing');
+            var iter = currentVal('an-iter');
+            var dir = currentVal('an-dir');
+            var fill = currentVal('an-fill');
+            return {
+                dur: dur, delay: delay, easing: easing, iter: iter, dir: dir, fill: fill,
+                anim: 'animation: ' + current.name + ' ' + dur + 's ' + easing + ' ' + delay + 's ' + iter + ' ' + dir + ' ' + fill + ';'
+            };
+        }
+
+        function updateAnim() {
+            document.getElementById('val-duration').textContent = (parseInt(currentVal('an-duration'), 10) / 1000).toFixed(1) + 's';
+            document.getElementById('val-delay').textContent = (parseInt(currentVal('an-delay'), 10) / 1000).toFixed(1) + 's';
+            var cfg = buildAnimationCss();
+
+            // 重播：移除 + 强制回流 + 重新应用（fill-mode gotcha 的正确处理）
+            preview.style.animation = 'none';
+            void preview.offsetHeight;
+            preview.style.animation = current.name + ' ' + cfg.dur + 's ' + cfg.easing + ' ' + cfg.delay + 's ' + cfg.iter + ' ' + cfg.dir + ' ' + cfg.fill;
+
+            // 代码输出
+            var code = current.kf + '\n\n.animated {\n  ' + cfg.anim + '\n}';
+            output.textContent = code;
+
+            // easing 提示
+            var hint = document.getElementById('easing-hint');
+            if (cfg.easing.indexOf('cubic-bezier') >= 0) hint.textContent = 'easing: cubic-bezier(0.34, 1.56, 0.64, 1) · overshoot';
+            else hint.textContent = 'easing: ' + cfg.easing;
+        }
+
+        window.updateAnim = updateAnim;
+
+        window.selectPreset = function(i) {
+            var chips = document.querySelectorAll('.preset-chip');
+            for (var j = 0; j < chips.length; j++) chips[j].classList.remove('active');
+            var chip = document.getElementById('chip-' + i);
+            if (chip) chip.classList.add('active');
+            current = PRESETS[i];
+            updateAnim();
+        };
+
+        window.updateShape = function() {
+            var shape = currentVal('an-shape');
+            preview.className = 'an-preview-box ' + shape;
+            updateAnim();
+        };
+
+        window.replayAnim = function() {
+            var cfg = buildAnimationCss();
+            preview.style.animation = 'none';
+            void preview.offsetHeight;
+            preview.style.animation = current.name + ' ' + cfg.dur + 's ' + cfg.easing + ' ' + cfg.delay + 's ' + cfg.iter + ' ' + cfg.dir + ' ' + cfg.fill;
+        };
+
+        window.copyAnimCSS = function() {
+            var text = output.textContent.replace('Click to copy CSS \u2192', '').trim();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).catch(function() { fallbackCopy(text); });
+            } else {
+                fallbackCopy(text);
+            }
+        };
+
+        function fallbackCopy(text) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            document.body.removeChild(ta);
+        }
+
+        // 初始化
+        renderPresets();
+        updateAnim();
+    })();
+    </script>
+</body>
+</html>

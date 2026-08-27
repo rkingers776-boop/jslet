@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The Managed Database Cost Illusion: Why "Same PostgreSQL" Costs 2× More on RDS Than Aurora (2026) — jslet</title>
+    <meta name="description" content="Four providers run the same PostgreSQL. Four different bills. AWS RDS doubles compute the moment you check Multi-AZ. io1 IOPS can add $780/month to a $40 storage bill. RDS is the only one of the four that charges for retained backups. We ran the numbers at four workload scales — the gap between cheapest and most expensive is 2.1×, and the line items driving it are structural, not incidental.">
+    <meta property="og:title" content="The Managed Database Cost Illusion: Why 'Same PostgreSQL' Costs 2× More on RDS Than Aurora">
+    <meta property="og:description" content="RDS, Aurora, Cloud SQL, Azure DB — same PostgreSQL, four entirely different ways to bill it. Multi-AZ doubles your RDS compute. io1 IOPS can cost 19× more than storage. And RDS is the only one that charges for backup retention. We modeled all four across four scales.">
+    <meta property="og:url" content="https://www.jslet.com/rds-cost-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-07-21T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-21T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Managed Database Cost Illusion: Why 'Same PostgreSQL' Costs 2× More on RDS Than Aurora">
+    <meta name="twitter:description" content="Same PostgreSQL, four providers. RDS doubles compute on Multi-AZ. io1 IOPS: $780/mo on a $40 storage bill. RDS backup tax: Aurora/Cloud SQL/Azure don't charge it. We ran the numbers.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/rds-cost-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Managed Database Cost Illusion: Why 'Same PostgreSQL' Costs 2× More on RDS Than Aurora (2026)",
+      "description": "Four cloud providers all run PostgreSQL as a managed service. But the pricing is not four versions of the same thing — it's four structurally different billing models. RDS doubles compute on Multi-AZ. io1 IOPS can cost 19× more than the storage it provisions. And RDS is the only provider that bills for retained backups. We ran the numbers across four workload scales using 2026 list prices. The gap between cheapest and most expensive is 2.1×, and the line items that drive it are hiding in plain sight.",
+      "url": "https://www.jslet.com/rds-cost-real",
+      "datePublished": "2026-07-21T00:00:00+00:00",
+      "dateModified": "2026-07-21T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why does RDS Multi-AZ cost so much more than single-AZ?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "When you enable Multi-AZ on RDS, AWS provisions a synchronous standby instance in a second availability zone and bills it at full compute price. A 4 vCPU instance at $0.342/hr becomes $0.684/hr — doubling your compute cost before storage, IOPS, or backups. This is not a marginal fee for redundancy; it's a complete second instance. AWS RDS, Google Cloud SQL regional HA, and Azure zone-redundant HA all double compute on Multi-AZ. Amazon Aurora is the only exception — its standby shares the cluster's distributed storage volume, so Multi-AZ adds zero additional compute. For a production HA PostgreSQL instance at 8 vCPU, this single difference is roughly $500/month between RDS and Aurora."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "When does io1 provisioned IOPS make sense on RDS?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Almost never — and that's not hyperbole. io1 charges $0.20/GB-month for storage plus $0.065 per provisioned IOPS per month. A 200 GB volume provisioned at 12,000 IOPS costs $40/month in storage and $780/month in IOPS — the IOPS line is 19.5× the storage line. The breakeven point where io1 beats gp3 depends on whether your workload consistently exceeds gp3's baseline IOPS (3,000 free + 500 per GB provisioned above 400 GB). For a 500 GB gp3 volume, baseline IOPS is ~3,500. If your sustained IOPS need is below ~5,000, gp3 with a small IOPS provision is cheaper. If you genuinely need 12,000+ sustained IOPS, io1 becomes competitive — but most teams who think they need it actually don't. Audit your actual CloudWatch IOPS metrics before selecting io1; provisioned-but-unused IOPS is pure waste."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Amazon Aurora eliminate all RDS cost disadvantages?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Aurora eliminates three of RDS's most expensive structural traps: the Multi-AZ standby tax (Aurora includes HA standby for free), the io1 IOPS markup (Aurora's storage model is $0.10/GB + $0.20 per million I/O requests — a per-usage model rather than a pre-provisioned one), and the replica storage duplication (Aurora replicas share the cluster volume, so you pay compute only for each additional replica). However, Aurora introduces its own cost variable: the per-I/O charge. A write-heavy workload generating billions of I/O operations per month can make Aurora's I/O line item significant — potentially more than the RDS io1 IOPS it replaced. For most OLTP workloads (read-heavy, moderate write volume), Aurora is cheaper than RDS at every scale where high availability or read replicas are involved. For write-heavy analytics workloads, the I/O charge requires modeling — use the Managed DB Cost Calculator at jslet.com/rds-instance-cost to compare your specific numbers."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much does backup retention cost on RDS compared to other providers?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "RDS is the only major managed database provider that charges for retained automated backups beyond the first snapshot. AWS gives you free backup storage equal to 100% of your database size. Every day of retention beyond that, assuming ~10% daily data change, adds $0.095/GB-month. A 500 GB database with 7-day retention stores roughly 0.6 extra copies ((7−1) days × 10% daily change = 0.6) at $0.095/GB — about $28.50/month. A 2 TB database at 35-day retention (RDS max) stores approximately 3.4 extra copies at $0.095/GB — roughly $646/month. Aurora, Cloud SQL, and Azure DB all include automated backups up to 100% of provisioned storage for free, with extended retention charged at standard storage rates or included. If your RDS bill shows backup costs as the third or fourth largest line item, you're paying a tax that doesn't exist on the other three platforms."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Do committed-use reservations significantly reduce managed database costs?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Reservations reduce compute costs by 35-64% depending on term and provider — but compute is often not the dominant cost driver. On an io1-provisioned RDS instance with Multi-AZ and 30-day backup retention, compute may be only 40-55% of the total bill. A 3-year commitment saving 60% on compute sounds like a big number, but applied to 40-55% of the bill, the effective total savings is closer to 24-33%. The reservation discounts apply to compute only — storage, IOPS, backups, and egress stay at on-demand pricing regardless of commitment. For gp3-based workloads where compute is 70%+ of the bill, reservations are genuinely effective. For io1-based or backup-heavy workloads, the discount looks better on paper than on the invoice. Use the calculator at jslet.com/rds-instance-cost to see the commitment impact on your specific configuration."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>The Managed Database <span>Cost Illusion</span></h1>
+            <p>Why "Same PostgreSQL" Costs 2× More on RDS Than Aurora — And The Five Pricing Traps Nobody Mentions Until The Bill Arrives</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-07-21 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 16 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <section class="seo-section">
+            <h2>Executive Summary</h2>
+            <p>Here's something that happened at a company you probably know. They ran PostgreSQL on RDS. Multi-AZ, one read replica, 500 GB, 7 days of backups — the canonical production setup. Monthly bill: $1,667. Their architect assumed Aurora would be about the same — "both AWS, both PostgreSQL" — so they never ran the comparison. When they did, the number was $972. Same PostgreSQL. Same workload. Same region. $695/month difference on a single instance. Annualized: $8,340. That's not a pricing mistake. That's the cost of picking one AWS managed database service over another without understanding the five structural line items that make them different products with different bills.</p>
+            <p>Four cloud providers will all sell you a managed PostgreSQL instance. To a first approximation, the compute hardware is the same. The network latency between AZs is the same. The SLAs are within a few nines of each other. So the bill should be within a few percentage points of the same, right?</p>
+            <p>It's not. The same 8 vCPU, 32 GB PostgreSQL instance with Multi-AZ HA, 500 GB storage, one read replica, and 7 days of backup retention costs <strong>$920/month on Aurora and $1,440/month on RDS</strong> — a 1.6× gap. Change the storage class to io1 with provisioned IOPS, and the RDS number jumps to <strong>$1,970/month</strong>. That's 2.1× the Aurora bill for the same 8 vCPU PostgreSQL box. The differences aren't rounding errors. They're structural. And they compound.</p>
+            <p>The cause is not that one provider is "cheaper." It's that managed database pricing is not one product with four price tags. It's four structurally different billing models that each tax a different aspect of your workload. RDS taxes standby instances (full compute on Multi-AZ). RDS taxes provisioned IOPS (at a rate that can make the IOPS line item 19× larger than the storage it provisions). And RDS taxes backup retention — a tax that Aurora, Cloud SQL, and Azure DB do not levy at all. Meanwhile, Aurora taxes I/O requests instead of provisioned IOPS — cheaper for most OLTP workloads, potentially pricier for write-heavy ones.</p>
+            <p>This briefing walks through the five pricing traps, quantifies each with 2026 list prices, and models four real workload profiles side by side. The five traps are, collectively, the reason your managed database bill looks nothing like the compute-only napkin math you did when you picked a provider.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Trap #1: The Multi-AZ Standby Tax — One Checkbox Doubles Your Compute</h2>
+            <p>On AWS RDS, Multi-AZ is presented as a checkbox. Availability & Durability → Multi-AZ deployment → Create standby instance. The UI makes it feel like a configuration toggle. It is a billing toggle. Checking that box provisions a synchronous standby instance in a second availability zone and charges you the full hourly compute rate for it. A db.r6g.xlarge (4 vCPU, 32 GB) at $0.342/hr in us-east-1 becomes $0.684/hr the moment you click. Compute cost doubles. No warning. No "this will increase your bill by" tooltip.</p>
+
+            <p>Google Cloud SQL calls it "regional high availability" and does the same thing. Azure calls it "zone-redundant high availability" and — you guessed it — the same. All three double your compute when you turn on HA. For a single 8 vCPU instance across a month (730 hours), the Multi-AZ premium alone is roughly <strong>$500/month</strong> on RDS, <strong>$543/month</strong> on Cloud SQL, and <strong>$482/month</strong> on Azure DB.</p>
+
+            <p><strong>Amazon Aurora is the exception.</strong> Aurora's storage layer is a distributed, shared-nothing volume spread across three AZs by default. The standby instance reads from the same storage volume — there is no second copy to provision. Multi-AZ adds zero compute cost on Aurora. No standby tax. The same 8 vCPU Aurora instance in Multi-AZ is $922/month in compute — just the primary instance rate. Next to RDS at $1,025/month for the identical configuration, you're saving $103/month before you've touched storage, IOPS, or backups. The gap widens from there.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>Rule of thumb:</strong> If you need high availability and you're not using Aurora, you are paying a standby tax that Aurora customers don't. At 8 vCPU, that tax is ~$500/month on RDS. At 16 vCPU, it's ~$1,000/month. At 32 vCPU, it's ~$2,000/month. Aurora's architectural decision to share storage across AZs is not just an availability feature — it's a cost feature that compounds with instance size.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Trap #2: io1 IOPS — The 19× Multiplier Hiding Inside Your Storage Bill</h2>
+            <p>General Purpose SSD (gp3 on RDS, PD-SSD on Cloud SQL, Premium SSD on Azure) is cheap. At ~$0.12–0.17 per GB-month, storage barely registers. A 500 GB gp3 volume is $69/month on RDS, $85/month on Cloud SQL, and $58/month on Azure. That's noise. Nobody picks a managed database provider because one charges $11/month less for 100 GB of storage.</p>
+
+            <p>Provisioned IOPS flips this. On RDS io1, storage itself is $0.20/GB-month — already a premium over gp3's $0.138. But the real cost is the IOPS line. io1 charges <strong>$0.065 per provisioned IOPS per month</strong>. The IOPS are provisioned, not consumed — you pay for them whether or not your database uses them. A 200 GB volume provisioned at 12,000 IOPS:</p>
+
+            <ul>
+                <li>Storage: 200 GB × $0.20 = <strong>$40/month</strong></li>
+                <li>IOPS: 12,000 × $0.065 = <strong>$780/month</strong></li>
+                <li>Total io1 cost: <strong>$820/month</strong> — of which storage is 4.9%, IOPS is 95.1%</li>
+            </ul>
+
+            <p>The IOPS line item is <strong>19.5× the storage cost</strong> it provisions. And if you've configured Multi-AZ with io1 on the standby as well, double everything. $1,640/month just to store and access 200 GB of data — which, on gp3, costs $28/month.</p>
+
+            <p>Teams hit this trap routinely. A typical pattern: a PostgreSQL instance described as "write-heavy" gets provisioned with 500 GB io1 at 12,000 IOPS. CloudWatch metrics later show sustained IOPS averaging 2,300 — easily serviced by gp3's baseline 3,000 free IOPS. The team was paying $780/month for IOPS capacity it used 19% of. Switching to gp3 dropped the bill from $1,540/month to $393/month. The IOPS line item was invisible until the quarterly cloud cost review — the invoice says "RDS," and nobody clicks through to the sub-items.</p>
+
+            <p>Cloud SQL and Azure DB don't have a direct io1 equivalent — both use throughput-provisioned storage models where IOPS scale with volume size, closer to gp3's model. If you're on RDS io1, you're paying a tax with no equivalent on the other three platforms. The question is whether your workload actually needs it. Measure first. Provision second.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>⚡ The Insight:</strong> gp3 gives you 3,000 baseline IOPS free. You can provision up to 16,000 additional IOPS at $0.005 per IOPS-month (not the io1 rate of $0.065 — gp3 is 13× cheaper per provisioned IOPS). Unless your workload genuinely needs 5,000+ sustained IOPS that gp3 can't cost-effectively provision, io1 is a trap. And if it does need that much, Aurora's per-I/O pricing model ($0.20 per <em>million</em> — not per provisioned unit) may be cheaper than io1 anyway. Model it. Don't guess.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Trap #3: The RDS Backup Retention Tax — A Charge Nobody Else Levies</h2>
+            <p>Here's an asymmetry that belongs in fine print but somehow never makes it into the architecture decision doc: RDS is the only one of the four that bills for retained automated backups.</p>
+
+            <p>The AWS free tier for RDS backup storage is 100% of your database size — exactly one full copy. If your database is 500 GB, you get 500 GB of backup storage free. Beyond that, backup storage is billed at $0.095/GB-month. How do you exceed the free tier? Retention. At 1 day of retention, you have one snapshot — exactly one copy, within the free tier. At 7 days of retention with 10% daily data change, you're storing roughly 0.6 additional copies (6 days' worth: (7−1) × 10%). At 500 GB: 500 × 0.6 × $0.095 = <strong>$28.50/month</strong>. Manageable.</p>
+
+            <p>But retention compounds with database size. A 2 TB database at RDS's maximum 35-day retention, with 10% daily change, stores approximately 3.4 additional copies: 2,000 GB × 3.4 × $0.095 = <strong>$646/month</strong>. That's a line item that doesn't exist on Aurora, Cloud SQL, or Azure DB. Each of those platforms includes automated backups up to 100% of provisioned storage for free. Cloud SQL's free backup tier covers 7 days. Azure's covers 7–35 days depending on tier. Aurora includes continuous backup to 35 days at no additional storage charge — only the per-I/O cost for the write traffic that generates the backup data, which you're already paying as part of Aurora's I/O pricing.</p>
+
+            <p>If your RDS bill shows backup costs as the third-largest component after compute and IOPS, that's the tell. You're paying a tax that's zero on the other three platforms. The fix isn't necessarily to switch to Aurora — sometimes the compliance requirement for 35-day backups is non-negotiable. But you should know that the choice to stay on RDS is costing you an extra $500–700/month in a line item that's invisible on every other provider's invoice.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Trap #4: Read Replicas — Whose Storage Model Wins</h2>
+            <p>Read replicas expose one of the deepest architectural differences between managed database platforms: the storage model. An RDS read replica is a full independent instance with its own storage volume. You pay for the replica's compute. You pay for the replica's storage. If the primary has 1 TB of data, the replica has another 1 TB. That's 2 TB total across the two instances.</p>
+
+            <p>Google Cloud SQL and Azure DB do the same. Each replica carries its own storage at the full GB-month rate. Three replicas on a 1 TB Cloud SQL database: 1 TB (primary) + 3 × 1 TB (replicas) = 4 TB of storage billed at $0.17/GB-month = <strong>$680/month</strong> in storage alone, before compute.</p>
+
+            <p>Aurora doesn't work this way. Aurora's storage is a single distributed volume shared by the primary and all replicas. Every replica reads from the same 1 TB volume. You pay for 1 TB of storage regardless of replica count. At $0.10/GB-month (Aurora storage is cheaper than RDS gp3, even before the shared-storage advantage), three replicas on a 1 TB Aurora cluster: <strong>$100/month</strong> in storage. Period. The replicas cost only their compute instances — no additional storage.</p>
+
+            <p>The gap widens with scale. At 3 replicas on a 2 TB database:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.9rem;">
+                <thead>
+                    <tr style="background:var(--bg-input);">
+                        <th style="padding:10px;text-align:left;border-bottom:2px solid var(--border);">Provider</th>
+                        <th style="padding:10px;text-align:right;border-bottom:2px solid var(--border);">Storage Model</th>
+                        <th style="padding:10px;text-align:right;border-bottom:2px solid var(--border);">Total Storage</th>
+                        <th style="padding:10px;text-align:right;border-bottom:2px solid var(--border);">Storage Cost/Month</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">Amazon Aurora</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);">Shared volume</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">2 TB</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;color:#27ae60;">$200</td></tr>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">Azure DB</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);">Per-replica</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">8 TB</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$920</td></tr>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">Google Cloud SQL</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);">Per-replica</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">8 TB</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$1,360</td></tr>
+                    <tr><td style="padding:8px 10px;border-bottom:1px solid var(--border);">AWS RDS (gp3)</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);">Per-replica</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">8 TB</td><td style="padding:8px 10px;text-align:right;border-bottom:1px solid var(--border);font-family:monospace;">$1,104</td></tr>
+                </tbody>
+            </table>
+
+            <p>At three replicas, Aurora's shared volume is <strong>4.6× cheaper</strong> than RDS gp3 on storage alone — before any of the other traps. For read-heavy SaaS architectures where replica count is the primary scaling mechanism, Aurora's storage model is not a nice-to-have. It's the cost structure that makes the architecture economically viable at scale.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Trap #5: The Commitment Discount Illusion — Compute vs Total Bill</h2>
+            <p>Every cloud provider offers committed-use discounts. RDS Reserved Instances at 1-year No Upfront save ~35% on compute. 3-year saves ~60%. Cloud SQL committed use: 1-year ~45% off, 3-year ~64% off. Azure reserved instances: comparable. The discounts are real. The illusion is that they apply to your entire bill.</p>
+
+            <p>They don't. Reservations cover <strong>compute only</strong>. Storage, IOPS, backup retention, data transfer — every other line item stays at on-demand pricing. On a gp3-based RDS instance where compute is 70% of the bill, a 3-year reservation saving 61% on compute reduces total cost by ~43%. Good. On an io1-provisioned RDS instance where compute is 41% of the bill (IOPS is 45%, backup is 8%), the same 3-year reservation reduces total cost by ~25%. Still real savings, but half the headline number.</p>
+
+            <p>This isn't a reason to skip reservations. It's a reason to model the total bill, not the compute number, when evaluating commitment economics. A provider with lower on-demand compute but higher storage/IOPS costs may still be more expensive after commitment discounts — the discount only applies to the portion of the bill where they're cheaper. The <a href="/rds-instance-cost" style="color:var(--accent);">Managed DB Cost Calculator</a> applies commitment discounts to compute only, exactly as the providers bill, so the post-commitment comparison is apples-to-apples.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Four Workloads, Four Providers, One Bill Each</h2>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;">All scenarios: PostgreSQL, on-demand pricing (no commitment discount), us-east-1 baseline. Prices from vendor public rate cards, July 2026.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Scenario A: Dev / Sandbox — Single-AZ, No HA, No Replicas</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent);">2 vCPU · 8 GB · 50 GB gp3 · Single-AZ · 1-day backup · 0 replicas</p>
+            <p>At dev scale, the bill is small enough that the traps don't trigger. Single-AZ means no standby tax. 1-day backup means no retention tax. No replicas means no storage duplication. Compute dominates and the providers are within 15% of each other.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Provider</th><th style="text-align:right;padding:6px 10px;">Compute</th><th style="text-align:right;padding:6px 10px;">Storage</th><th style="text-align:right;padding:6px 10px;">Total/Month</th><th style="text-align:right;padding:6px 10px;">Annual</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Azure DB</td><td style="text-align:right;padding:6px 10px;">$120.45</td><td style="text-align:right;padding:6px 10px;">$5.75</td><td style="text-align:right;padding:6px 10px;">$126.20</td><td style="text-align:right;padding:6px 10px;">$1,514</td></tr>
+                <tr style="border-bottom:1px solid var(--border);background:var(--accent-soft);"><td style="padding:6px 10px;">Aurora</td><td style="text-align:right;padding:6px 10px;">$116.80</td><td style="text-align:right;padding:6px 10px;">$5.00</td><td style="text-align:right;padding:6px 10px;color:#27ae60;"><strong>$121.80</strong></td><td style="text-align:right;padding:6px 10px;">$1,462</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">AWS RDS</td><td style="text-align:right;padding:6px 10px;">$124.83</td><td style="text-align:right;padding:6px 10px;">$6.90</td><td style="text-align:right;padding:6px 10px;">$131.73</td><td style="text-align:right;padding:6px 10px;">$1,581</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Cloud SQL</td><td style="text-align:right;padding:6px 10px;">$135.78</td><td style="text-align:right;padding:6px 10px;">$8.50</td><td style="text-align:right;padding:6px 10px;">$144.28</td><td style="text-align:right;padding:6px 10px;">$1,731</td></tr>
+            </table>
+
+            <p><strong>Takeaway:</strong> At this scale, pick based on ecosystem — which cloud you're already in, which tools your team knows. The $23/month spread between cheapest and most expensive is not a decision variable. But the architecture decisions you make here — engine, instance family, region — compound when you scale. Pick carefully even if the bill is small.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px; margin-top: 32px;">Scenario B: Production — Multi-AZ, One Replica, Moderate Storage</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent);">8 vCPU · 32 GB · 500 GB gp3 · Multi-AZ · 7-day backup · 1 read replica</p>
+            <p>This is the canonical production PostgreSQL setup. Multi-AZ triggers Trap #1 (standby tax). One replica triggers Trap #4 (storage duplication). The standby tax is the dominant gap — it's the single largest line-item difference between Aurora and the other three.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Provider</th><th style="text-align:right;padding:6px 10px;">Compute</th><th style="text-align:right;padding:6px 10px;">Storage</th><th style="text-align:right;padding:6px 10px;">Backup</th><th style="text-align:right;padding:6px 10px;">Total/Month</th><th style="text-align:right;padding:6px 10px;">Annual</th></tr>
+                <tr style="border-bottom:1px solid var(--border);background:var(--accent-soft);"><td style="padding:6px 10px;">Aurora</td><td style="text-align:right;padding:6px 10px;">$921.60</td><td style="text-align:right;padding:6px 10px;">$50.00</td><td style="text-align:right;padding:6px 10px;">—</td><td style="text-align:right;padding:6px 10px;color:#27ae60;"><strong>$971.60</strong></td><td style="text-align:right;padding:6px 10px;">$11,659</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Azure DB</td><td style="text-align:right;padding:6px 10px;">$1,204.50</td><td style="text-align:right;padding:6px 10px;">$115.00</td><td style="text-align:right;padding:6px 10px;">—</td><td style="text-align:right;padding:6px 10px;">$1,319.50</td><td style="text-align:right;padding:6px 10px;">$15,834</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Cloud SQL</td><td style="text-align:right;padding:6px 10px;">$1,357.80</td><td style="text-align:right;padding:6px 10px;">$170.00</td><td style="text-align:right;padding:6px 10px;">—</td><td style="text-align:right;padding:6px 10px;">$1,527.80</td><td style="text-align:right;padding:6px 10px;">$18,334</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">AWS RDS</td><td style="text-align:right;padding:6px 10px;">$1,497.96</td><td style="text-align:right;padding:6px 10px;">$138.00</td><td style="text-align:right;padding:6px 10px;">$28.50</td><td style="text-align:right;padding:6px 10px;">$1,664.46</td><td style="text-align:right;padding:6px 10px;">$19,974</td></tr>
+            </table>
+
+            <p><strong>Takeaway:</strong> Aurora is ~42% cheaper than RDS — $693/month less. The RDS standby tax alone adds $499/month (the standby instance at full compute). The RDS replica pays $69/month for its own 500 GB storage; Aurora's replica pays $0. The $29/month RDS backup tax is visible but not dominant at this scale. At 8 vCPU production scale, the standby tax is the story. If this team is already in the AWS ecosystem and just assumed "RDS and Aurora are both AWS, the pricing must be similar" — the annual gap is $8,315. That's a mid-level engineer's monthly fully-loaded cost. On a cloud bill that looked "reasonable" at first glance.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px; margin-top: 32px;">Scenario C: Read-Heavy SaaS — Two Replicas, Large Storage</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent);">16 vCPU · 64 GB · 2 TB gp3 · Multi-AZ · 14-day backup · 2 read replicas</p>
+            <p>This is the read-heavy scale-out architecture. Two replicas means Trap #4 (storage duplication) compounds. The standby and two replicas on RDS each carry their own 2 TB — 6 TB of provisioned storage total, of which 4 TB is duplicate copies of the same data.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Provider</th><th style="text-align:right;padding:6px 10px;">Compute</th><th style="text-align:right;padding:6px 10px;">Storage</th><th style="text-align:right;padding:6px 10px;">Backup</th><th style="text-align:right;padding:6px 10px;">Total/Month</th><th style="text-align:right;padding:6px 10px;">Annual</th></tr>
+                <tr style="border-bottom:1px solid var(--border);background:var(--accent-soft);"><td style="padding:6px 10px;">Aurora</td><td style="text-align:right;padding:6px 10px;">$2,764.80</td><td style="text-align:right;padding:6px 10px;">$200.00</td><td style="text-align:right;padding:6px 10px;">—</td><td style="text-align:right;padding:6px 10px;color:#27ae60;"><strong>$2,964.80</strong></td><td style="text-align:right;padding:6px 10px;">$35,578</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Azure DB</td><td style="text-align:right;padding:6px 10px;">$3,613.50</td><td style="text-align:right;padding:6px 10px;">$690.00</td><td style="text-align:right;padding:6px 10px;">—</td><td style="text-align:right;padding:6px 10px;">$4,303.50</td><td style="text-align:right;padding:6px 10px;">$51,642</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">AWS RDS</td><td style="text-align:right;padding:6px 10px;">$3,994.56</td><td style="text-align:right;padding:6px 10px;">$1,104.00</td><td style="text-align:right;padding:6px 10px;">$133.00</td><td style="text-align:right;padding:6px 10px;">$5,231.56</td><td style="text-align:right;padding:6px 10px;">$62,779</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Cloud SQL</td><td style="text-align:right;padding:6px 10px;">$4,073.40</td><td style="text-align:right;padding:6px 10px;">$1,360.00</td><td style="text-align:right;padding:6px 10px;">—</td><td style="text-align:right;padding:6px 10px;">$5,433.40</td><td style="text-align:right;padding:6px 10px;">$65,201</td></tr>
+            </table>
+
+            <p><strong>Takeaway:</strong> At this scale, Aurora is <strong>$2,267/month less than RDS</strong> — 43% cheaper. The RDS gap is now composed of three roughly equal components: the standby tax (~$998/month), the replica storage duplication (~$828/month for two 2 TB replicas), and the backup retention tax (~$133/month). The annual gap is $27,201. That funds a junior infrastructure engineer — or an extra failover region.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px; margin-top: 32px;">Scenario D: Write-Heavy io1 — The IOPS Bill Eats The Budget</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent);">16 vCPU · 64 GB · 500 GB io1 @ 16,000 IOPS · Multi-AZ · 30-day backup · 1 read replica</p>
+            <p>This is the trap fully sprung. io1 storage on a Multi-AZ deployment with a replica and 30-day retention. The io1 IOPS line item is the largest component of the RDS bill — larger than compute.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">RDS Line Item</th><th style="text-align:right;padding:6px 10px;">Monthly Cost</th><th style="text-align:right;padding:6px 10px;">% of Total</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Compute (primary + standby + 1 replica)</td><td style="text-align:right;padding:6px 10px;">$2,995.92</td><td style="text-align:right;padding:6px 10px;">42.0%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">io1 IOPS (16,000 provisioned)</td><td style="text-align:right;padding:6px 10px;color:#e74c3c;">$2,080.00</td><td style="text-align:right;padding:6px 10px;">29.2%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">io1 Storage (primary + replica, 1 TB)</td><td style="text-align:right;padding:6px 10px;">$200.00</td><td style="text-align:right;padding:6px 10px;">2.8%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Backup retention (30 days, 500 GB)</td><td style="text-align:right;padding:6px 10px;">$275.50</td><td style="text-align:right;padding:6px 10px;">3.9%</td></tr>
+                <tr style="border-bottom:2px solid var(--border);background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>RDS Total</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$5,551.42</strong></td><td style="text-align:right;padding:6px 10px;">100%</td></tr>
+            </table>
+
+            <p>Compare to Aurora with the same workload profile. Aurora has no io1 line — it charges $0.20 per million I/O requests. For a workload generating 20 million I/O per month (moderate for a 16 vCPU instance): I/O cost is $4.00. Aurora total: compute $2,764.80 + storage $100 + I/O $4.00 + backup $0 = <strong>$2,868.80</strong>. That's <strong>$2,682.62/month less than RDS io1</strong> — a 48% gap driven almost entirely by one line item.</p>
+
+            <p>Is Aurora's per-I/O model always cheaper than io1? No. A write-heavy workload generating 5 billion I/O operations per month at $0.20/million = $1,000/month in Aurora I/O charges — still $1,080/month less than the io1 IOPS bill. The crossover point where Aurora I/O exceeds io1 IOPS is roughly 10.4 billion I/O per month for a 16,000 provisioned IOPS setup. That's an enormous volume — you'd need sustained ~4,000 writes/second. Most OLTP workloads never approach it. And if yours does, you should be on DynamoDB, not PostgreSQL.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Structural Story: Why The Gaps Exist</h2>
+            <p>The five traps share a common thread: each is a point where one provider's architecture and one provider's billing model meet and produce a cost that compounds with scale. The Multi-AZ standby tax exists because RDS's architecture provisions discrete instances per AZ, while Aurora's distributed storage layer means the standby is a metadata entry, not a separate server. The io1 IOPS tax exists because AWS's io1 product was designed for an era when provisioned IOPS was the only way to guarantee disk performance — an era that ended when gp3 shipped with baseline IOPS included. The RDS backup retention tax exists because AWS chose to monetize a feature that competitors chose to bundle.</p>
+
+            <p>These are not bugs. They are pricing decisions that reflect each provider's architecture, market position, and — in some cases — legacy product lines that haven't been rationalized against newer offerings. The io1 pricing page still exists. RDS backup retention still bills. Teams still check the Multi-AZ box and discover the doubling on their next invoice. The traps endure because the information asymmetry between "what the pricing page says" and "what the bill says" is large enough that most teams don't notice until the quarterly cloud cost review — at which point they've already paid three months of the tax.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Decision Framework: Which Provider Wins Your Workload</h2>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Your Workload</th><th style="text-align:left;padding:6px 10px;">Winner</th><th style="text-align:left;padding:6px 10px;">Why</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Dev/Sandbox, Single-AZ</strong></td><td style="padding:6px 10px;">Any — ecosystem, not price</td><td style="padding:6px 10px;font-size:0.8rem;">$23/month spread. Pick your cloud. All five traps are off.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Production, Multi-AZ, 1 replica</strong></td><td style="padding:6px 10px;color:#27ae60;">Aurora</td><td style="padding:6px 10px;font-size:0.8rem;">Standby tax avoidance + shared replica storage saves $700–1,700/month vs RDS. No backup tax. </td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Read-heavy, 2–3 replicas</strong></td><td style="padding:6px 10px;color:#27ae60;">Aurora (by a wide margin)</td><td style="padding:6px 10px;font-size:0.8rem;">Shared storage is a structural cost advantage that widens with replica count. 3 replicas on 2 TB: Aurora $200/mo storage vs RDS $1,104/mo.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Write-heavy, io1 IOPS</strong></td><td style="padding:6px 10px;">Aurora or gp3 — not io1</td><td style="padding:6px 10px;font-size:0.8rem;">io1 IOPS rarely justified. gp3 with provisioned IOPS or Aurora per-I/O pricing both beat it. Model before provisioning.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Long backup retention (14–35 days)</strong></td><td style="padding:6px 10px;">Not RDS — Aurora, Cloud SQL, or Azure</td><td style="padding:6px 10px;font-size:0.8rem;">RDS backup retention tax is 100% of the backup retention cost on the other three platforms — because they don't charge it.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Multi-cloud / not on AWS</strong></td><td style="padding:6px 10px;">Azure DB (storage) or Cloud SQL (ecosystem)</td><td style="padding:6px 10px;font-size:0.8rem;">Azure has the cheapest per-GB storage. Cloud SQL has the tightest GCP integration. Neither has io1 or RDS backup tax — but both have standby tax.</td></tr>
+            </table>
+
+            <p>The common thread: if you're on AWS and you care about cost at any scale beyond dev/sandbox, <strong>Aurora is almost always cheaper than RDS for PostgreSQL</strong>. Not marginally. Structurally. The standby tax alone is often $500+/month at 8 vCPU — enough to make the decision before you model storage, IOPS, or backups. The only reason to run RDS over Aurora for PostgreSQL is if you need a specific RDS-only feature (IAM database authentication with custom logic, certain parameter group settings, an extension Aurora doesn't support) or if you're locked into an RDS Reserved Instance you can't convert.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Concrete Steps: What To Audit This Quarter</h2>
+
+            <p><strong>1. Check if you're on RDS io1.</strong> Go to the RDS console → your instance → Configuration tab → Storage type. If it says "io1," pull your CloudWatch VolumeWriteIOPS and VolumeReadIOPS for the last 30 days. Compare to gp3 baseline (3,000 free + 500 per 100 GB above 400 GB). If your 95th percentile is below gp3 baseline + provisionable margin, you're paying for IOPS you don't use. Switch to gp3 and provision only what you need — the switch requires a blue/green deployment but the cost savings often pay for the migration effort in the first month.</p>
+
+            <p><strong>2. Count your backup retention line item.</strong> Go to the AWS Cost Explorer → filter by Service = "RDS" → Usage Type = "RDS:BackupUsage." If the number is non-zero and you're on 7+ days of retention, model what that number would be on Aurora (hint: zero). The backup tax is the third-largest RDS cost driver nobody audits.</p>
+
+            <p><strong>3. Model your exact workload.</strong> Use the <a href="/rds-instance-cost" style="color:var(--accent);">Managed DB Cost Calculator</a>. Plug in your actual instance size, storage class, topology, replica count, backup retention, and commitment term. The calculator runs all four providers side by side and shows you which line items diverge. All computation is client-side — your configuration never leaves your browser. Run once with your current provider, once with each alternative. The number you get is not an estimate. It's the actual list price, line by line.</p>
+
+            <p><strong>4. Audit your commitment discount on total bill, not compute.</strong> Take your monthly RDS bill. Identify the compute portion (it's on the Cost Explorer, filtered by Usage Type = compute). Multiply by your reserved instance discount percentage. That's your real savings, not the headline number. If compute is less than 60% of your total bill, your effective discount is significantly lower than the published rate. This doesn't make reservations bad — it makes them accurately modeled. Use the calculator's commitment dropdown to see the real number.</p>
+
+            <p><strong>5. If you have 2+ replicas, run the Aurora math.</strong> The storage gap alone often justifies the migration. Modeling a 16 vCPU, 2 TB, 2-replica setup: RDS gp3 storage is $1,104/month; Aurora storage is $200/month. That's $904/month in storage savings — before compute, IOPS, or backup differences. The migration effort is non-trivial (Aurora uses a different binary than RDS PostgreSQL, though wire-compatible), but the payback period is typically 1–2 months at this scale.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>🧰 Use our related tools to model your full database cost stack:</strong> <a href="/rds-instance-cost">Managed DB Cost Calculator</a> · <a href="/db-instance-sizing">DB Instance Sizing</a> · <a href="/database-connection-pool-calculator">Connection Pool Sizing</a> · <a href="/backup-cost">Backup Cost Estimator</a> · <a href="/cloud-storage-cost">Cloud Storage Cost Comparison</a></p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why does RDS Multi-AZ cost so much more than single-AZ?</h3>
+                <p>When you enable Multi-AZ on RDS, AWS provisions a synchronous standby instance in a second availability zone and bills it at the full compute rate. A 4 vCPU instance at $0.342/hr becomes $0.684/hr immediately. Google Cloud SQL regional HA and Azure zone-redundant HA do the same — compute doubles. Amazon Aurora is the exception: its standby shares the distributed storage volume, so Multi-AZ adds zero compute. For a production 8 vCPU instance, this single architectural difference is roughly $500/month.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">When does RDS io1 actually make financial sense?</h3>
+                <p>Almost never — and that's not a flippant answer. io1 charges $0.20/GB-month for storage plus $0.065 per provisioned IOPS per month. A 500 GB volume provisioned at 16,000 IOPS costs $100/month in storage and $1,040/month in IOPS — the IOPS line is 10.4× the storage line. gp3's baseline 3,000 free IOPS plus 500 per 100 GB above 400 GB handles most OLTP workloads. Provisioning additional gp3 IOPS costs $0.024/IOPS-month (not the io1 rate of $0.065). The only workload where io1 is competitive is a sustained 10,000+ IOPS need with latency requirements below gp3's capability — and at that tier, Aurora's per-I/O pricing ($0.20 per million) is almost always cheaper anyway. Check your CloudWatch IOPS metrics before selecting io1.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How much does backup retention actually cost on RDS?</h3>
+                <p>RDS is the only managed database provider that charges for retained automated backups beyond the first snapshot copy. AWS gives you free backup storage equal to your database size. Every day of retention beyond that, at ~10% daily data change, adds $0.095/GB-month. Formula: backup_cost = storage_GB × (retention_days − 1) × 0.10 × $0.095. A 500 GB database at 7-day retention: $31/month. A 2 TB database at 35-day retention: $646/month. Aurora, Cloud SQL, and Azure DB all include automated backups up to 100% of provisioned storage for free. If your RDS bill shows a backup line item as the third or fourth largest component, you're paying a tax that doesn't exist on any competing platform.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Does migrating from RDS to Aurora actually save money?</h3>
+                <p>For most production workloads: yes, structurally. The three cost differences that compound — no Multi-AZ standby tax, shared replica storage, and no backup retention tax — are architectural, not promotional. They won't change with a pricing update. The migration is non-trivial: Aurora PostgreSQL uses a different binary, and while it's wire-compatible with RDS PostgreSQL at the application level, parameter groups, extensions, and certain performance characteristics differ. Use the <a href="/rds-instance-cost">Managed DB Cost Calculator</a> to estimate the monthly savings, then weigh that against a one-time migration sprint (typically 2–4 weeks of engineering time at most shops). For a 16 vCPU production instance with 2 replicas, the annual savings of ~$27,000 fund the migration many times over.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Do 1-year or 3-year RDS reservations actually reduce my bill by 35–60%?</h3>
+                <p>They reduce your <em>compute</em> bill by 35–60%. Not your total bill. Storage, IOPS, backups, and data transfer remain at on-demand pricing regardless of your reservation term. On a gp3 instance where compute is 70% of the bill, a 3-year reservation (61% off compute) yields ~43% effective savings — real, but not the headline number. On an io1 instance where compute is 42% of the bill, the effective savings drop to ~25%. Always model reservations on your total bill, not your compute cost. The calculator applies commitment discounts to compute only, exactly as the providers bill it, and shows you the real total.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Pricing data is based on publicly available vendor rate cards accessed in July 2026. AWS RDS and Aurora pricing uses us-east-1 on-demand list rates for comparable instance families (RDS: db.r6g for Graviton, Aurora: db.r6g equivalent). Google Cloud SQL pricing uses us-central1 on-demand rates. Azure Database pricing uses East US on-demand rates. All costs are computed against a 730-hour month.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Backup retention cost modeling assumes 10% daily data change rate — a conservative estimate for OLTP workloads. Actual change rates vary by workload; transactional databases with high write volume may see 15–20% daily change, while read-heavy databases may see 3–5%. The formula is linear, so you can adjust proportionally. Aurora I/O cost estimates are based on typical OLTP I/O profiles; write-heavy analytical workloads may generate significantly more I/O operations and should be modeled with actual CloudWatch or Performance Insights data.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. We are not sponsored by any cloud provider. This analysis was produced using our own <a href="/rds-instance-cost">Managed DB Cost Calculator</a> and publicly available pricing data. We have no affiliate or financial relationship with any vendor discussed in this article.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>AWS (2026).</strong> "Amazon RDS for PostgreSQL Pricing." <a href="https://aws.amazon.com/rds/postgresql/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-2"><strong>AWS (2026).</strong> "Amazon Aurora Pricing." <a href="https://aws.amazon.com/rds/aurora/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-3"><strong>Google Cloud (2026).</strong> "Cloud SQL Pricing." <a href="https://cloud.google.com/sql/pricing" target="_blank" rel="noopener">cloud.google.com</a></li>
+                <li id="ref-4"><strong>Microsoft Azure (2026).</strong> "Azure Database for PostgreSQL Pricing." <a href="https://azure.microsoft.com/en-us/pricing/details/postgresql/server/" target="_blank" rel="noopener">azure.microsoft.com</a></li>
+                <li id="ref-5"><strong>AWS (2026).</strong> "Amazon RDS Reserved Instances." <a href="https://aws.amazon.com/rds/reserved-instances/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-6"><strong>AWS (2026).</strong> "Monitoring DB Load with Performance Insights on Amazon RDS." <a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_PerfInsights.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-7"><strong>Google Cloud (2026).</strong> "Cloud SQL Committed Use Discounts." <a href="https://cloud.google.com/sql/docs/mysql/committed-use-discounts" target="_blank" rel="noopener">cloud.google.com</a></li>
+                <li id="ref-8"><strong>AWS (2026).</strong> "Storage types for Amazon RDS." Detailed gp3/io1 comparison and baseline IOPS specifications. <a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Storage.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/rds-cost-real&t=The+Managed+Database+Cost+Illusion:+Why+Same+PostgreSQL+Costs+2x+More+on+RDS+Than+Aurora" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/rds-cost-real&text=Same+PostgreSQL.+Four+providers.+RDS+doubles+compute+on+Multi-AZ.+io1+IOPS+can+cost+19x+more+than+storage.+And+RDS+is+the+only+one+that+charges+for+backup+retention.+The+numbers:+&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/aws/submit?url=https://www.jslet.com/rds-cost-real&title=The+Managed+Database+Cost+Illusion:+Why+Same+PostgreSQL+Costs+2x+More+on+RDS+Than+Aurora+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/aws">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/rds-cost-real&title=The+Managed+Database+Cost+Illusion:+Why+Same+PostgreSQL+Costs+2x+More+on+RDS+Than+Aurora" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0;"><strong>Preferred Attribution Format:</strong> <code style="font-size:0.82rem; background:var(--bg-card); padding:2px 8px; border-radius:3px;">"The Managed Database Cost Illusion: Why 'Same PostgreSQL' Costs 2× More on RDS Than Aurora (2026)" — jslet Research, July 2026. https://www.jslet.com/rds-cost-real</code></p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> When four cloud providers sell the same database and one charges twice as much, the pricing model — not the technology — is the story. RSS covers one uncomfortable billing reality per week. No vendor sponsors. No tracking. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>IOPS to Throughput Estimator — jslet</title>
+    <meta name="description" content="IOPS × block size = throughput. 10K IOPS at 4KB = 40 MB/s. 10K IOPS at 256KB = 2,560 MB/s. Same IOPS, 64× throughput gap. Model before provisioning cloud volumes.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "IOPS to Throughput Estimator",
+      "description": "IOPS × block size = throughput. 10K IOPS at 4KB = 40 MB/s. 10K IOPS at 256KB = 2,560 MB/s. Same IOPS, 64× throughput gap. Model before provisioning cloud volumes.",
+      "url": "https://www.jslet.com/iops-to-throughput",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <link rel="canonical" href="https://www.jslet.com/iops-to-throughput">
+    <meta property="og:title" content="IOPS to Throughput Estimator — jslet">
+    <meta property="og:description" content="IOPS × block size = throughput. 10K IOPS at 4KB = 40 MB/s. 10K IOPS at 256KB = 2,560 MB/s. Same IOPS, 64× throughput gap. Model before provisioning cloud volumes.">
+    <meta property="og:url" content="https://www.jslet.com/iops-to-throughput">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="IOPS to Throughput Estimator — jslet">
+    <meta name="twitter:description" content="IOPS × block size = throughput. 10K IOPS at 4KB = 40 MB/s. 10K IOPS at 256KB = 2,560 MB/s. Same IOPS, 64× throughput gap. Model before provisioning cloud volumes.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why does the same IOPS give wildly different throughput?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Throughput = IOPS × block size. 10,000 IOPS at 4 KB blocks is 40 MB/s, but the same 10,000 IOPS at 256 KB blocks is 2,560 MB/s — a 64× gap from block size alone. This calculator converts in both directions so you can match your workload's I/O pattern to the right cloud volume class."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I convert a throughput target into required IOPS?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Divide the throughput by your average block size: a 500 MB/s target at 16 KB blocks needs roughly 30,000 IOPS. The bidirectional converter does this instantly, and the cloud volume reference table shows the IOPS/throughput ceilings of common AWS volume types so you can pick the class that clears your numbers."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does block size matter for cloud volume pricing?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Provisioned IOPS is billed per IOPS, and throughput limits are billed separately — picking a volume whose IOPS ceiling matches your block-size-adjusted needs avoids paying for capacity you cannot use. The calculator connects your workload profile to the volume reference so the choice is grounded in the numbers."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>IOPS <span>→ Throughput Estimator</span></h1>
+            <p>IOPS × block size = throughput. 10,000 IOPS at 4 KB blocks = 40 MB/s. 10,000 IOPS at 256 KB blocks = 2,560 MB/s. Same IOPS count. Two orders of magnitude difference in throughput. The block size you benchmark at is not the block size your application uses.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <div class="calculator-card">
+                <h3>Bidirectional IOPS / Throughput Converter</h3>
+                <p class="card-desc">Bidirectional IOPS to throughput converter. Start at 4 KB baseline, then see what happens at 8 KB and 64 KB. The difference is not linear — and your EBS volume's block size may not match your benchmark.</p>
+                <div class="input-group">
+                    <label for="iops-input">Provisioned IOPS</label>
+                    <input type="number" class="input-val unit-input" id="iops-input" value="10000" step="any">
+                </div>
+                <div class="input-group">
+                    <label for="throughput-input">Estimated Throughput (MB/s)</label>
+                    <input type="number" class="input-val unit-input" id="throughput-input" value="40" step="any">
+                </div>
+                <button class="btn-calc">Run Conversion</button>
+                <div class="result-display result-box" style="display: none;">
+                    <h4>THROUGHPUT RESULT</h4>
+                    <ul>
+                        <li>Baseline Throughput: <span class="res-output res-main" id="res-throughput">--</span></li>
+                        <li>At 8 KB Block Size: <span class="res-output" id="res-8k">--</span></li>
+                        <li>At 64 KB Block Size: <span class="res-output" id="res-64k">--</span></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="calculator-card">
+                <h3>Cloud Volume IOPS Reference</h3>
+                <p class="card-desc">Typical provisioned IOPS and throughput for common cloud block storage tiers.</p>
+                <div class="table-scroll">
+<table>
+                    <thead>
+                        <tr>
+                            <th>Volume Tier</th>
+                            <th>Max IOPS</th>
+                            <th>Throughput (MB/s)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>AWS EBS gp3 (Baseline)</td><td>3,000</td><td>125</td></tr>
+                        <tr><td>AWS EBS gp3 (16K IOPS)</td><td>16,000</td><td>1,000</td></tr>
+                        <tr><td>AWS EBS io2 (Max)</td><td>256,000</td><td>4,000</td></tr>
+                        <tr><td>Azure Ultra Disk</td><td>160,000</td><td>4,000</td></tr>
+                        <tr><td>NVMe Gen4 (Single Drive)</td><td>~1,000,000</td><td>~7,000</td></tr>
+                        <tr><td>NVMe Gen5 (Single Drive)</td><td>~1,500,000</td><td>~14,000</td></tr>
+                    </tbody>
+                </table>
+</div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>IOPS vs. Throughput: The Block Size Coupling</h2>
+            <p>IOPS and throughput are coupled by I/O size: Throughput = IOPS × Block Size. At the common 4 KB filesystem block boundary, 10,000 IOPS ≈ 40 MB/s. At 64 KB — typical for sequential read workloads like video streaming or log ingestion — the same 10,000 IOPS delivers 640 MB/s. This is why database workloads (small random I/O) are IOPS-bound while media serving (large sequential I/O) is throughput-bound.</p>
+            <p>When provisioning cloud volumes, the IOPS-to-throughput ratio is critical. AWS gp3 volumes decouple the two (you can scale IOPS and throughput independently), while older gp2 volumes are tied at a fixed 3:1 IOPS-to-MB/s ratio. Under-provisioning throughput for a high-IOPS, large-block workload creates a silent bottleneck that manifests as P99 latency spikes under load. Use this estimator to validate your tier selection before deployment.</p>
+        </section>
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/mbps-to-mbytes-per-sec">Mbps to MB/s &rarr;</a>
+                <a href="/raid-calculator">RAID Calculator &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/latency-budget-calculator">Latency Budget Calculator &rarr;</a>
+            </div>
+        </div>
+
+
+                <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        var IOPS_TO_KBPS = 4; // Baseline 4 KB block size
+
+        function formatThroughput(kbps) {
+            var kbpsNum = Number(kbps);
+            if (kbpsNum >= 1e6) return (kbpsNum / 1e6).toFixed(2) + ' GB/s';
+            if (kbpsNum >= 1000) return (kbpsNum / 1000).toFixed(2) + ' MB/s';
+            return kbpsNum.toFixed(2) + ' KB/s';
+        }
+
+        function convertIops() {
+            var iopsInput = document.getElementById('iops-input');
+            var throughputInput = document.getElementById('throughput-input');
+            var resultBox = document.querySelector('.result-box');
+            var resThroughput = document.getElementById('res-throughput');
+            var res8k = document.getElementById('res-8k');
+            var res64k = document.getElementById('res-64k');
+
+            var iopsVal, kbpsVal;
+
+            if (document.activeElement === iopsInput) {
+                iopsVal = parseFloat(iopsInput.value);
+                if (isNaN(iopsVal) || iopsVal < 0) { alert("Invalid IOPS value."); return; }
+                kbpsVal = iopsVal * IOPS_TO_KBPS;
+                throughputInput.value = (kbpsVal / 1000).toFixed(4);
+            } else {
+                var mbpsVal = parseFloat(throughputInput.value);
+                if (isNaN(mbpsVal) || mbpsVal < 0) { alert("Invalid MB/s value."); return; }
+                kbpsVal = mbpsVal * 1000;
+                iopsVal = kbpsVal / IOPS_TO_KBPS;
+                iopsInput.value = Math.round(iopsVal);
+            }
+
+            resThroughput.innerText = formatThroughput(kbpsVal) + ' (at 4 KB I/O)';
+            res8k.innerText = formatThroughput(kbpsVal * 2) + ' (at 8 KB I/O)';
+            res64k.innerText = formatThroughput(kbpsVal * 16) + ' (at 64 KB I/O)';
+            resultBox.style.display = 'block';
+        }
+        document.querySelector('.btn-calc').addEventListener('click', convertIops);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

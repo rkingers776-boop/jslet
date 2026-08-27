@@ -1,0 +1,307 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>JWT Decoder —Decode JSON Web Token Header, Payload &amp; Signature Online —jslet</title>
+    <meta name="description" content="Free online JWT decoder. Decode the header, payload, and signature of any JSON Web Token. Auto-detects expiry and flags expired tokens. Shows human-readable timestamps. No secret key needed to decode. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/jwt-decoder">
+    <meta property="og:title" content="JWT Decoder —Decode JSON Web Token Online">
+    <meta property="og:description" content="Decode JWT header, payload, and signature. Auto-detects expiry. 100% client-side —your token never leaves your browser.">
+    <meta property="og:url" content="https://www.jslet.com/jwt-decoder">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="JWT Decoder —Decode JSON Web Token Online">
+    <meta name="twitter:description" content="Decode JWT header, payload, signature. Auto-detects expiry. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "JWT Decoder",
+      "description": "Decode the header, payload, and signature of JSON Web Tokens (JWT). Auto-detects expiry and shows human-readable timestamps. 100% client-side.",
+      "url": "https://www.jslet.com/jwt-decoder",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I decode a JWT token without a secret key?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "You can decode the header and payload of any JWT (JSON Web Token) without needing the secret key or public key. JWTs consist of three Base64Url-encoded parts separated by dots: header.payload.signature. The header and payload are simply Base64Url-encoded JSON — they are not encrypted, only encoded. Any Base64Url decoder can reveal their contents. This is by design: JWTs are meant to be readable by the client so it can inspect claims like the token's expiration time (exp), issuer (iss), and subject (sub). Only the signature part requires the secret key — it verifies that the token hasn't been tampered with, but it doesn't hide the payload. jslet's JWT Decoder automatically splits the token at the dots, decodes each part from Base64Url, pretty-prints the JSON, converts epoch timestamps (iat, exp, nbf) to human-readable dates, and flags expired tokens with a red badge. Paste any JWT from your browser's localStorage or an API Authorization header to inspect its claims instantly."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What are the three parts of a JWT — header, payload, and signature?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A JWT is structured as three Base64Url-encoded segments separated by periods: header.payload.signature. The header contains metadata about the token — which signing algorithm was used (e.g., HS256 for HMAC-SHA256 or RS256 for RSA-SHA256) and the token type (JWT). The payload contains the claims — key-value pairs that describe the authenticated entity. Standard registered claims include iss (issuer — who created the token), sub (subject — who the token is about), aud (audience — who the token is intended for), exp (expiration time as a Unix timestamp), iat (issued-at time), and nbf (not-before time). Custom private claims can carry any application-specific data like user roles, permissions, or tenant IDs. The signature is a cryptographic hash of the encoded header + \".\" + encoded payload, computed using the algorithm specified in the header and the server's secret key. It proves the token was issued by a trusted authority and hasn't been modified in transit. If anyone changes a single character in the payload, the signature won't match and the server rejects the token."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I check if my JWT token has expired?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Your JWT's expiration is stored in the payload as the 'exp' claim — a Unix timestamp (seconds since January 1, 1970 UTC) indicating when the token becomes invalid. To check if a JWT is expired: decode the payload to find the exp value, convert it to a human-readable date, and compare it against the current UTC time. If exp < now, the token is expired. jslet's JWT Decoder does this automatically — it decodes the exp claim, displays it as a human-readable UTC timestamp, and places a green 'Valid' badge if the token hasn't expired or a red 'Expired' badge if it has. Common related claims to check: 'nbf' (not-before) — the token is not valid before this timestamp, and 'iat' (issued-at) — when the token was created. Always check exp on the client side before making an API call to avoid sending an already-expired token — it saves a round-trip and a 401 error. Note: the server must still verify expiration server-side; client-side JWT decoding is for convenience, not security decisions."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .token-input { width: 100%; min-height: 90px; font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 0.82rem; padding: 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); resize: vertical; line-height: 1.6; box-sizing: border-box; }
+        .token-input:focus { border-color: var(--accent); outline: none; }
+        .decode-result { margin-top: 20px; }
+        .jwt-part { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 20px; margin-bottom: 14px; }
+        .jwt-part h3 { margin: 0 0 10px 0; font-size: 1rem; display: flex; align-items: center; gap: 10px; }
+        .jwt-part pre { margin: 0; font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 0.82rem; white-space: pre-wrap; word-break: break-all; line-height: 1.6; max-height: 300px; overflow-y: auto; padding: 12px; background: rgba(0,0,0,0.03); border-radius: 4px; }
+        .badge { font-size: 0.75rem; padding: 3px 10px; border-radius: 12px; font-weight: 700; }
+        .badge-ok { background: #d4edda; color: #155724; }
+        .badge-warn { background: #fff3cd; color: #856404; }
+        .badge-err { background: #f8d7da; color: #721c24; }
+        .color-header { color: #fb015b; }
+        .color-payload { color: #d63aff; }
+        .color-sig { color: #00b9f1; }
+        .btn-row { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+        .toolbar-hint { font-size: 0.78rem; color: var(--text-muted); margin-top: 8px; }
+        .claims-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.85rem; }
+        .claims-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+        .claims-table td:first-child { font-weight: 700; color: var(--accent); width: 160px; white-space: nowrap; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+<div class="container">
+    <header>
+        <h1>JWT <span>Decoder</span></h1>
+        <p>Decode the header, payload, and signature of any JSON Web Token. Auto-detects expiry. <strong>No secret key needed to decode.</strong></p>
+    </header>
+
+    <div class="btn-row">
+        <button class="btn btn-primary" onclick="decodeJWT()">🟢🔓 Decode JWT</button>
+        <button class="btn btn-outline" onclick="copyJWTClaims()">🟢📋 Copy Claims</button>
+        <button class="btn btn-outline" onclick="clearJWT()">🗑 Clear</button>
+    </div>
+
+    <textarea class="token-input" id="jwt-input" aria-label="JWT token to decode" placeholder="Paste your JWT token here...&#10;e.g. eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"></textarea>
+    <div class="toolbar-hint">⚠ ☁️ Your token stays in your browser. It is never sent to a server. Decoding does NOT verify the signature —it only decodes the public parts of the token.</div>
+
+    <div class="decode-result" id="decode-result"></div>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🟢📖 About JWT Tokens</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p><strong>JWT (JSON Web Token)</strong> tokens consist of three Base64URL-encoded parts separated by dots: <code>header.payload.signature</code>.</p>
+            <ol>
+                <li><strong>Header</strong> —typically contains <code>{"alg":"HS256","typ":"JWT"}</code> specifying the signing algorithm and token type.</li>
+                <li><strong>Payload (Claims)</strong> —contains the actual data (sub, name, iat, exp, etc.). Standard claims include: <code>iss</code> (issuer), <code>sub</code> (subject), <code>aud</code> (audience), <code>exp</code> (expiration), <code>iat</code> (issued at).</li>
+                <li><strong>Signature</strong> —HMAC or RSA signature that verifies the token hasn't been tampered with. You can decode the first two parts without the secret key; the signature can only be verified with the key.</li>
+            </ol>
+            <p><strong>Security note:</strong> Never paste production JWT tokens into online tools if they contain sensitive data. This decoder runs entirely in your browser —your token is never transmitted.</p>
+        </div>
+    </section>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<script src="nav.js"></script>
+<script>
+(function() {
+    var inp = document.getElementById('jwt-input');
+    var result = document.getElementById('decode-result');
+
+    function base64URLDecode(str) {
+        str = str.replace(/-/g, '+').replace(/_/g, '/');
+        while (str.length % 4) str += '=';
+        var bin = atob(str);
+        var bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new TextDecoder().decode(bytes);
+    }
+
+    function formatJSON(obj) {
+        return JSON.stringify(obj, null, 2);
+    }
+
+    function renderClaimsTable(payload) {
+        var rows = '';
+        var known = { iss:'Issuer', sub:'Subject', aud:'Audience', exp:'Expires At', iat:'Issued At', nbf:'Not Before', jti:'JWT ID', name:'Name', email:'Email' };
+        for (var key in payload) {
+            if (!payload.hasOwnProperty(key)) continue;
+            var val = payload[key];
+            var label = known[key] || '';
+            if (key === 'exp' || key === 'iat' || key === 'nbf') {
+                if (typeof val === 'number') {
+                    var d = new Date(val * 1000);
+                    val = d.toISOString().replace('T',' ').substring(0,19) + ' UTC (' + val + ')';
+                }
+            }
+            if (typeof val === 'object') val = JSON.stringify(val);
+            rows += '<tr><th scope="row">' + (label || key) + '</th><td>' + val + '</td></tr>';
+        }
+        return '<table class="claims-table">' + rows + '</table>';
+    }
+
+    window.decodeJWT = function() {
+        var token = inp.value.trim();
+        result.innerHTML = '';
+        if (!token) { result.innerHTML = '<p style="color:var(--text-muted)">Paste a JWT token to decode.</p>'; return; }
+
+        var parts = token.split('.');
+        if (parts.length !== 3) {
+            result.innerHTML = '<p style="color:#e74c3c;">⚠ ☁️ Not a valid JWT format. Expected 3 dot-separated parts (header.payload.signature). Got ' + parts.length + ' parts.</p>';
+            return;
+        }
+
+        try {
+            var header = JSON.parse(base64URLDecode(parts[0]));
+            var payload = JSON.parse(base64URLDecode(parts[1]));
+
+            // Check expiry
+            var expBadge = '';
+            if (payload.exp) {
+                var expMs = payload.exp * 1000;
+                var now = Date.now();
+                if (now > expMs) {
+                    expBadge = '<span class="badge badge-err">❌?EXPIRED</span> ';
+                } else {
+                    var remaining = Math.floor((expMs - now) / 1000);
+                    var remainingStr = remaining > 86400 ? Math.floor(remaining/86400)+' days' : remaining > 3600 ? Math.floor(remaining/3600)+' hours' : Math.floor(remaining/60)+' min';
+                    expBadge = '<span class="badge badge-ok">✕?Valid for ' + remainingStr + '</span> ';
+                }
+            }
+
+            var html = '';
+            html += '<div class="jwt-part"><h3><span class="color-header">◀?Header</span> <span class="badge badge-ok">Algorithm: ' + (header.alg || 'unknown') + '</span></h3><pre>' + formatJSON(header) + '</pre></div>';
+            html += '<div class="jwt-part"><h3><span class="color-payload">◀?Payload (Claims)</span> ' + expBadge + '</h3>' + renderClaimsTable(payload) + '<pre style="margin-top:10px;">' + formatJSON(payload) + '</pre></div>';
+            html += '<div class="jwt-part"><h3><span class="color-sig">◀?Signature</span> <span class="badge badge-warn">Cannot verify without secret key</span></h3><pre style="font-size:0.7rem;">' + parts[2].substring(0, 64) + '...</pre><p style="font-size:0.82rem;color:var(--text-muted);margin-top:8px;">The signature is ' + (header.alg || 'unknown') + '-signed. Verification requires the secret key or public key.</p></div>';
+            result.innerHTML = html;
+        } catch(e) {
+            result.innerHTML = '<p style="color:#e74c3c;">⚠ ☁️ Decode error: ' + e.message + '</p>';
+        }
+    };
+
+    window.copyJWTClaims = function() {
+        var token = inp.value.trim();
+        if (!token) return;
+        var parts = token.split('.');
+        if (parts.length < 2) return;
+        try {
+            var payload = base64URLDecode(parts[1]);
+            navigator.clipboard.writeText(payload);
+        } catch(e) {}
+    };
+
+    window.clearJWT = function() { inp.value = ''; result.innerHTML = ''; };
+
+    // Sample JWT
+    if (inp && !inp.value) {
+        inp.value = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjE4MDEwMDAwMDB9.qHqXq9jV_Dc6K4mC-xk6H8R8_QLoFnKjO1bxHHX2XnE';
+        window.decodeJWT();
+    }
+})();
+</script>
+</body>
+</html>
+

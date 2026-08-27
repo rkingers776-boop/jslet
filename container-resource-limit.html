@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Container Resource Limit Calculator — Java / Node.js / Go Memory &amp; CPU Estimator — jslet</title>
+    <meta name="description" content="Kubernetes requests ≠ limits. Set requests too high → nodes idle. Set limits too low → OOM killer at 2 AM. Model the resource envelope — requests, limits, overhead, headroom.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Container Resource Limit Calculator — Java / Node.js / Go">
+    <meta property="og:description" content="Estimate Kubernetes container resource limits for JVM, V8, and Go runtimes. Memory breakdown, CPU sizing, and OOM risk analysis.">
+    <meta property="og:url" content="https://www.jslet.com/container-resource-limit">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Container Resource Limit Calculator — Java / Node.js / Go">
+    <meta name="twitter:description" content="Estimate Kubernetes container resource limits for JVM, V8, and Go runtimes. Memory breakdown, CPU sizing, and OOM risk analysis.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/container-resource-limit">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .rec-card {
+            border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px;
+            margin-bottom: 12px; background: var(--bg-input); transition: border-color 0.2s;
+        }
+        .rec-card:hover { border-color: var(--accent); }
+        .rec-card h4 { color: var(--accent); margin-bottom: 6px; font-size: 0.9rem; }
+        .rec-card .spec { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.82rem; color: var(--text-heading); }
+        .rec-card .price { font-weight: 700; color: var(--success); font-size: 0.85rem; }
+        .rec-card .provider-tag {
+            display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 3px; margin-right: 6px;
+        }
+        .tag-java { background: #f8982022; color: #f89820; }
+        .tag-node { background: #33993322; color: #339933; }
+        .tag-go { background: #00ADD822; color: #00ADD8; }
+        .tag-k8s { background: #326ce522; color: #326ce5; }
+        .mem-bar { height: 10px; border-radius: 5px; background: var(--border); margin-top: 6px; overflow: hidden; display: flex; }
+        .mem-bar-seg { height: 100%; transition: width 0.4s; }
+        .mem-bar-seg.heap { background: var(--accent); }
+        .mem-bar-seg.overhead { background: var(--gold); }
+        .mem-bar-seg.os { background: #9b59b6; }
+        .mem-bar-seg.headroom { background: #27ae6022; }
+        .mem-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+        .mem-key.heap { background: var(--accent); }
+        .mem-key.overhead { background: var(--gold); }
+        .mem-key.os { background: #9b59b6; }
+        .yaml-block {
+            background: #1a1a2e; color: #e0e0e0; font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 0.78rem; padding: 16px 20px; border-radius: var(--radius-sm);
+            overflow-x: auto; white-space: pre; line-height: 1.6;
+            border: 1px solid var(--border); margin-top: 10px;
+        }
+        .yaml-block .key { color: #82aaff; }
+        .yaml-block .val { color: #c3e88d; }
+        .yaml-block .comment { color: #546e7a; }
+        .risk-badge {
+            display: inline-block; padding: 3px 10px; border-radius: 3px; font-size: 0.72rem;
+            font-weight: 700; text-transform: uppercase;
+        }
+        .risk-low { background: var(--success); color: #fff; }
+        .risk-moderate { background: var(--gold); color: #000; }
+        .risk-high { background: var(--error); color: #fff; }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Container Resource Limit Calculator",
+      "description": "Estimate Kubernetes container resource limits for Java (JVM), Node.js (V8), and Go applications. Input QPS, concurrency, and runtime config to get recommended memory/CPU requests and limits.",
+      "url": "https://www.jslet.com/container-resource-limit",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      "name": "How to Set Kubernetes Container Resource Limits for Java, Node.js, and Go",
+      "description": "Estimate CPU and memory requests and limits for containerized applications based on QPS, concurrency, heap configuration, and runtime characteristics.",
+      "step": [
+        {
+          "@type": "HowToStep",
+          "position": 1,
+          "name": "Select your runtime",
+          "text": "Choose Java/JVM, Node.js (V8), or Go. Each runtime has fundamentally different memory behavior: JVM pre-allocates heap but uses additional native memory, Node.js has a 1.4 GB default heap limit regardless of container size, and Go's garbage collector scales with GOMAXPROCS which defaults to the container's CPU limit."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 2,
+          "name": "Enter workload parameters",
+          "text": "Input your target QPS, average request latency, and expected concurrency. The calculator models thread pool sizing (JVM), event loop capacity (Node.js), and goroutine overhead (Go) to estimate the actual memory and CPU your workload demands."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 3,
+          "name": "Review recommended requests and limits",
+          "text": "The calculator outputs recommended memory request, memory limit, CPU request, and CPU limit. Memory limit should be set 20-30% above the expected steady-state usage to avoid OOMKilled during traffic spikes. CPU limit below 1.0 core causes throttling that silently inflates p99 latency."
+        }
+      ]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why does my Node.js container OOM even though the heap is under the limit?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Node.js heap is only part of the story. V8's default max-old-space-size is 1.4 GB on 64-bit, but the process also consumes memory for native addons, Buffer objects (which live outside the V8 heap), and the C++ layer. A Node.js container with a 512 MB Kubernetes limit and a 1.4 GB heap default will OOM long before the heap is full because the heap limit exceeds the container limit. Always set --max-old-space-size to ~75% of the container memory limit."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much CPU should I request vs limit for a Java container?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Request at least 1.0 core per JVM to avoid CPU throttling during GC — GC is single-threaded in most collectors and throttling a GC pause extends it from milliseconds to seconds. The CPU limit can be 2-4x the request for burst capacity, but watch for CFS throttling. For latency-sensitive services, set request = limit to disable throttling entirely at the cost of lower bin-packing efficiency."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What memory limit should I set for a Go container?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Go's GC triggers when heap reaches GOGC% of live heap (default 100%). Under steady load with 200 MB live heap, the GC triggers at 400 MB total. Set the container memory limit to 2-3x the expected steady-state live heap to give GC room to operate. Setting GOMEMLIMIT (Go 1.19+) to 80% of the container limit prevents the GC from seeing the OS cgroup limit as 'infinite memory' and deferring collection until OOM."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">›</span> <a href="/decision-matrix">Decision Matrix</a> <span class="breadcrumb-sep">›</span> Container Resource Limit Calculator</nav>
+        <header>
+            <h1>Container <span>Resource Limit</span> Calculator</h1>
+            <p>Kubernetes requests ≠ limits. Set requests too high → nodes idle at 30% allocatable. Set limits too low → OOM killer at 2 AM on a Saturday deploy. Model the full resource envelope — requests, limits, runtime overhead, OS headroom — before the kubelet makes the decision for you.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Workload Profile</h3>
+                <p class="card-desc">Profile your app: QPS, concurrency, runtime (JVM/V8/Go). The engine computes heap, GC overhead, thread stacks, OS headroom, and CPU sizing. Get limits that survive a production spike.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="runtime">Language Runtime</label>
+                        <select class="unit-input" id="runtime">
+                            <option value="java" selected>Java (JVM — Spring Boot / Quarkus / Vert.x)</option>
+                            <option value="nodejs">Node.js (V8 — Express / Fastify / NestJS)</option>
+                            <option value="go">Go (Goroutines — net/http / Gin / Fiber)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="app-type">Application Type</label>
+                        <select class="unit-input" id="app-type">
+                            <option value="api-server" selected>REST / gRPC API Server</option>
+                            <option value="worker">Async Worker / Message Consumer</option>
+                            <option value="streaming">Streaming / WebSocket Proxy</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="peak-qps">Peak Requests Per Second (QPS)</label>
+                        <input type="number" class="unit-input" id="peak-qps" value="1000" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="avg-response-ms">Average Response Time (ms)</label>
+                        <input type="number" class="unit-input" id="avg-response-ms" value="50" step="any" min="1">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="concurrent-requests">Concurrent In-Flight Requests</label>
+                        <input type="number" class="unit-input" id="concurrent-requests" value="200" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="payload-kb">Avg. Request Payload Size (KB)</label>
+                        <input type="number" class="unit-input" id="payload-kb" value="4" step="any" min="0.1">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="thread-count">Thread Pool / Event Loop Size</label>
+                        <input type="number" class="unit-input" id="thread-count" value="200" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">Java: thread pool · Node: cluster workers · Go: GOMAXPROCS</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="heap-tuning">Heap / Working Set Tuning</label>
+                        <select class="unit-input" id="heap-tuning">
+                            <option value="default" selected>Default (no tuning flags)</option>
+                            <option value="optimized">Optimized (GC tuning, compact headers)</option>
+                            <option value="constrained">Memory-Constrained (aggressive GC, swap risk)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="conn-pool-size">Connection Pool Size (DB / Redis)</label>
+                        <input type="number" class="unit-input" id="conn-pool-size" value="20" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="sla-buffer">SLA Target (P99.9 Buffer)</label>
+                        <select class="unit-input" id="sla-buffer">
+                            <option value="1.5" selected>1.5× Headroom (Production standard)</option>
+                            <option value="1.2">1.2× Headroom (Budget-constrained)</option>
+                            <option value="2.0">2.0× Headroom (High-availability / Finance)</option>
+                            <option value="3.0">3.0× Headroom (Safety-critical / Medical)</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Resource Estimation Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Recommended Resource Limits</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div id="recommendations"></div>
+                <div style="margin-top:16px;" id="memory-breakdown"></div>
+                <div style="margin-top:16px;" id="oom-analysis"></div>
+            </div>
+        </main>
+
+        <!-- REFERENCE SECTION -->
+        <section class="seo-section">
+            <h2>Container Memory Sizing: Why Guesswork Causes Out-of-Memory Kills</h2>
+            <p>In Kubernetes-orchestrated production environments, container OOM (Out of Memory) kills remain one of the most frequent causes of application outages. The root cause is rarely a memory leak — it is almost always a <strong>resource limit misconfiguration</strong> where the declared <code>resources.limits.memory</code> does not account for the runtime's internal memory overhead beyond application heap.</p>
+
+            <h3>How This Calculator Works</h3>
+            <p>This tool applies runtime-specific memory models derived from production profiling and vendor documentation. Each runtime has fundamentally different memory dynamics:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Runtime</th><th>Heap / Working Set</th><th>Overhead Components</th><th>Key Pitfall</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Java (JVM)</strong></td><td>-Xmx heap + metaspace + code cache + thread stacks (~1 MB per thread default) + direct byte buffers + JIT compilation cache + GC bookkeeping</td><td>JVM internal overhead typically 20–35% beyond -Xmx. Native memory (NMT) is not tracked by heap dumps.</td><td>Setting container limit = -Xmx causes OOM because GC, threads, and native memory live outside the heap. The JVM can consume 1.3–1.5× the max heap size under load.</td></tr>
+                    <tr><td><strong>Node.js (V8)</strong></td><td>V8 heap (young + old generation) + external buffers (Buffer/C++ addons) + HTTP agent socket buffers + per-request closure allocations</td><td>V8 heap limit is ~1.4 GB by default on 64-bit. External memory (Buffers, ArrayBuffers) lives outside the V8 heap and can exceed it dramatically under streaming workloads.</td><td>Node's event loop can hold thousands of in-flight request objects simultaneously. A 100 KB payload × 1,000 concurrent requests = 100 MB just in request buffers — outside the V8 heap.</td></tr>
+                    <tr><td><strong>Go</strong></td><td>Go heap (managed by the GC with per-goroutine stacks starting at 2 KB and growing dynamically) + fixed-overhead runtime structures</td><td>Goroutine stacks (min 2 KB each, can grow to 1 GB), GC metadata (~5–10% of heap), and off-heap arena allocations (CGO, mmap).</td><td>Goroutine leaks are the #1 Go memory killer. 100,000 leaked goroutines at 2 KB minimum each = 200 MB, but the GC cannot reclaim them because they are still referenced.</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>CPU Sizing Methodology</h3>
+            <p>CPU limits in Kubernetes are measured in <strong>CPU shares</strong> (1 CPU = 1 vCPU / hyperthread). Unlike memory, exceeding a CPU limit does not kill the container — it throttles the process. The estimation engine uses Little's Law (<code>Concurrent Requests = QPS × Avg Response Time</code>) to derive the minimum compute headroom, then applies a runtime-specific efficiency coefficient:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Runtime</th><th>CPU Efficiency Factor</th><th>Reason</th></tr></thead>
+                <tbody>
+                    <tr><td>Java (JVM)</td><td>0.70–0.85</td><td>JIT warmup overhead and GC pause CPU consumption (especially G1 and ZGC). Thread context switching overhead on high thread counts.</td></tr>
+                    <tr><td>Node.js (V8)</td><td>0.55–0.70</td><td>Single-threaded event loop limits vertical scaling. CPU-bound work blocks the event loop. Cluster mode or worker_threads needed for multi-core utilization.</td></tr>
+                    <tr><td>Go</td><td>0.85–0.95</td><td>Goroutines are multiplexed onto OS threads efficiently via the Go scheduler. Low context-switch overhead. GC is concurrent and typically < 1 ms pause.</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>Why "Just Set 2 GB and Watch" Doesn't Work</h3>
+            <p>Container orchestrators like Kubernetes enforce hard memory limits via cgroups. When a container exceeds its memory limit, the kernel OOM killer terminates the process — and the container restarts from scratch. Without runtime-aware sizing, teams end up in a costly cycle: set a limit → observe OOM kills under peak load → increase the limit → repeat. Meanwhile, over-provisioning wastes cluster capacity and drives up cloud costs. A typical 50-node Kubernetes cluster running at 35% allocatable capacity because of oversized requests is hemorrhaging infrastructure budget.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit-real">📰 The OOMKill Reaper (Full Briefing) →</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/latency-budget-calculator">Latency Budget Calculator &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/log-storage-cost">Log Storage & Retention &rarr;</a>
+            </div>
+        </div>
+
+        <div class="social-share-bar"><span>Share:</span><a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/container-resource-limit&t=Container+Resource+Limit+Calculator+—+Java,+Node.js,+Go+Memory+&amp;+CPU+Estimator" class="share-btn hn" target="_blank" rel="noopener noreferrer">HN</a><a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/container-resource-limit&text=Your+K8s+requests+and+limits+are+probably+wrong.+Java+heap,+Node.js+V8,+Go+GC+—+each+runtime+has+different+memory+behavior.+Model+before+the+kubelet+OOMKills+at+2AM.&via=jslet" class="share-btn twitter" target="_blank" rel="noopener noreferrer">X</a><a href="https://www.reddit.com/r/kubernetes/submit?url=https://www.jslet.com/container-resource-limit&title=Container+Resource+Limit+Calculator+for+Java,+Node.js,+Go" class="share-btn reddit" target="_blank" rel="noopener noreferrer">Reddit</a><a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/container-resource-limit&title=Container+Resource+Limit+Calculator" class="share-btn linkedin" target="_blank" rel="noopener noreferrer">LinkedIn</a></div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Runtime-specific memory model coefficients ──
+    var RUNTIME_MODELS = {
+        'java': {
+            name: 'Java (JVM)',
+            // Heap: base + (threads × stackMB) + (concurrent × payloadKB / 1024) working data
+            heapBaseMB: 128,           // Base heap for framework (Spring Boot ~128MB, Quarkus ~64MB)
+            stackPerThreadMB: 1,       // Default -Xss is 1 MB per thread
+            memPerConnMB: 0.15,        // Per-DB-connection buffer overhead (HikariCP default)
+            overheadRatio: 0.30,       // JVM overhead: metaspace + code cache + GC + native (25-35%)
+            osHeadroomMB: 150,         // OS + agent overhead (cgroup, monitoring, ssh)
+            cpuEfficiency: 0.75,       // JIT + GC overhead reduces effective CPU
+            cpuPer1kQpsSimple: 1.0,    // ~1 vCPU per 1000 simple QPS
+            cpuPer1kQpsComplex: 1.8,   // ~1.8 vCPU per 1000 complex QPS
+            oomRiskDescription: function(heapPct) {
+                if (heapPct > 90) return { level:'high', text:'CRITICAL: Container limit nearly equals -Xmx. GC, metaspace, and thread stacks will cause OOM kill under peak load. Increase limit to at least 1.3× heap.' };
+                if (heapPct > 75) return { level:'moderate', text:'Elevated OOM risk. JVM overhead (metaspace, code cache, native memory) may push total RSS beyond the limit during full GC cycles.' };
+                return { level:'low', text:'Healthy headroom. Container limit accounts for JVM overhead, thread stacks, and native memory beyond the managed heap.' };
+            }
+        },
+        'nodejs': {
+            name: 'Node.js (V8)',
+            heapBaseMB: 64,            // Base V8 heap for framework (Express ~32MB, NestJS ~64MB)
+            stackPerThreadMB: 0.5,     // Worker thread stack (smaller than JVM)
+            memPerConnMB: 0.05,        // Per-connection buffer (Node uses async I/O, low per-conn overhead)
+            overheadRatio: 0.20,       // V8 overhead: external buffers, C++ addons, GC bookkeeping (15-25%)
+            osHeadroomMB: 100,         // OS + agent overhead
+            cpuEfficiency: 0.60,       // Single-threaded event loop limits scaling
+            cpuPer1kQpsSimple: 0.6,    // ~0.6 vCPU per 1000 simple QPS (event loop is efficient)
+            cpuPer1kQpsComplex: 1.2,   // ~1.2 vCPU per 1000 complex QPS
+            oomRiskDescription: function(heapPct) {
+                if (heapPct > 90) return { level:'high', text:'CRITICAL: V8 heap + external buffers likely exceed limit. Streaming/WebSocket workloads allocate large Buffers outside the V8 heap — they are invisible to heap snapshots.' };
+                if (heapPct > 75) return { level:'moderate', text:'Moderate OOM risk. Monitor process.memoryUsage().external — external memory (Buffers, ArrayBuffers) is not tracked by V8 heap profiling.' };
+                return { level:'low', text:'Healthy headroom. Limit accommodates V8 heap, external buffers, and worker thread overhead.' };
+            }
+        },
+        'go': {
+            name: 'Go',
+            heapBaseMB: 16,            // Base runtime + stdlib (Go binaries are lean)
+            stackPerThreadMB: 0.002,   // Goroutine starts at 2 KB, grows as needed
+            memPerConnMB: 0.02,        // Per-connection goroutine overhead (net.Conn buffers)
+            overheadRatio: 0.25,       // GC metadata + runtime structures (20-30%)
+            osHeadroomMB: 80,          // OS + agent overhead
+            cpuEfficiency: 0.90,       // Go scheduler is highly efficient
+            cpuPer1kQpsSimple: 0.5,    // ~0.5 vCPU per 1000 simple QPS
+            cpuPer1kQpsComplex: 1.0,   // ~1.0 vCPU per 1000 complex QPS
+            oomRiskDescription: function(heapPct) {
+                if (heapPct > 90) return { level:'high', text:'CRITICAL: Goroutine leak likely. Each leaked goroutine starts at 2 KB and can grow to 1 GB. Check runtime.NumGoroutine() — if it grows monotonically, you have a leak.' };
+                if (heapPct > 75) return { level:'moderate', text:'Moderate OOM risk. Consider GOMEMLIMIT (Go 1.19+) to soft-limit the heap before the hard cgroup limit triggers the OOM killer.' };
+                return { level:'low', text:'Healthy headroom. Go GC is concurrent and the runtime can gracefully approach the limit. Consider setting GOMEMLIMIT for an extra safety net.' };
+            }
+        }
+    };
+
+    function computeResourceLimits() {
+        var runtime = document.getElementById('runtime').value;
+        var appType = document.getElementById('app-type').value;
+        var peakQps = parseFloat(document.getElementById('peak-qps').value) || 0;
+        var avgResponseMs = parseFloat(document.getElementById('avg-response-ms').value) || 0;
+        var concurrent = parseFloat(document.getElementById('concurrent-requests').value) || 0;
+        var payloadKb = parseFloat(document.getElementById('payload-kb').value) || 0;
+        var threadCount = parseFloat(document.getElementById('thread-count').value) || 0;
+        var heapTuning = document.getElementById('heap-tuning').value;
+        var connPoolSize = parseFloat(document.getElementById('conn-pool-size').value) || 0;
+        var slaBuffer = parseFloat(document.getElementById('sla-buffer').value);
+
+        var model = RUNTIME_MODELS[runtime];
+
+        // ── Memory Calculation ──
+        // 1. Heap / working set
+        var requestWorkingSetMB = concurrent * payloadKb / 1024; // MB of in-flight request data
+        var threadStackMB = threadCount * model.stackPerThreadMB;
+        var connOverheadMB = connPoolSize * model.memPerConnMB;
+        var heapMB = model.heapBaseMB + requestWorkingSetMB + threadStackMB + connOverheadMB;
+
+        // Tuning modifier
+        if (heapTuning === 'optimized') {
+            heapMB *= 0.75;
+        } else if (heapTuning === 'constrained') {
+            heapMB *= 1.15; // More overhead due to aggressive GC trading space for time
+        }
+
+        // App type modifier
+        if (appType === 'streaming') {
+            heapMB *= 1.4; // WebSocket/streaming holds long-lived buffers
+        } else if (appType === 'worker') {
+            heapMB *= 0.9; // Workers typically have bounded processing buffers
+        }
+
+        // 2. Runtime overhead
+        var overheadMB = heapMB * model.overheadRatio;
+
+        // 3. Total before buffer
+        var rawTotalMB = heapMB + overheadMB + model.osHeadroomMB;
+
+        // 4. Apply SLA buffer
+        var recommendedLimitMB = Math.ceil(rawTotalMB * slaBuffer);
+        var recommendedRequestMB = Math.ceil(heapMB * 1.1); // Request = heap + 10%
+
+        // ── CPU Calculation ──
+        // Little's Law: minimum CPU to sustain concurrency
+        var minCpuByConcurrency = concurrent / (avgResponseMs / 1000) / 1000; // requests/sec per vCPU
+        var complexityFactor = (appType === 'streaming') ? 1.5 : (appType === 'worker' ? 0.8 : 1.0);
+        var cpuByQps = (peakQps / 1000) * model.cpuPer1kQpsSimple * complexityFactor;
+        var rawCpu = Math.max(cpuByQps, minCpuByConcurrency * 0.3);
+        rawCpu = rawCpu / model.cpuEfficiency; // Adjust for runtime efficiency
+
+        // Floor at 0.25 vCPU for minimal workloads
+        rawCpu = Math.max(rawCpu, 0.25);
+
+        var recommendedCpuLimit = Math.ceil(rawCpu * slaBuffer * 10) / 10; // Round to 1 decimal
+        var recommendedCpuRequest = Math.max(0.1, Math.floor(rawCpu * 0.5 * 10) / 10); // 50% of limit for request
+
+        // ── OOM Risk Analysis ──
+        var heapPctOfLimit = (heapMB / recommendedLimitMB) * 100;
+        var oomRisk = model.oomRiskDescription(heapPctOfLimit);
+
+        // ── Memory Breakdown ──
+        var heapPct = Math.round(heapMB / recommendedLimitMB * 100);
+        var overheadPct = Math.round(overheadMB / recommendedLimitMB * 100);
+        var osPct = Math.round(model.osHeadroomMB / recommendedLimitMB * 100);
+        var headroomPct = Math.max(0, 100 - heapPct - overheadPct - osPct);
+
+        // ── K8s resource unit helpers ──
+        // Kubernetes uses Mi/Gi (not MiB/GiB) for memory resources
+        var limitStr = recommendedLimitMB >= 1024 ? (recommendedLimitMB / 1024).toFixed(2) + 'Gi' : recommendedLimitMB + 'Mi';
+        var requestStr = recommendedRequestMB >= 1024 ? (recommendedRequestMB / 1024).toFixed(2) + 'Gi' : recommendedRequestMB + 'Mi';
+
+        // Human-readable version (MiB/GiB) for display outside the YAML block
+        var limitDisplayStr = recommendedLimitMB >= 1024 ? (recommendedLimitMB / 1024).toFixed(2) + ' GiB' : recommendedLimitMB + ' MiB';
+        var requestDisplayStr = recommendedRequestMB >= 1024 ? (recommendedRequestMB / 1024).toFixed(2) + ' GiB' : recommendedRequestMB + ' MiB';
+
+        // ── Render Results ──
+        document.getElementById('results-params').innerText =
+            model.name + ' · ' + peakQps + ' QPS · ' + avgResponseMs + 'ms avg · ' + concurrent + ' concurrent · ' + payloadKb + ' KB payload · ' + appType.replace('-','/') + ' · ' + heapTuning + ' tuning';
+
+        var recsDiv = document.getElementById('recommendations');
+
+        recsDiv.innerHTML =
+            '<div class="metric-grid">' +
+                '<div class="metric-tile"><div class="metric-val">' + limitDisplayStr + '</div><div class="metric-label">Memory Limit</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + requestDisplayStr + '</div><div class="metric-label">Memory Request</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + recommendedCpuLimit.toFixed(1) + '</div><div class="metric-label">CPU Limit (cores)</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + recommendedCpuRequest.toFixed(1) + '</div><div class="metric-label">CPU Request (cores)</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + Math.round(heapMB) + ' MB</div><div class="metric-label">Est. Heap / Working Set</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + Math.round(rawCpu * model.cpuEfficiency * 1000) + '</div><div class="metric-label">Est. QPS Capacity</div></div>' +
+            '</div>' +
+
+            '<h4 style="margin-top:18px;margin-bottom:10px;">📋 Kubernetes Resource YAML</h4>' +
+            '<div class="yaml-block">' +
+            '<span class="comment"># Generated by jslet Container Resource Limit Calculator</span>\n' +
+            '<span class="comment"># Runtime: ' + model.name + ' | ' + peakQps + ' QPS | ' + appType + '</span>\n' +
+            '<span class="key">resources</span>:\n' +
+            '  <span class="key">requests</span>:\n' +
+            '    <span class="key">memory</span>: <span class="val">"' + requestStr + '"</span>\n' +
+            '    <span class="key">cpu</span>: <span class="val">"' + recommendedCpuRequest.toFixed(1) + '"</span>\n' +
+            '  <span class="key">limits</span>:\n' +
+            '    <span class="key">memory</span>: <span class="val">"' + limitStr + '"</span>\n' +
+            '    <span class="key">cpu</span>: <span class="val">"' + recommendedCpuLimit.toFixed(1) + '"</span>' +
+            (runtime === 'java' ? '\n<span class="comment"># JVM: Set -Xmx' + Math.floor(heapMB * 0.8) + 'm -Xms' + Math.floor(heapMB * 0.5) + 'm to leave headroom for metaspace + GC</span>' : '') +
+            (runtime === 'nodejs' ? '\n<span class="comment"># Node: Set NODE_OPTIONS="--max-old-space-size=' + Math.floor(heapMB * 0.75) + '"</span>' : '') +
+            (runtime === 'go' ? '\n<span class="comment"># Go: Set GOMEMLIMIT=' + Math.floor(recommendedLimitMB * 0.9) + 'MiB (Go 1.19+) for soft memory limit</span>' : '') +
+            '</div>';
+
+        // Memory breakdown
+        document.getElementById('memory-breakdown').innerHTML =
+            '<h4 style="margin-bottom:8px;">🧠 Memory Breakdown</h4>' +
+            '<div style="display:flex;gap:12px;font-size:0.75rem;margin-bottom:4px;flex-wrap:wrap;">' +
+                '<span><span class="mem-key heap"></span> Heap/Working Set: ' + Math.round(heapMB) + ' MB (' + heapPct + '%)</span>' +
+                '<span><span class="mem-key overhead"></span> Runtime Overhead: ' + Math.round(overheadMB) + ' MB (' + overheadPct + '%)</span>' +
+                '<span><span class="mem-key os"></span> OS/Agent: ' + Math.round(model.osHeadroomMB) + ' MB (' + osPct + '%)</span>' +
+                (headroomPct > 0 ? '<span>SLA Buffer: ' + headroomPct + '%</span>' : '') +
+            '</div>' +
+            '<div class="mem-bar">' +
+                '<div class="mem-bar-seg heap" style="width:' + heapPct + '%;" title="Heap/Working Set"></div>' +
+                '<div class="mem-bar-seg overhead" style="width:' + overheadPct + '%;" title="Runtime Overhead"></div>' +
+                '<div class="mem-bar-seg os" style="width:' + osPct + '%;" title="OS/Agent Overhead"></div>' +
+                (headroomPct > 0 ? '<div class="mem-bar-seg headroom" style="width:' + headroomPct + '%;" title="SLA Headroom"></div>' : '') +
+            '</div>' +
+            '<p style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">Total container limit: ' + limitDisplayStr + ' · Memory request (scheduling guarantee): ' + requestDisplayStr + '</p>';
+
+        // OOM Risk Analysis
+        document.getElementById('oom-analysis').innerHTML =
+            '<h4 style="margin-bottom:8px;">⚠️ OOM Risk Assessment</h4>' +
+            '<div class="rec-card" style="border-color:' + (oomRisk.level === 'high' ? 'var(--error)' : oomRisk.level === 'moderate' ? 'var(--gold)' : 'var(--success)') + ';">' +
+                '<h4><span class="risk-badge risk-' + oomRisk.level + '">' + oomRisk.level.toUpperCase() + '</span> Heap/Limit Ratio: ' + heapPct.toFixed(0) + '%</h4>' +
+                '<p class="spec">' + oomRisk.text + '</p>' +
+                '<p style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">' +
+                    'Heap/Working Set: ' + Math.round(heapMB) + ' MB · Runtime Overhead: ' + Math.round(overheadMB) + ' MB · OS Headroom: ' + Math.round(model.osHeadroomMB) + ' MB · SLA Buffer: ' + slaBuffer + '×' +
+                '</p>' +
+            '</div>';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { computeResourceLimits(); });
+    document.querySelector('.btn-calc').addEventListener('click', computeResourceLimits);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

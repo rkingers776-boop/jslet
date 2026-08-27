@@ -1,0 +1,508 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Cron Expression Tester —Test &amp; Explain Cron Schedules —jslet</title>
+    <meta name="description" content="Free online cron expression tester. Enter a 5-field cron expression and see a human-readable description, next 10 execution times, and estimated monthly executions. Standard format: minute hour day-of-month month day-of-week. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/cron-expression-tester">
+    <meta property="og:title" content="Cron Expression Tester —Test &amp; Explain Cron Schedules">
+    <meta property="og:description" content="Enter a cron expression and see a human-readable description, next 10 execution times, and estimated executions per month. Standard 5-field format. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/cron-expression-tester">
+    <meta property="og:type" content="website"><meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Cron Expression Tester —Test &amp; Explain Cron Schedules">
+    <meta name="twitter:description" content="Test cron expressions. Human-readable descriptions, next 10 run times, monthly estimates. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Cron Expression Tester","description":"Enter a standard 5-field cron expression (minute hour day-of-month month day-of-week) and get a human-readable description, next 10 execution times, and estimated monthly executions. 100% client-side.","url":"https://www.jslet.com/cron-expression-tester","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I test and understand a cron expression like 0 9 * * 1-5?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Paste it into jslet's Cron Expression Tester. The tool parses the standard 5-field format (minute hour day-of-month month day-of-week) and gives you: (1) a plain-English description — 'At 09:00 AM, Monday through Friday' for 0 9 * * 1-5, (2) the next 10 execution times in your local timezone so you can verify the schedule is correct before deploying, and (3) an estimated monthly execution count — 0 9 * * 1-5 runs ~22 times/month (weekdays). Each field accepts standard cron syntax: * for every value, comma-separated lists (1,3,5), ranges (1-5), step values (*/15 for every 15 minutes), and specific values. If any field is invalid, the tester highlights it in red and explains what's wrong — common errors include using 0 for Sunday in the day-of-week field (0=Sunday in standard cron) or using ranges that exceed the field's maximum value. The tool also links to the cron execution frequency calculator for more detailed scheduling math."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does my cron job run at unexpected times — what are the most common cron scheduling mistakes?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Four cron scheduling mistakes cause the most production surprises. (1) Day-of-month vs day-of-week interaction: when both fields are specified (not *), the job runs when EITHER condition matches — 0 0 1 * 1 runs at midnight on the 1st of every month AND every Monday. To restrict to 'first of the month only if it's Monday', you need wrapper logic in the script, not cron alone. (2) Timezone assumptions: cron runs in the server's system timezone, which may not be UTC. A job scheduled as 0 2 * * * fires at 2 AM server time — if your server is in EST but your team thinks in UTC, that's a 5-hour offset. Always document the timezone explicitly. (3) DST transitions: on 'spring forward' days, a job at 2:30 AM in a DST-observing timezone simply doesn't run — 2:30 AM doesn't exist. On 'fall back,' a job at 1:30 AM runs twice. (4) Overlapping long-running jobs: if a job scheduled every 5 minutes (*/5 * * * *) takes 8 minutes to complete, you'll have multiple instances running simultaneously. Use a lock file or a scheduler that prevents overlap. The cron tester shows you the execution pattern but can't detect runtime duration — always add overlap guards for frequent jobs."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What's the difference between crontab format on Linux, cron expressions in Kubernetes CronJobs, and AWS CloudWatch Events?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Standard Linux crontab uses 5 fields: minute (0-59), hour (0-23), day-of-month (1-31), month (1-12), day-of-week (0-7, where both 0 and 7 = Sunday). Kubernetes CronJobs also use 5 fields in the same order — the syntax is identical to Linux cron. AWS CloudWatch Events (EventBridge) uses 6 fields: minute, hour, day-of-month, month, day-of-week, year — the extra year field is often left as *. AWS also supports rate expressions (rate(5 minutes)) as an alternative. GitHub Actions scheduled workflows use POSIX cron syntax (5 fields) but with a caveat: the shortest interval is 5 minutes, and jobs may be delayed during high load. jslet's cron tester uses the standard 5-field format — if your platform uses 6 or 7 fields (some Quartz schedulers add a seconds field as the first position), strip the seconds field and test the remaining 5 fields. The tool validates each field's range and syntax independently, so you'll see exactly which field has an issue if the expression fails."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .cron-input-wrap { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px; }
+        .field-group { display: flex; flex-direction: column; }
+        .field-group label { font-weight: 700; font-size: 0.82rem; margin-bottom: 4px; color: var(--text-body); }
+        .field-group input { padding: 10px 12px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); font-size: 0.9rem; font-family: 'Cascadia Code','Consolas',monospace; width: 140px; }
+        .field-group input:focus { border-color: var(--accent); outline: none; }
+        .field-group input.invalid { border-color: #e74c3c; background: #fef0f0; }
+        .field-hint { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+        .desc-card { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 20px; margin-bottom: 20px; }
+        .desc-card .desc-text { font-size: 1.1rem; color: var(--text-body); line-height: 1.6; }
+        .desc-card .desc-text .field-name { font-weight: 700; color: var(--accent); }
+        .table-wrap { overflow-x: auto; }
+        .exec-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 0.88rem; }
+        .exec-table th { text-align: left; padding: 10px 14px; background: var(--bg-input); border-bottom: 2px solid var(--border); font-weight: 700; color: var(--text-body); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .exec-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-family: 'Cascadia Code','Consolas',monospace; color: var(--text-body); }
+        .exec-table tr:hover td { background: var(--accent-soft); }
+        .stats-row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 20px; }
+        .stat-card { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 20px; flex: 1; min-width: 180px; }
+        .stat-card .stat-num { font-size: 1.5rem; font-weight: 700; color: var(--accent); font-family: 'Cascadia Code','Consolas',monospace; }
+        .stat-card .stat-label { font-size: 0.8rem; color: var(--text-muted); }
+        .quick-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+        .quick-btn { padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); font-size: 0.82rem; cursor: pointer; font-family: 'Cascadia Code','Consolas',monospace; white-space: nowrap; }
+        .quick-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .btn-row { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>Cron Expression <span>Tester</span></h1><p>Enter a standard 5-field cron expression (<code>minute hour day-of-month month day-of-week</code>) and see a human-readable description, the next 10 execution times, and an estimate of executions per month. All parsing and scheduling runs in your browser.</p></header>
+
+        <div class="quick-btns">
+            <span style="font-size:0.82rem;color:var(--text-muted);line-height:34px;">Quick presets:</span>
+            <button class="quick-btn" onclick="setPreset('*/5 * * * *')">*/5 * * * *</button>
+            <button class="quick-btn" onclick="setPreset('0 * * * *')">0 * * * *</button>
+            <button class="quick-btn" onclick="setPreset('0 0 * * *')">0 0 * * *</button>
+            <button class="quick-btn" onclick="setPreset('0 0 * * 0')">0 0 * * 0</button>
+            <button class="quick-btn" onclick="setPreset('30 9 * * 1-5')">30 9 * * 1-5</button>
+            <button class="quick-btn" onclick="setPreset('0 0 1 * *')">0 0 1 * *</button>
+            <button class="quick-btn" onclick="setPreset('*/15 8-18 * * 1-5')">*/15 8-18 * * 1-5</button>
+        </div>
+
+        <div class="cron-input-wrap">
+            <div class="field-group">
+                <label for="cron-min">Minute <span class="field-hint">(0-59)</span></label>
+                <input type="text" id="cron-min" value="*/15" oninput="onCronInput()" placeholder="*" maxlength="20">
+            </div>
+            <div class="field-group">
+                <label for="cron-hour">Hour <span class="field-hint">(0-23)</span></label>
+                <input type="text" id="cron-hour" value="*" oninput="onCronInput()" placeholder="*" maxlength="20">
+            </div>
+            <div class="field-group">
+                <label for="cron-dom">Day of Month <span class="field-hint">(1-31)</span></label>
+                <input type="text" id="cron-dom" value="*" oninput="onCronInput()" placeholder="*" maxlength="20">
+            </div>
+            <div class="field-group">
+                <label for="cron-month">Month <span class="field-hint">(1-12)</span></label>
+                <input type="text" id="cron-month" value="*" oninput="onCronInput()" placeholder="*" maxlength="20">
+            </div>
+            <div class="field-group">
+                <label for="cron-dow">Day of Week <span class="field-hint">(0-6)</span></label>
+                <input type="text" id="cron-dow" value="*" oninput="onCronInput()" placeholder="*" maxlength="20">
+            </div>
+            <button class="btn btn-primary" onclick="evaluateCron()" style="height:44px;">🟢🔄 Evaluate</button>
+        </div>
+
+        <div id="error-area" style="color:#e74c3c;margin-bottom:12px;font-size:0.88rem;"></div>
+        <div id="desc-area"></div>
+        <div id="next-runs-area"></div>
+        <div id="stats-area"></div>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">🟢📖 Cron Expression Syntax</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p>A cron expression is a string of 5 fields separated by spaces. This tool uses the <strong>standard Vixie cron format</strong> (used by cronie, vixie-cron, and most Linux distributions).</p>
+                <table class="claims-table"><tr><td><code>*</code></td><td>Matches every value. <code>* * * * *</code> = every minute.</td></tr><tr><td><code>5</code></td><td>Matches exactly 5. <code>0 5 * * *</code> = 5:00 AM daily.</td></tr><tr><td><code>,</code></td><td>List separator. <code>0,30 * * * *</code> = at 0 and 30 minutes past each hour.</td></tr><tr><td><code>-</code></td><td>Range. <code>9-17 * * * 1-5</code> = hours 9 through 17, Monday through Friday.</td></tr><tr><td><code>/</code></td><td>Step. <code>*/15 * * * *</code> = every 15 minutes. Equivalent to <code>0,15,30,45</code>.</td></tr></table>
+                <p><strong>Day-of-week numbering:</strong> 0=Sunday, 1=Monday, ..., 6=Saturday. Some cron implementations use 7 for Sunday. This tool accepts both.</p>
+                <p><strong>Day-of-month vs. day-of-week:</strong> When both are specified (not <code>*</code>), the cron job runs when <em>either</em> condition is met. For example, <code>0 0 1 * 1</code> runs at midnight on the 1st of the month <strong>and</strong> every Monday.</p>
+                <p><strong>Common pitfalls:</strong> 1) Using <code>0</code> for month (months start at 1, not 0). 2) Forgetting that <code>*/N</code> starts from the minimum value, not from current time —<code>*/15</code> in minutes means 0, 15, 30, 45. 3) Assuming 7-field cron (with seconds and year) —this tool uses the standard 5-field format.</p>
+                <p>See also: <a href="/cron-execution-frequency-per-month">Cron Execution Frequency Per Month</a> · <a href="/unix-timestamp-converter">Unix Timestamp Converter</a></p>
+            </div>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var inputs = [
+            document.getElementById('cron-min'),
+            document.getElementById('cron-hour'),
+            document.getElementById('cron-dom'),
+            document.getElementById('cron-month'),
+            document.getElementById('cron-dow')
+        ];
+        var errorArea = document.getElementById('error-area');
+        var descArea = document.getElementById('desc-area');
+        var nextRunsArea = document.getElementById('next-runs-area');
+        var statsArea = document.getElementById('stats-area');
+
+        var FIELD_NAMES = ['minute', 'hour', 'day of month', 'month', 'day of week'];
+        var FIELD_RANGE = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]];
+        var DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        var MONTH_NAMES = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        function parseField(field, minVal, maxVal) {
+            // Returns an array of valid values the field matches
+            if (field === '*' || field === '?') {
+                var all = [];
+                for (var i = minVal; i <= maxVal; i++) all.push(i);
+                return all;
+            }
+
+            var result = [];
+            var parts = field.split(',');
+
+            for (var p = 0; p < parts.length; p++) {
+                var part = parts[p].trim();
+                if (!part) continue;
+
+                var step = null;
+                var stepIdx = part.indexOf('/');
+                if (stepIdx > -1) {
+                    step = parseInt(part.substring(stepIdx + 1), 10);
+                    part = part.substring(0, stepIdx);
+                }
+
+                var rangeMin, rangeMax;
+                var rangeIdx = part.indexOf('-');
+                if (rangeIdx > -1) {
+                    rangeMin = parseInt(part.substring(0, rangeIdx), 10);
+                    rangeMax = parseInt(part.substring(rangeIdx + 1), 10);
+                } else if (part === '*' || part === '') {
+                    rangeMin = minVal;
+                    rangeMax = maxVal;
+                } else {
+                    rangeMin = parseInt(part, 10);
+                    rangeMax = parseInt(part, 10);
+                }
+
+                if (isNaN(rangeMin) || isNaN(rangeMax)) return null;
+
+                if (step) {
+                    for (var v = rangeMin; v <= rangeMax; v += step) {
+                        result.push(v);
+                    }
+                } else {
+                    for (var w = rangeMin; w <= rangeMax; w++) {
+                        result.push(w);
+                    }
+                }
+            }
+
+            // Deduplicate and filter to valid range
+            var seen = {};
+            var filtered = [];
+            for (var q = 0; q < result.length; q++) {
+                var val = result[q];
+                if (val >= minVal && val <= maxVal && !seen[val]) {
+                    seen[val] = true;
+                    filtered.push(val);
+                }
+            }
+            // Sort
+            filtered.sort(function(a, b) { return a - b; });
+            return filtered;
+        }
+
+        function describeField(field, idx) {
+            var values = parseField(field, FIELD_RANGE[idx][0], FIELD_RANGE[idx][1]);
+            if (!values) return '<span style="color:#e74c3c;">(invalid)</span>';
+
+            if (values.length === FIELD_RANGE[idx][1] - FIELD_RANGE[idx][0] + 1) {
+                return 'every ' + FIELD_NAMES[idx];
+            }
+
+            if (idx === 4 && values.length === 1 && values[0] === 7) {
+                // Handle Sunday-as-7
+                values = [0];
+            }
+
+            if (values.length === 1) {
+                if (idx === 4) return 'on ' + DAY_NAMES[values[0]];
+                if (idx === 3) return 'in ' + MONTH_NAMES[values[0]];
+                return 'at ' + values[0];
+            }
+
+            if (values.length <= 6) {
+                var labels = [];
+                for (var i = 0; i < values.length; i++) {
+                    if (idx === 4) labels.push(DAY_NAMES[values[i]]);
+                    else if (idx === 3) labels.push(MONTH_NAMES[values[i]]);
+                    else labels.push(String(values[i]));
+                }
+                return 'at ' + labels.join(', ');
+            }
+
+            return 'at ' + values.length + ' values';
+        }
+
+        function buildDescription() {
+            var parts = [];
+            for (var i = 0; i < 5; i++) {
+                parts.push(inputs[i].value.trim() || '*');
+            }
+            var desc = [];
+            desc.push('<span class="field-name">At</span> ' + describeField(parts[0], 0));
+            desc.push('<span class="field-name">past</span> hour ' + describeField(parts[1], 1));
+            if (parts[2] !== '*' || parts[3] !== '*' || parts[4] !== '*') {
+                if (parts[2] !== '*') desc.push('<span class="field-name">on day-of-month</span> ' + describeField(parts[2], 2));
+                if (parts[3] !== '*') desc.push('<span class="field-name">in</span> ' + describeField(parts[3], 3));
+                if (parts[4] !== '*') desc.push('<span class="field-name">on</span> ' + describeField(parts[4], 4));
+            }
+            return desc.join(' ');
+        }
+
+        function matchesSchedule(date, parsed) {
+            var min = date.getMinutes();
+            var hour = date.getHours();
+            var dom = date.getDate();
+            var month = date.getMonth() + 1;
+            var dow = date.getDay();
+
+            // Day-of-week: cron uses 0=Sun, JS getDay() returns 0=Sun —same!
+            var minOk = parsed[0].indexOf(min) !== -1;
+            var hourOk = parsed[1].indexOf(hour) !== -1;
+            var monthOk = parsed[3].indexOf(month) !== -1;
+
+            // Day-of-month vs day-of-week logic
+            var domSpecified = inputs[2].value.trim() !== '*';
+            var dowSpecified = inputs[4].value.trim() !== '*';
+
+            var domOk = parsed[2].indexOf(dom) !== -1;
+            var dowOk = parsed[4].indexOf(dow) !== -1;
+
+            var dayOk;
+            if (domSpecified && dowSpecified) {
+                // Either dom or dow match (OR logic)
+                dayOk = domOk || dowOk;
+            } else if (domSpecified) {
+                dayOk = domOk;
+            } else if (dowSpecified) {
+                dayOk = dowOk;
+            } else {
+                dayOk = true;
+            }
+
+            return minOk && hourOk && dayOk && monthOk;
+        }
+
+        function getNextRuns(parsed, count) {
+            var runs = [];
+            var date = new Date();
+            date.setSeconds(0, 0);
+            date.setMinutes(date.getMinutes() + 1); // Start from next minute
+
+            var maxIter = 525600; // 1 year of minutes —safety cap
+            var iter = 0;
+            while (runs.length < count && iter < maxIter) {
+                if (matchesSchedule(date, parsed)) {
+                    runs.push(new Date(date.getTime()));
+                }
+                date.setMinutes(date.getMinutes() + 1);
+                iter++;
+            }
+            return runs;
+        }
+
+        function estimateMonthly(parsed) {
+            // Simulate one day at a time for a representative month (30 days)
+            var total = 0;
+            var baseDate = new Date(2026, 6, 1, 0, 0, 0, 0); // July 2026 (31 days)
+            var endDate = new Date(2026, 7, 1, 0, 0, 0, 0);
+
+            var date = new Date(baseDate.getTime());
+            while (date < endDate) {
+                if (matchesSchedule(date, parsed)) {
+                    total++;
+                }
+                date.setMinutes(date.getMinutes() + 1);
+            }
+
+            // Scale to a 30-day month for standardization
+            return Math.round(total * (30 / 31));
+        }
+
+        window.evaluateCron = function() {
+            errorArea.innerHTML = '';
+
+            // Validate all fields
+            var parsed = [];
+            var hasError = false;
+            for (var i = 0; i < 5; i++) {
+                var field = inputs[i].value.trim() || '*';
+                var vals = parseField(field, FIELD_RANGE[i][0], FIELD_RANGE[i][1]);
+                if (!vals || vals.length === 0) {
+                    inputs[i].classList.add('invalid');
+                    if (!hasError) {
+                        errorArea.innerHTML = '⚠ ☁️ Invalid value in <strong>' + FIELD_NAMES[i] + '</strong> field. Check range: ' + FIELD_RANGE[i][0] + '-' + FIELD_RANGE[i][1] + '.';
+                        hasError = true;
+                    }
+                } else {
+                    inputs[i].classList.remove('invalid');
+                }
+                parsed.push(vals || []);
+            }
+
+            if (hasError) {
+                descArea.innerHTML = '';
+                nextRunsArea.innerHTML = '';
+                statsArea.innerHTML = '';
+                return;
+            }
+
+            // Show description
+            var desc = buildDescription();
+            descArea.innerHTML = '<div class="desc-card"><div style="font-size:0.78rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">🟢📖 Human-Readable Description</div><div class="desc-text">' + desc + '</div></div>';
+
+            // Show next 10 runs
+            var runs = getNextRuns(parsed, 10);
+            var runsHtml = '<h3 style="font-size:0.95rem;margin-bottom:8px;">⏱?Next 10 Execution Times</h3>';
+            runsHtml += '<div class="table-wrap"><table class="exec-table"><thead><tr><th>#</th><th>Date &amp; Time (Local)</th><th>Day</th><th>UTC</th><th>Unix Timestamp</th></tr></thead><tbody>';
+            for (var r = 0; r < runs.length; r++) {
+                var run = runs[r];
+                runsHtml += '<tr>';
+                runsHtml += '<td>' + (r + 1) + '</td>';
+                runsHtml += '<td>' + run.toLocaleString() + '</td>';
+                runsHtml += '<td>' + DAY_NAMES[run.getDay()] + '</td>';
+                runsHtml += '<td>' + run.toISOString().replace('T', ' ').substring(0, 19) + '</td>';
+                runsHtml += '<td>' + Math.floor(run.getTime() / 1000).toLocaleString() + '</td>';
+                runsHtml += '</tr>';
+            }
+            runsHtml += '</tbody></table></div>';
+            nextRunsArea.innerHTML = runsHtml;
+
+            // Estimate monthly executions
+            var monthly = estimateMonthly(parsed);
+            var daily = Math.round(monthly / 30);
+            var yearly = monthly * 12;
+            var statsHtml = '<div class="stats-row">';
+            statsHtml += '<div class="stat-card"><div class="stat-num">' + daily.toLocaleString() + '</div><div class="stat-label">Approx. per day</div></div>';
+            statsHtml += '<div class="stat-card"><div class="stat-num">' + monthly.toLocaleString() + '</div><div class="stat-label">Approx. per month (30 days)</div></div>';
+            statsHtml += '<div class="stat-card"><div class="stat-num">' + yearly.toLocaleString() + '</div><div class="stat-label">Approx. per year</div></div>';
+            statsHtml += '</div>';
+            statsArea.innerHTML = statsHtml;
+        };
+
+        window.onCronInput = function() {
+            // Small debounce —just evaluates directly
+            evaluateCron();
+        };
+
+        window.setPreset = function(expr) {
+            var parts = expr.split(/\s+/);
+            for (var i = 0; i < 5 && i < parts.length; i++) {
+                inputs[i].value = parts[i];
+            }
+            evaluateCron();
+        };
+
+        // Sample: auto-run on load with preset "*/15 * * * *"
+        inputs[0].value = '*/15';
+        inputs[1].value = '*';
+        inputs[2].value = '*';
+        inputs[3].value = '*';
+        inputs[4].value = '*';
+        evaluateCron();
+    })();
+    </script>
+</body>
+</html>
+

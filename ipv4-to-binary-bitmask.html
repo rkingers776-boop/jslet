@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>IPv4 Address to Structural Routing Bits — jslet</title>
+    <meta name="description" content="CIDR prefix in. Subnet mask, wildcard, usable IPs out. /24 gives you 254 hosts — not 256. /28 gives you 14. The math every VPC design and firewall rule depends on, done instantly.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="IPv4 Address to Structural Routing Bits — jslet">
+    <meta property="og:description" content="/24 = 254 usable, not 256. /28 = 14. CIDR prefix in — subnet mask, wildcard, host count out. The math every VPC design and firewall rule depends on, done instantly.">
+    <meta property="og:url" content="https://www.jslet.com/ipv4-to-binary-bitmask">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="IPv4 Address to Structural Routing Bits — jslet">
+    <meta name="twitter:description" content="/24 = 254 usable, not 256. /28 = 14. CIDR prefix in — subnet mask, wildcard, host count out. The math every VPC design and firewall rule depends on, done instantly.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/ipv4-to-binary-bitmask">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "IPv4 Address to Structural Routing Bits",
+      "description": "/24 = 254 usable, not 256. /28 = 14. CIDR prefix in — subnet mask, wildcard, host count out. The math every VPC design and firewall rule depends on, done instantly.",
+      "url": "https://www.jslet.com/ipv4-to-binary-bitmask",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why does a /24 subnet only give 254 usable hosts?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A /24 has 256 addresses, but the network address (first) and broadcast address (last) are reserved, leaving 254 usable. The pattern repeats at every prefix: /28 gives 16 addresses and 14 usable. This calculator outputs the subnet mask, wildcard, network, broadcast, and usable range for any CIDR prefix so VPC and firewall math is instant."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is a wildcard mask used for in ACLs?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A wildcard mask is the inverse of a subnet mask — 0s match exactly, 1s match anything — and it is what Cisco ACLs use to define match ranges. The calculator derives the wildcard mask automatically, so converting between CIDR and ACL notation takes one input instead of manual binary math."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which CIDR prefixes are common in cloud VPC design?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The reference section lists the standard block sizes: /24 (256 IPs, 254 usable), /20 (4,096), /16 (65,534 usable), and the smaller /28-/30 ranges used for point-to-point links. Using the calculator to decompose your VPC plan into per-subnet ranges avoids the classic \"one subnet too small\" redesign at deploy time."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>IPv4 <span>to Structural Routing</span> Bits</h1>
+            <p>CIDR is simple: /24 = 256 IPs, minus network and broadcast = 254 usable. /28 = 16 IPs, 14 usable. But what about /19? /11? Put in the prefix length and get the full subnet decomposition. Network engineers have done this math on whiteboards for 30 years. Now you do not have to.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🌐 CIDR Prefix Notation</h3>
+                <p class="card-desc">/24 = 254 usable, not 256. /28 = 14. /19? /11? CIDR prefix in — subnet mask, wildcard, host count out. The math network engineers have scribbled on whiteboards for 30 years. Now you do not have to.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="cidr">CIDR Prefix /Mask</label>
+                        <input type="number" class="unit-input" id="cidr" value="24" step="1" min="0" max="32">
+                    </div>
+                </div>
+                <button class="btn-calc">Run Calculation</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Subnet Decomposition Results</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-host-bits"></div><div class="metric-label">Host Bits</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-total-ips"></div><div class="metric-label">Total IPs</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-usable-ips"></div><div class="metric-label">Usable Host IPs</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-subnet-mask"></div><div class="metric-label">Subnet Mask</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-wildcard"></div><div class="metric-label">Wildcard Mask</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- REFERENCE SECTION -->
+        <section class="seo-section">
+            <h2>CIDR Subnet Calculation: /24 = 256 IPs, 254 Usable Hosts</h2>
+            <p>CIDR (Classless Inter-Domain Routing) notation is the universal language of IP subnetting, replacing the rigid Class A/B/C system in 1993. A CIDR suffix like <strong>/24</strong> means the first 24 bits of the 32-bit IPv4 address are the network prefix, leaving <strong>8 host bits</strong> — yielding 2<sup>8</sup> = 256 total addresses, of which 254 are assignable to hosts (reserving the network address <code>.0</code> and the broadcast address <code>.255</code>). Every cloud VPC, Kubernetes pod CIDR, and corporate network segment is defined by this simple bit arithmetic.</p>
+
+            <h3>Common CIDR Prefixes and Their Address Space</h3>
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th>CIDR</th><th>Host Bits</th><th>Total IPs</th><th>Usable Hosts</th><th>Subnet Mask</th><th>Typical Use Case</th></tr></thead>
+                    <tbody>
+                        <tr><td>/32</td><td>0</td><td>1</td><td>1 (host route)</td><td>255.255.255.255</td><td>Single host routing, loopback</td></tr>
+                        <tr><td>/28</td><td>4</td><td>16</td><td>14</td><td>255.255.255.240</td><td>Small DMZ subnet, VPN endpoint pool</td></tr>
+                        <tr><td>/24</td><td>8</td><td>256</td><td>254</td><td>255.255.255.0</td><td>Standard VPC subnet, office LAN</td></tr>
+                        <tr><td>/16</td><td>16</td><td>65,536</td><td>65,534</td><td>255.255.0.0</td><td>Large corporate network, VPC CIDR block</td></tr>
+                        <tr><td>/8</td><td>24</td><td>16,777,216</td><td>16,777,214</td><td>255.0.0.0</td><td>Legacy Class A, AWS VPC maximum</td></tr>
+                        <tr><td>/0</td><td>32</td><td>4,294,967,296</td><td>N/A</td><td>0.0.0.0</td><td>Default route (0.0.0.0/0)</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>Network and Broadcast Addresses</h3>
+            <p>In any subnet larger than /31, two addresses are reserved and cannot be assigned to hosts: the <strong>network address</strong> (all host bits set to 0) identifies the subnet itself, and the <strong>broadcast address</strong> (all host bits set to 1) targets every host on the subnet simultaneously. This is why a /24 subnet has 256 mathematically possible addresses but only 254 are usable. Modern point-to-point links often use /31 subnets (RFC 3021) which have no network or broadcast reservation, yielding 2 usable addresses from 2 total IPs.</p>
+
+            <h3>Wildcard Masks for ACL and Routing Configuration</h3>
+            <p>The <strong>wildcard mask</strong> is the bitwise complement of the subnet mask — every 0 in the subnet mask becomes 255 in the wildcard, and vice versa. Cisco ACLs and OSPF routing configurations use wildcard masks to specify which bits of an address must match (subnet mask bits) and which bits are ignored (wildcard bits). For a /24 subnet, the subnet mask is 255.255.255.0 and the wildcard mask is 0.0.0.255. Cisco ACLs, OSPF network statements, and BGP route filters all use wildcard masks. If you have ever typed `network 10.0.0.0 0.0.255.255 area 0` into a router, you know this math cold.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function cidrToMask(cidr) {
+        if (cidr === 0) return '0.0.0.0';
+        var m = -1 << (32 - cidr);
+        return [(m >>> 24) & 255, (m >>> 16) & 255, (m >>> 8) & 255, m & 255].join('.');
+    }
+
+    function compute() {
+        var c = Math.max(0, Math.min(32, Math.floor(v('cidr'))));
+        var hb = 32 - c;
+        var ti = Math.pow(2, hb);
+        var ui = Math.max(0, ti - 2);
+        var mask = cidrToMask(c);
+        var wildcard = mask.split('.').map(function(o) { return 255 - parseInt(o); }).join('.');
+
+        document.getElementById('results-params').innerText =
+            '/' + c + ' CIDR prefix → ' + hb + ' host bits, ' + ti.toLocaleString() + ' total IPs';
+
+        document.getElementById('val-host-bits').innerText = hb;
+        document.getElementById('val-total-ips').innerText = ti.toLocaleString();
+        document.getElementById('val-usable-ips').innerText = ui > 0 ? ui.toLocaleString() : 'N/A';
+        document.getElementById('val-subnet-mask').innerText = mask;
+        document.getElementById('val-wildcard').innerText = wildcard;
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

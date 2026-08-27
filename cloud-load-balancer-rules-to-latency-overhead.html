@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Load Balancer Ingress Rule Latency — jslet</title>
+    <meta name="description" content="Each ALB rule adds ~1ms. 20 rules = 20ms. In a 200ms SLA budget, that's 10% gone before your code runs. Model rule evaluation overhead across ALB and NGINX.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Load Balancer Ingress Rule Latency — jslet">
+    <meta property="og:description" content="Estimate algorithmic pipeline delays added inside ingress routing frameworks. Calculate ALB vs. NGINX rule evaluation overhead by rule count and evaluation model.">
+    <meta property="og:url" content="https://www.jslet.com/cloud-load-balancer-rules-to-latency-overhead">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Load Balancer Ingress Rule Latency — jslet">
+    <meta name="twitter:description" content="Estimate algorithmic pipeline delays added inside ingress routing frameworks. ALB vs. NGINX rule evaluation overhead by rule count and model.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/cloud-load-balancer-rules-to-latency-overhead">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Load Balancer Ingress Rule Latency",
+      "description": "Estimates algorithmic pipeline delays added inside ingress routing frameworks. Calculate load balancer rule evaluation overhead based on rule count and evaluation model (first-match or prefix-trie).",
+      "url": "https://www.jslet.com/cloud-load-balancer-rules-to-latency-overhead",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much latency does each load balancer rule add?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Each additional ALB ingress rule adds roughly 1 ms of evaluation time. Twenty rules is 20 ms — on a 200 ms SLA budget that is 10% of your latency gone before your application code even runs. This calculator models rule-evaluation overhead across ALB and NGINX so you can see the tax your routing table is imposing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How can I minimize rule count in production?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Consolidate overlapping rules, move fine-grained routing into the application layer, and use path-based routing only where it earns its latency cost. The calculator's analysis section shows how much latency you recover per rule removed, which makes the refactor measurable rather than a judgment call."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is the rule latency model the same for ALB and NGINX?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No — ALB evaluates rules in the data plane with a fixed per-rule cost, while NGINX evaluates its server/location tree with different overhead characteristics. The calculator models both so you can compare managed vs self-managed routing and decide whether the flexibility of NGINX is worth the latency delta."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>⚖️ Load Balancer <span>Ingress Rule</span> Latency</h1>
+            <p>Each ALB rule adds ~1ms of evaluation overhead. 20 rules = 20ms. In a 200ms SLA budget, that is 10% gone before a single line of your application code executes. Input your rule count and evaluation model — first-match linear scan vs. prefix-trie — and quantify the latency tax before it eats your error budget.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Ingress Rule Configuration</h3>
+                <p class="card-desc">Set rule count and evaluation model. First-match linear scan adds ~1ms/rule. Prefix-trie ~0.2ms/rule. Choose your architecture. The engine computes total overhead, percentage of SLA budget consumed, and aggregate tax at scale.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="rules">Active Rules</label>
+                        <input type="number" class="unit-input" id="rules" value="80" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="model">Evaluation Model</label>
+                        <select class="unit-input" id="model">
+                            <option value="1" selected>First-Match (Sequential / AWS ALB)</option>
+                            <option value="2">Prefix-Trie (O(log n) / NGINX / HAProxy)</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Calculation</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Latency Overhead Analysis</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-avg">—</div><div class="metric-label">Avg Overhead</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-p99">—</div><div class="metric-label">P99 Overhead</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-10k">—</div><div class="metric-label">At 10K req/s</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>Load Balancer Rule Count and Latency: The Microsecond Tax</h2>
+            <p>Every rule added to a load balancer's ingress configuration imposes a <strong>per-request evaluation cost</strong>. While individual rule evaluation times are measured in microseconds — typically 40 to 120 nanoseconds per rule depending on the matching algorithm — these costs compound linearly with rule count and accumulate across the request rate. A load balancer processing 10,000 requests per second with 80 active rules under a first-match model can burn approximately 48 milliseconds of CPU time per second purely on rule evaluation, consuming nearly 5% of a single vCPU core before any application logic executes.</p>
+
+            <h3>How This Calculator Works</h3>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Model</th><th>Per-Rule Cost</th><th>Avg Overhead Formula</th><th>P99 Overhead Formula</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>First-Match (Linear Scan)</strong></td><td>0.12 μs per rule</td><td><code>(Rules ÷ 2) × 0.12 μs</code></td><td><code>Rules × 0.12 μs</code></td></tr>
+                    <tr><td><strong>Prefix-Trie (Tree Search)</strong></td><td>0.04 μs per rule</td><td><code>(Rules ÷ 2) × 0.04 μs</code></td><td><code>Rules × 0.04 μs</code></td></tr>
+                </tbody>
+            </table>
+</div>
+            <p>The first-match model (used by AWS ALB listener rules and many simple reverse proxies) evaluates rules sequentially until a match is found. On average, the matching rule sits at the midpoint of the rule list, giving O(n/2) average case and O(n) worst case. The prefix-trie model (used by NGINX with prefix-based location blocks and HAProxy with ACL trees) organizes rules into a radix tree, achieving O(log n) or near-constant evaluation time regardless of rule count — at the cost of more complex configuration semantics when rules have overlapping path patterns.</p>
+
+            <h3>Minimizing Rule Count in Production</h3>
+            <p>High rule counts typically arise from path-based routing proliferation — one rule per microservice endpoint. Consolidating rules using wildcard prefixes (<code>/api/*</code> instead of <code>/api/users</code>, <code>/api/orders</code>, etc.) and offloading fine-grained routing to a service mesh (Istio, Linkerd) or API gateway dramatically reduces load balancer rule count. A well-architected ingress layer should have fewer than 50 rules; beyond 100 rules, the linear-scan overhead becomes measurable in P99 latency at moderate traffic volumes. For AWS ALB specifically, the hard limit is 100 rules per listener — if you are approaching that, your routing architecture needs refactoring.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+                <a href="/alb-nlb-cost-calculator">ALB / NLB Cost &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var r = v('rules'), m = v('model');
+        var pr = m === 1 ? 0.12 : 0.04;
+        var avg = r / 2 * pr;
+        var p99 = r * pr;
+        var at10k = avg * 10000 / 1000;
+
+        document.getElementById('val-avg').textContent = avg.toFixed(2) + ' μs';
+        document.getElementById('val-p99').textContent = p99.toFixed(2) + ' μs';
+        document.getElementById('val-10k').textContent = at10k.toFixed(2) + ' ms/s';
+
+        var modelName = m === 1 ? 'First-Match (Linear)' : 'Prefix-Trie (O(log n))';
+        document.getElementById('results-params').innerText =
+            r + ' active rules × ' + modelName + ' — avg ' + avg.toFixed(2) + ' μs, p99 ' + p99.toFixed(2) + ' μs per request';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', compute);
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

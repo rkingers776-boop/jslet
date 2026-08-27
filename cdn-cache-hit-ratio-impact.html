@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>CDN Cache Hit Ratio Impact Estimator — Origin Offload &amp; Cost Savings — jslet</title>
+    <meta name="description" content="At 80% cache hit, 1 in 5 requests still hits origin. 80→95% hit ratio doubles offload, halves cost. Compare CloudFront, Cloudflare, Fastly, BunnyCDN, KeyCDN. Free, client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="CDN Cache Hit Ratio Impact Estimator — Origin Offload &amp; Cost Savings">
+    <meta property="og:description" content="At 80% cache hit, 1 in 5 requests still hits origin. 80→95% hit ratio doubles offload, halves cost. Compare CloudFront, Cloudflare, Fastly, BunnyCDN, KeyCDN. Free, client-side.">
+    <meta property="og:url" content="https://www.jslet.com/cdn-cache-hit-ratio-impact">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="CDN Cache Hit Ratio Impact Estimator — Origin Offload &amp; Cost Savings">
+    <meta name="twitter:description" content="At 80% cache hit, 1 in 5 requests still hits origin. 80→95% hit ratio doubles offload, halves cost. Compare CloudFront, Cloudflare, Fastly, BunnyCDN, KeyCDN. Free, client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/cdn-cache-hit-ratio-impact">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+        input[type="range"] {
+            width: 100%; -webkit-appearance: none; appearance: none;
+            height: 8px; border-radius: 4px; background: var(--border);
+            outline: none; margin: 8px 0; cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 22px; height: 22px; border-radius: 50%;
+            background: var(--accent); cursor: pointer;
+            border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        }
+        [data-theme="dark"] input[type="range"]::-webkit-slider-thumb { border-color: #161b22; }
+
+        .hit-ratio-display {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 2.4rem; font-weight: 700; color: var(--accent);
+            text-align: center; margin: 4px 0;
+            transition: color 0.3s;
+        }
+        .hit-ratio-display.hot { color: #059669; }
+        .hit-ratio-display.warm { color: #f59e0b; }
+        .hit-ratio-display.cold { color: #ef4444; }
+
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.5rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-val.savings { color: #059669; }
+        .metric-tile .metric-val.origin { color: #ef4444; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+        .cost-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin-top: 14px; }
+        .cost-table th { background: var(--bg-input); text-align: left; padding: 10px 14px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .cost-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+        .cost-table .num { text-align: right; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-weight: 700; }
+        .cost-table .cost-highlight { color: var(--accent); }
+        .cost-table tr.best-row { background: #ecfdf522; }
+        .cost-table tr.best-row td { border-bottom: 2px solid var(--success); font-weight: 700; }
+        [data-theme="dark"] .cost-table tr.best-row { background: #022c2233; }
+        .cost-table tr.best-row td:first-child::before { content: "★ "; color: var(--success); }
+        .cost-table .savings-positive { color: #059669; }
+        .cost-table .savings-negative { color: #ef4444; }
+
+        .provider-tag {
+            display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 3px; margin-right: 4px;
+        }
+        .tag-cf { background: #ff990022; color: #ff9900; }
+        .tag-flare { background: #f3802022; color: #f38020; }
+        .tag-fastly { background: #ff282822; color: #ff2828; }
+        .tag-bunny { background: #ff6c2d22; color: #ff6c2d; }
+        .tag-key { background: #7c3aed22; color: #7c3aed; }
+        .tag-origin { background: #6b728022; color: #6b7280; }
+
+        .cost-bar-wrap { display: flex; gap: 4px; align-items: flex-end; height: 160px; margin: 16px 0 8px 0; }
+        .cost-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .cost-bar-fill {
+            width: 100%; border-radius: 4px 4px 0 0; transition: height 0.5s ease;
+            display: flex; align-items: flex-start; justify-content: center;
+            font-size: 0.7rem; font-weight: 700; color: #fff; padding-top: 6px;
+            min-height: 20px;
+        }
+        .cost-bar-label { font-size: 0.65rem; color: var(--text-muted); text-align: center; line-height: 1.2; }
+        .cost-bar-value { font-size: 0.72rem; font-weight: 700; color: var(--text-heading); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+
+        .offload-bar-wrap {
+            background: var(--bg-input); border-radius: var(--radius-sm);
+            height: 36px; position: relative; overflow: hidden;
+            margin: 12px 0;
+        }
+        .offload-bar-cache {
+            position: absolute; left: 0; top: 0; height: 100%;
+            background: linear-gradient(90deg, #059669, #10b981);
+            border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+            transition: width 0.5s ease;
+            display: flex; align-items: center; padding-left: 12px;
+            font-size: 0.78rem; font-weight: 700; color: #fff;
+            white-space: nowrap; overflow: hidden;
+        }
+        .offload-bar-origin {
+            position: absolute; right: 0; top: 0; height: 100%;
+            background: linear-gradient(90deg, #f87171, #ef4444);
+            border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+            transition: width 0.5s ease;
+            display: flex; align-items: center; justify-content: flex-end; padding-right: 12px;
+            font-size: 0.78rem; font-weight: 700; color: #fff;
+            white-space: nowrap; overflow: hidden;
+        }
+
+        .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 12px; }
+        .preset-chip {
+            padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            cursor: pointer; transition: border-color 0.2s, background 0.2s;
+            font-size: 0.8rem; text-align: center; background: var(--bg-input);
+        }
+        .preset-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+        .preset-chip .preset-name { font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 2px; }
+        .preset-chip .preset-rate { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.76rem; color: var(--accent); }
+
+        .ref-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .ref-table th { background: var(--bg-input); text-align: left; padding: 8px 12px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .ref-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .ref-table .num { text-align: right; font-weight: 700; color: var(--accent); }
+
+        .phase-bar {
+            display: flex; height: 40px; border-radius: var(--radius-sm); overflow: hidden;
+            margin: 8px 0; font-size: 0.72rem; font-weight: 700; color: #fff;
+        }
+        .phase-bar .phase-cache {
+            background: linear-gradient(90deg, #059669, #10b981);
+            display: flex; align-items: center; justify-content: center;
+            transition: flex 0.5s ease;
+        }
+        .phase-bar .phase-origin {
+            background: linear-gradient(90deg, #f87171, #ef4444);
+            display: flex; align-items: center; justify-content: center;
+            transition: flex 0.5s ease;
+        }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "CDN Cache Hit Ratio Impact Estimator",
+      "description": "At 80% cache hit, 1 in 5 requests still hits origin. 80→95% hit ratio doubles offload, halves cost. Compare CloudFront, Cloudflare, Fastly, BunnyCDN, KeyCDN. Free, client-side.",
+      "url": "https://www.jslet.com/cdn-cache-hit-ratio-impact",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      "name": "How to Calculate CDN Cost Savings from Cache Hit Ratio Improvements",
+      "description": "Model how CDN cache policies and hit ratios affect origin load, bandwidth costs, and total CDN spend. Compare CloudFront, Cloudflare, Fastly, BunnyCDN, and KeyCDN pricing.",
+      "step": [
+        {
+          "@type": "HowToStep",
+          "position": 1,
+          "name": "Enter your traffic profile",
+          "text": "Input total monthly requests and average object size. A site serving 10M requests/month with 50 KB average objects and 80% cache hit still sends 2M requests and 100 GB to origin each month."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 2,
+          "name": "Set your cache hit ratio",
+          "text": "Moving from 80% to 95% cache hit ratio sounds like a 15% improvement, but it's actually a 75% reduction in origin requests (from 20% miss to 5% miss). This is the counterintuitive math that makes cache tuning one of the highest-ROI CDN optimizations."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 3,
+          "name": "Select CDN providers to compare",
+          "text": "Choose from CloudFront, Cloudflare, Fastly, BunnyCDN, and KeyCDN. Pricing structures differ significantly: Cloudflare charges by request count with a free tier, CloudFront charges by region, BunnyCDN uses a flat global rate with volume discounts."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 4,
+          "name": "Review origin offload and cost savings",
+          "text": "The results show origin requests offloaded, bandwidth saved, and per-provider cost comparison. The offload percentage tells you how much of your infrastructure cost you're avoiding — use it to justify CDN investment or TTL tuning."
+        }
+      ]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why does 80% to 95% cache hit ratio make such a big difference?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The improvement is measured in miss ratio, not hit ratio. At 80% hit, 20% of requests miss cache and hit origin. At 95% hit, only 5% miss. That's a 75% reduction in origin traffic — your origin server does 1/4 the work. The cost impact compounds because origin egress bandwidth is typically 5-20x more expensive than CDN bandwidth per GB."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which CDN is cheapest for high-traffic sites?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "BunnyCDN consistently offers the lowest per-GB pricing ($0.01/GB at volume) with no request fees, making it cheapest for large-object delivery. Cloudflare's free tier is unbeatable for low-traffic sites. CloudFront is competitive only within AWS ecosystem due to waived data transfer from S3/EC2. Run the multi-provider comparison for your traffic profile to see exact numbers."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What cache hit ratio should I target?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Static assets (images, CSS, JS): 95-99% is achievable with long TTLs and content-hash filenames. API responses: 60-80% is realistic for semi-dynamic content with short TTLs (60-300s). Dynamic/authenticated content: 0-20% — focus on edge compute or origin shielding rather than caching. Below 60% overall, you are paying for a CDN that isn't doing its primary job."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">›</span> <a href="/decision-matrix">Decision Matrix</a> <span class="breadcrumb-sep">›</span> CDN Cache Hit Ratio Impact Estimator</nav>
+        <header>
+            <h1>CDN Cache <span>Hit Ratio</span> Impact Estimator</h1>
+            <p>At 80% cache hit ratio, your origin still fields 1 in 5 requests. CloudFront bills every single one. Going from 80% to 95% hit ratio doubles your offload — and halves your origin costs. Quantify the dollar impact before you negotiate the CDN contract.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Traffic &amp; Cache Profile</h3>
+                <p class="card-desc">Set your sustained req/s, object size, and cache hit ratio. The engine splits traffic into cache-hit and cache-miss fractions, then prices each against CloudFront, Cloudflare, Fastly, BunnyCDN, and KeyCDN — with origin-only as the baseline comparison.</p>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="rps-input">Sustained Requests per Second</label>
+                        <input type="number" class="unit-input" id="rps-input" value="5000" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="preset-select">Scenario Preset</label>
+                        <select class="unit-input" id="preset-select">
+                            <option value="custom">Custom Configuration</option>
+                            <option value="static-site" selected>Static Site / Blog (95% hit)</option>
+                            <option value="saas-dashboard">SaaS Dashboard (60% hit)</option>
+                            <option value="ecommerce">E-Commerce Product Images (85% hit)</option>
+                            <option value="api-cdn">CDN-Cached API Responses (70% hit)</option>
+                            <option value="streaming">Video Streaming / VOD (98% hit)</option>
+                            <option value="no-cache">No Cache — Origin Only (0% hit)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="input-group" style="margin-top: 8px;">
+                    <label for="hit-ratio-slider">Cache Hit Ratio: <strong id="hit-ratio-pct">95%</strong></label>
+                    <input type="range" class="unit-input" id="hit-ratio-slider" value="95" min="0" max="99" step="1" style="padding: 0; border: none; box-shadow: none;">
+                    <div class="hit-ratio-display hot" id="hit-ratio-display">95%</div>
+                </div>
+
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="object-size-kb">Average Object Size (KB)</label>
+                        <input type="number" class="unit-input" id="object-size-kb" value="100" step="any" min="0.1">
+                    </div>
+                    <div class="input-group">
+                        <label for="unique-objects">Monthly Unique Objects (Cacheable Set)</label>
+                        <input type="number" class="unit-input" id="unique-objects" value="50000" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="origin-egress-cost">Origin Egress Cost ($/GB)</label>
+                        <input type="number" class="unit-input" id="origin-egress-cost" value="0.09" step="0.01" min="0">
+                    </div>
+                </div>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="traffic-pattern">Traffic Pattern</label>
+                        <select class="unit-input" id="traffic-pattern">
+                            <option value="steady" selected>Steady / Uniform</option>
+                            <option value="diurnal">Diurnal (2× peak/trough)</option>
+                            <option value="spiky">Spiky / Event-Driven (5× bursts)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="ttl-strategy">Cache TTL Strategy</label>
+                        <select class="unit-input" id="ttl-strategy">
+                            <option value="long" selected>Long TTL (24h+, static assets)</option>
+                            <option value="medium">Medium TTL (1–6h, semi-dynamic)</option>
+                            <option value="short">Short TTL (1–60 min, API responses)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn-calc">Run Impact Projection Engine</button>
+            </div>
+
+            <!-- RESULTS: Volume & Offload -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Cache Hit Ratio Impact Analysis</h3>
+                <p class="card-desc" id="results-params"></p>
+
+                <!-- Origin offload bar -->
+                <h4 style="margin-top: 16px; margin-bottom: 4px; font-size:0.82rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">🔽 Origin Offload Breakdown</h4>
+                <div class="offload-bar-wrap">
+                    <div class="offload-bar-cache" id="offload-bar-cache">Cached ████ 95%</div>
+                    <div class="offload-bar-origin" id="offload-bar-origin">Origin ████ 5%</div>
+                </div>
+
+                <!-- Volume metrics -->
+                <div class="metric-grid" id="volume-metrics"></div>
+
+                <!-- Phase bar: CDN vs Origin request split -->
+                <h4 style="margin-top: 20px; margin-bottom: 4px; font-size:0.82rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">⚡ Request Flow Split (Monthly)</h4>
+                <div class="phase-bar" id="phase-bar"></div>
+
+                <!-- Cost bar chart -->
+                <h4 style="margin-top: 20px; margin-bottom: 4px; font-size:0.82rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">💰 Total Monthly Cost by CDN Provider (vs. Origin-Only)</h4>
+                <div class="cost-bar-wrap" id="cost-bar-chart"></div>
+
+                <!-- Cost table -->
+                <div class="table-scroll">
+                <table class="cost-table" id="cost-table">
+                    <thead>
+                        <tr><th>Provider</th><th class="num">CDN Cost/mo</th><th class="num">Origin Cost/mo</th><th class="num">Total/mo</th><th class="num">Annual</th><th class="num">vs. No-CDN Savings</th><th>Notes</th></tr>
+                    </thead>
+                    <tbody id="cost-tbody"></tbody>
+                </table>
+                </div>
+            </div>
+
+            <!-- REFERENCE CARD: CDN Pricing -->
+            <div class="calculator-card">
+                <h3>📋 CDN Provider Pricing Reference (as of 2026)</h3>
+                <p class="card-desc">Published list pricing for major CDN providers. Enterprise agreements, reserved capacity, and volume commitments may reduce actual costs significantly.</p>
+                <div class="table-scroll">
+                <table class="ref-table">
+                    <thead>
+                        <tr><th>Provider / Plan</th><th class="num">Bandwidth ($/GB)</th><th class="num">Requests ($/M)</th><th class="num">Base Fee/mo</th><th>Free Tier / Notes</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><span class="provider-tag tag-cf">CF</span> CloudFront (US/CA)</td><td class="num">$0.085</td><td class="num">$0.0075</td><td class="num">$0</td><td>1 TB free egress × 12 mo</td></tr>
+                        <tr><td><span class="provider-tag tag-cf">CF</span> CloudFront (Reserved 10TB+)</td><td class="num">$0.060</td><td class="num">$0.0060</td><td class="num">$0</td><td>12-month commitment</td></tr>
+                        <tr><td><span class="provider-tag tag-flare">FLR</span> Cloudflare CDN (Free)</td><td class="num">$0.00</td><td class="num">$0.00</td><td class="num">$0</td><td>Unmetered DDoS, shared SSL</td></tr>
+                        <tr><td><span class="provider-tag tag-flare">FLR</span> Cloudflare Pro</td><td class="num">$0.00</td><td class="num">$0.00</td><td class="num">$20</td><td>Image optimization, WAF rules</td></tr>
+                        <tr><td><span class="provider-tag tag-flare">FLR</span> Cloudflare Business</td><td class="num">$0.00</td><td class="num">$0.00</td><td class="num">$200</td><td>100% uptime SLA, PCI compliance</td></tr>
+                        <tr><td><span class="provider-tag tag-fastly">FSL</span> Fastly (Pay-as-you-go)</td><td class="num">$0.12</td><td class="num">$0.0075</td><td class="num">$0</td><td>First $50 credit, instant purge</td></tr>
+                        <tr><td><span class="provider-tag tag-fastly">FSL</span> Fastly (Enterprise)</td><td class="num">$0.08</td><td class="num">$0.0050</td><td class="num">$500+</td><td>Custom contract, dedicated POPs</td></tr>
+                        <tr><td><span class="provider-tag tag-bunny">BNY</span> BunnyCDN (Standard)</td><td class="num">$0.01</td><td class="num">—</td><td class="num">$0</td><td>Pay-per-GB, no request fees</td></tr>
+                        <tr><td><span class="provider-tag tag-bunny">BNY</span> BunnyCDN (Volume ≥500TB)</td><td class="num">$0.005</td><td class="num">—</td><td class="num">$0</td><td>Tiered volume discounts</td></tr>
+                        <tr><td><span class="provider-tag tag-key">KEY</span> KeyCDN (Pay-as-you-go)</td><td class="num">$0.04</td><td class="num">—</td><td class="num">$0</td><td>Pay-per-GB, 34+ POPs</td></tr>
+                        <tr><td><span class="provider-tag tag-origin">ORG</span> Origin-Only (No CDN)</td><td class="num">$0.09</td><td class="num">—</td><td class="num">$0</td><td>All traffic hits origin; full egress</td></tr>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>CDN Cache Hit Ratio Economics: Why Every 1% Matters at Scale</h2>
+            <p>Cache Hit Ratio (CHR) is the percentage of requests served directly from CDN edge nodes without contacting the origin server. At high traffic volumes, each percentage point of cache efficiency represents significant cost savings. A service handling <strong>5,000 requests per second</strong> with 100 KB average object size and a 95% CHR offloads roughly <strong>12.3 PB/year</strong> of traffic from origin — at $0.09/GB origin egress, that's over <strong>$1.1 million/year</strong> in avoided origin bandwidth costs.</p>
+
+            <h3>How This Estimator Works</h3>
+            <p>The engine computes monthly request volume from your sustained req/s rate (req/s × 86,400 × 30.4375 mean days/month), then splits it into cache-hit and cache-miss fractions based on your target hit ratio. Cache hits incur CDN bandwidth pricing; cache misses incur both CDN request/bandwidth costs (for the miss-forward) and origin egress costs (for the fetch). The total cost is compared against an all-origin baseline to compute net savings.</p>
+
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Component</th><th>Formula</th><th>Charged By</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Cache Hit Requests</strong></td><td><code>Monthly Requests × Hit Ratio</code></td><td>CDN bandwidth only (edge → client)</td></tr>
+                    <tr><td><strong>Cache Miss Requests</strong></td><td><code>Monthly Requests × (1 − Hit Ratio)</code></td><td>CDN request fee + CDN bandwidth + Origin egress (fetch)</td></tr>
+                    <tr><td><strong>Origin Egress Savings</strong></td><td><code>Cache Hits × Object Size × Origin $/GB</code></td><td>Avoided origin bandwidth cost</td></tr>
+                    <tr><td><strong>Total CDN Cost</strong></td><td><code>CDN Bandwidth + CDN Request Fees + Base Fee</code></td><td>CDN provider invoice</td></tr>
+                    <tr><td><strong>Net Savings</strong></td><td><code>Origin-Only Cost − (CDN Cost + Residual Origin Cost)</code></td><td>Bottom-line infrastructure reduction</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3>Cache Hit Ratio Tiers: What's Achievable?</h3>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Content Type</th><th>Typical CHR</th><th>TTL Strategy</th><th>Key Optimization</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Static assets</strong> (JS, CSS, images, fonts)</td><td>95–99%</td><td>Long TTL (7–365 days), content-hash filenames</td><td>Immutable URLs with cache busting</td></tr>
+                    <tr><td><strong>Product images</strong> (e-commerce)</td><td>80–92%</td><td>Medium TTL (1–7 days), stale-while-revalidate</td><td>Image CDN with resizing at edge</td></tr>
+                    <tr><td><strong>CDN-cached API responses</strong></td><td>55–75%</td><td>Short TTL (1–60 min), surrogate keys for purge</td><td>Cache-Control: s-maxage with fast purge</td></tr>
+                    <tr><td><strong>Video segments</strong> (HLS/DASH)</td><td>96–99.5%</td><td>Long TTL, multi-tier (L1/L2 CDN)</td><td>Pre-warming for popular content</td></tr>
+                    <tr><td><strong>Dynamic / personalized HTML</strong></td><td>0–15%</td><td>No cache or edge-side includes</td><td>Edge compute (Cloudflare Workers, Lambda@Edge)</td></tr>
+                    <tr><td><strong>User-generated content</strong></td><td>30–60%</td><td>Short TTL, popularity-based eviction</td><td>Tiered caching (regional → origin shield)</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3>Beyond Cost: Latency and Availability Benefits</h3>
+            <p>Cache hit ratio doesn't just save money — it directly improves user experience and system resilience:</p>
+            <ul style="margin: 12px 0 12px 24px; color: var(--text-body); font-size: 0.93rem; line-height: 1.9;">
+                <li><strong>Latency reduction:</strong> A cache hit served from a nearby edge POP (1–10ms) instead of a cross-continent origin fetch (50–300ms) delivers 10–100× faster response times.</li>
+                <li><strong>Origin load shedding:</strong> A 95% CHR means the origin handles only 5% of total traffic — allowing smaller, cheaper origin infrastructure (fewer servers, lower DB load).</li>
+                <li><strong>DDoS absorption:</strong> CDN edge nodes absorb volumetric attacks at the network edge. Even during an attack, cacheable content continues serving without origin impact.</li>
+                <li><strong>Availability improvement:</strong> If the origin fails, cached content remains available (graceful degradation). A stale-while-revalidate directive extends this window to hours.</li>
+                <li><strong>Carbon reduction:</strong> Edge serving eliminates long-haul data transfers. Each TB served from edge vs. origin reduces CO₂ emissions by an estimated 3–5 kg.</li>
+            </ul>
+
+            <h3>Cache Invalidation: The Hidden Cost Driver</h3>
+            <p>High cache hit ratios require effective invalidation — purging stale content when it changes. Different CDNs offer different invalidation models:</p>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Provider</th><th>Invalidation Method</th><th>Speed</th><th>Cost</th></tr></thead>
+                <tbody>
+                    <tr><td>CloudFront</td><td>CreateInvalidation (path/wildcard)</td><td>~60–300s globally</td><td>Free (first 1,000 paths/month)</td></tr>
+                    <tr><td>Cloudflare</td><td>Purge by URL / prefix / tag / hostname</td><td>Instant (&lt;1s globally)</td><td>Free (unlimited)</td></tr>
+                    <tr><td>Fastly</td><td>Surrogate keys + instant purge API</td><td>~150ms globally</td><td>Included in per-request pricing</td></tr>
+                    <tr><td>BunnyCDN</td><td>Purge by URL / all</td><td>~5–30s globally</td><td>Free (unlimited zones)</td></tr>
+                    <tr><td>KeyCDN</td><td>Purge by URL / tag / all</td><td>Instant (&lt;1s globally)</td><td>Free (unlimited)</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p style="margin-top:12px;">Fastly's surrogate-key model is uniquely powerful for API caching: tag each response with its resource type and ID (e.g., <code>product-1234</code>, <code>category-electronics</code>), then purge by tag — one API call can invalidate hundreds of related URLs simultaneously. This enables high CHR with shorter effective TTLs because invalidation is cheap and instant.</p>
+
+            <h3>The Origin Shield / Tiered Caching Multiplier</h3>
+            <p>Most major CDNs offer an "origin shield" or "tiered caching" feature — a regional intermediate cache layer that sits between edge POPs and your origin. When an edge POP has a cache miss, it fetches from the regional shield rather than directly from origin:</p>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Scenario</th><th>Edge CHR</th><th>Effective Origin Hit</th><th>Origin Load Reduction</th></tr></thead>
+                <tbody>
+                    <tr><td>No shield, 90% edge CHR</td><td class="num">90%</td><td class="num">10%</td><td>10× reduction (90% offloaded)</td></tr>
+                    <tr><td>With shield, 90% edge CHR + 80% shield CHR</td><td class="num">90%</td><td class="num">2%</td><td>50× reduction (98% offloaded)</td></tr>
+                    <tr><td>With shield, 95% edge CHR + 90% shield CHR</td><td class="num">95%</td><td class="num">0.5%</td><td>200× reduction (99.5% offloaded)</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p style="margin-top:12px;">This estimator models single-tier caching (edge → origin). If your architecture includes an origin shield, the effective origin offload is significantly higher than the edge CHR alone suggests. The formula is: <code>Effective Origin Load = (1 − Edge_CHR) × (1 − Shield_CHR)</code>. A 95% edge CHR with 90% shield CHR means origin sees only 0.5% of total traffic.</p>
+
+            <h3>Cache Hit Ratio vs. Byte Hit Ratio</h3>
+            <p>CDNs report two distinct metrics: <strong>Request Hit Ratio</strong> (percentage of requests served from cache) and <strong>Byte Hit Ratio</strong> (percentage of bytes served from cache). These diverge significantly when object sizes vary. A site serving mostly small API responses (cached at 70% request ratio) but a few large video files (also cached) may have a 95% byte hit ratio while request hit ratio sits at 80%. This calculator uses request-based hit ratio because CDN pricing is typically per-request or per-GB — both dimensions directly map to cost.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/cdn-cache-hit-ratio-real">📰 CDN Cache Hit Ratio: Why 95% Is Still Costing You Money (Full Briefing) →</a>
+                <a href="/api-rate-limit-cost">API Rate Limit ↔ Cost &rarr;</a>
+                <a href="/gbps-to-tb-per-day">Gbps to TB/Day Egress &rarr;</a>
+                <a href="/mbps-to-mbytes-per-sec">Mbps to MB/s Throughput &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/latency-budget-calculator">Latency Budget Calculator &rarr;</a>
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/backup-cost">Backup Strategy Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="margin-top:24px;">
+            <h2>📎 Embed This Calculator</h2>
+            <p style="font-size:0.88rem; margin-bottom:12px; color:var(--text-secondary);">Embed the CDN cache hit ratio impact calculator on your team wiki, architecture doc, or CDN evaluation page. No API key. No tracking. 100% client-side.</p>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
+                <pre style="margin:0; font-size:0.78rem; overflow-x:auto; white-space:pre-wrap; font-family:'SF Mono','Cascadia Code',Consolas,monospace;"><code>&lt;iframe src="https://www.jslet.com/embed/cdn-cache-hit-ratio-impact" width="100%" height="600" style="border:none;border-radius:10px;" title="CDN Cache Hit Ratio Impact Estimator" loading="lazy"&gt;&lt;/iframe&gt;</code></pre>
+            </div>
+        </section>
+
+        <div class="social-share-bar"><span>Share:</span><a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/cdn-cache-hit-ratio-impact&t=CDN+Cache+Hit+Ratio+Impact+Estimator+%E2%80%94+Origin+Offload+%26+Cost+Savings" class="share-btn hn" target="_blank" rel="noopener noreferrer">HN</a><a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/cdn-cache-hit-ratio-impact&text=80%25+to+95%25+cache+hit+ratio+isn%27t+a+15%25+improvement+%E2%80%94+it%27s+a+75%25+reduction+in+origin+traffic.+Compare+CloudFront,+Cloudflare,+Fastly,+BunnyCDN.&via=jslet" class="share-btn twitter" target="_blank" rel="noopener noreferrer">X</a><a href="https://www.reddit.com/r/networking/submit?url=https://www.jslet.com/cdn-cache-hit-ratio-impact&title=CDN+Cache+Hit+Ratio+Impact+Estimator" class="share-btn reddit" target="_blank" rel="noopener noreferrer">Reddit</a><a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/cdn-cache-hit-ratio-impact&title=CDN+Cache+Hit+Ratio+Impact+Estimator" class="share-btn linkedin" target="_blank" rel="noopener noreferrer">LinkedIn</a></div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Constants ──
+    var SECONDS_PER_DAY = 86400;
+    var MEAN_DAYS_PER_MONTH = 30.4375;
+
+    // CDN Provider pricing (bandwidth $/GB, request fee $/M, base monthly $, color, tag)
+    var PROVIDERS = [
+        {
+            id: 'cloudfront',
+            name: 'CloudFront (US/CA)',
+            tag: 'cf',
+            bandwidthPerGb: 0.085,
+            requestPerMillion: 0.0075,
+            baseMonthly: 0,
+            desc: 'AWS-native. 1 TB free egress/mo × 12 months. Global edge network.',
+            color: '#ff9900'
+        },
+        {
+            id: 'cloudfront-reserved',
+            name: 'CloudFront Reserved (10TB+)',
+            tag: 'cf',
+            bandwidthPerGb: 0.060,
+            requestPerMillion: 0.0060,
+            baseMonthly: 0,
+            desc: '12-month commitment. Lower per-GB rate for steady workloads.',
+            color: '#e68a00'
+        },
+        {
+            id: 'cloudflare-free',
+            name: 'Cloudflare CDN (Free)',
+            tag: 'flare',
+            bandwidthPerGb: 0,
+            requestPerMillion: 0,
+            baseMonthly: 0,
+            desc: 'Unmetered bandwidth. Best value for high-volume, low-complexity caching.',
+            color: '#f38020'
+        },
+        {
+            id: 'cloudflare-pro',
+            name: 'Cloudflare Pro',
+            tag: 'flare',
+            bandwidthPerGb: 0,
+            requestPerMillion: 0,
+            baseMonthly: 20,
+            desc: 'Image optimization, WAF rules, lossless compression. Unmetered CDN.',
+            color: '#f38020'
+        },
+        {
+            id: 'cloudflare-business',
+            name: 'Cloudflare Business',
+            tag: 'flare',
+            bandwidthPerGb: 0,
+            requestPerMillion: 0,
+            baseMonthly: 200,
+            desc: '100% uptime SLA, PCI DSS, advanced bot management. Unmetered CDN.',
+            color: '#f38020'
+        },
+        {
+            id: 'fastly',
+            name: 'Fastly (Pay-as-you-go)',
+            tag: 'fastly',
+            bandwidthPerGb: 0.12,
+            requestPerMillion: 0.0075,
+            baseMonthly: 0,
+            desc: 'Instant purge, VCL edge logic, surrogate keys. Best for API/dynamic caching.',
+            color: '#ff2828'
+        },
+        {
+            id: 'fastly-enterprise',
+            name: 'Fastly Enterprise',
+            tag: 'fastly',
+            bandwidthPerGb: 0.08,
+            requestPerMillion: 0.0050,
+            baseMonthly: 500,
+            desc: 'Dedicated POPs, custom contract. Lower per-unit cost at volume.',
+            color: '#cc2020'
+        },
+        {
+            id: 'bunny',
+            name: 'BunnyCDN (Standard)',
+            tag: 'bunny',
+            bandwidthPerGb: 0.01,
+            requestPerMillion: 0,
+            baseMonthly: 0,
+            desc: 'Bandwidth-only billing. 114+ POPs. Excellent for price-sensitive workloads.',
+            color: '#ff6c2d'
+        },
+        {
+            id: 'bunny-volume',
+            name: 'BunnyCDN Volume (≥500TB)',
+            tag: 'bunny',
+            bandwidthPerGb: 0.005,
+            requestPerMillion: 0,
+            baseMonthly: 0,
+            desc: 'Tiered volume pricing. 0.005/GB at 500TB+. No request fees.',
+            color: '#ff6c2d'
+        },
+        {
+            id: 'keycdn',
+            name: 'KeyCDN (Pay-as-you-go)',
+            tag: 'key',
+            bandwidthPerGb: 0.04,
+            requestPerMillion: 0,
+            baseMonthly: 0,
+            desc: '34+ POPs. Bandwidth-only billing. Good mid-tier option.',
+            color: '#7c3aed'
+        },
+        {
+            id: 'origin-only',
+            name: 'Origin-Only (No CDN)',
+            tag: 'origin',
+            bandwidthPerGb: 0,
+            requestPerMillion: 0,
+            baseMonthly: 0,
+            desc: 'All traffic served from origin. Baseline for savings comparison.',
+            color: '#6b7280'
+        }
+    ];
+
+    var PRESETS = {
+        'static-site':     { rps: 2000,  hitRatio: 95, objKb: 80,   uniqueObjs: 8000,  originEgress: 0.09, ttl: 'long',    pattern: 'steady' },
+        'saas-dashboard':  { rps: 1000,  hitRatio: 60, objKb: 45,   uniqueObjs: 20000, originEgress: 0.09, ttl: 'medium',  pattern: 'diurnal' },
+        'ecommerce':       { rps: 3000,  hitRatio: 85, objKb: 150,  uniqueObjs: 50000, originEgress: 0.09, ttl: 'medium',  pattern: 'diurnal' },
+        'api-cdn':         { rps: 8000,  hitRatio: 70, objKb: 8,    uniqueObjs: 100000,originEgress: 0.09, ttl: 'short',   pattern: 'spiky' },
+        'streaming':       { rps: 25000, hitRatio: 98, objKb: 2000, uniqueObjs: 5000,  originEgress: 0.09, ttl: 'long',    pattern: 'steady' },
+        'no-cache':        { rps: 5000,  hitRatio: 0,  objKb: 100,  uniqueObjs: 50000, originEgress: 0.09, ttl: 'short',   pattern: 'steady' }
+    };
+
+    function fmtNum(n, decimals) {
+        if (decimals === undefined) decimals = 2;
+        return n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    function fmtCurrency(n) {
+        if (Math.abs(n) < 0.01) return '$0.00';
+        return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function fmtVolume(n) {
+        if (n >= 1e12) return fmtNum(n / 1e12, 2) + ' T';
+        if (n >= 1e9)  return fmtNum(n / 1e9, 2) + ' B';
+        if (n >= 1e6)  return fmtNum(n / 1e6, 1) + ' M';
+        if (n >= 1e3)  return fmtNum(n / 1e3, 1) + ' K';
+        return fmtNum(n, 0);
+    }
+
+    function fmtGb(n) {
+        if (n >= 1000) return fmtNum(n / 1000, 1) + ' TB';
+        return fmtNum(n, 1) + ' GB';
+    }
+
+    function updateHitRatioDisplay(hitRatio) {
+        var display = document.getElementById('hit-ratio-display');
+        var pctLabel = document.getElementById('hit-ratio-pct');
+        display.textContent = hitRatio + '%';
+        pctLabel.textContent = hitRatio + '%';
+
+        display.classList.remove('hot', 'warm', 'cold');
+        if (hitRatio >= 85) {
+            display.classList.add('hot');
+        } else if (hitRatio >= 50) {
+            display.classList.add('warm');
+        } else {
+            display.classList.add('cold');
+        }
+    }
+
+    function computeCosts() {
+        var rps = parseFloat(document.getElementById('rps-input').value) || 0;
+        var hitRatioPct = parseFloat(document.getElementById('hit-ratio-slider').value) || 0;
+        var hitRatio = hitRatioPct / 100;
+        var objKb = parseFloat(document.getElementById('object-size-kb').value) || 0;
+        var uniqueObjs = parseFloat(document.getElementById('unique-objects').value) || 0;
+        var originEgressCost = parseFloat(document.getElementById('origin-egress-cost').value) || 0;
+        var pattern = document.getElementById('traffic-pattern').value;
+        var ttl = document.getElementById('ttl-strategy').value;
+
+        updateHitRatioDisplay(hitRatioPct);
+
+        // Monthly request volume
+        var monthlyRequests = rps * SECONDS_PER_DAY * MEAN_DAYS_PER_MONTH;
+        var cacheHits = monthlyRequests * hitRatio;
+        var cacheMisses = monthlyRequests * (1 - hitRatio);
+
+        // Monthly data transfer (GB)
+        // Cache hits → served from CDN edge (CDN bandwidth cost)
+        // Cache misses → CDN fetches from origin (CDN bandwidth cost) + origin sends to CDN (origin egress cost)
+        var gbPerRequest = objKb / (1024 * 1024); // KB → GB
+        var totalGb = monthlyRequests * gbPerRequest;
+        var cacheHitGb = cacheHits * gbPerRequest;
+        var cacheMissGb = cacheMisses * gbPerRequest;
+
+        // Origin-Only baseline: all traffic served from origin
+        var originOnlyCost = totalGb * originEgressCost;
+
+        // Peak traffic multiplier
+        var peakMultiplier = pattern === 'diurnal' ? 2.0 : (pattern === 'spiky' ? 5.0 : 1.0);
+        var peakRps = rps * peakMultiplier;
+
+        // TTL description
+        var ttlLabel = ttl === 'long' ? 'Long TTL (24h+)' : (ttl === 'medium' ? 'Medium TTL (1–6h)' : 'Short TTL (1–60 min)');
+
+        // Results card
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-params').innerText =
+            fmtNum(rps, 1) + ' req/s · ' + hitRatioPct + '% cache hit ratio · ' +
+            objKb + ' KB avg object · ' + fmtVolume(uniqueObjs) + ' unique objects · ' +
+            ttlLabel + ' · ' + (pattern === 'steady' ? 'Steady' : pattern === 'diurnal' ? 'Diurnal (2×)' : 'Spiky (5×)');
+
+        // Offload bars
+        document.getElementById('offload-bar-cache').style.width = hitRatioPct + '%';
+        document.getElementById('offload-bar-cache').textContent = 'Cached ████ ' + hitRatioPct + '%';
+        document.getElementById('offload-bar-origin').style.width = (100 - hitRatioPct) + '%';
+        document.getElementById('offload-bar-origin').textContent = 'Origin ████ ' + (100 - hitRatioPct) + '%';
+
+        // Volume metrics
+        document.getElementById('volume-metrics').innerHTML =
+            '<div class="metric-tile"><div class="metric-val">' + fmtVolume(monthlyRequests) + '</div><div class="metric-label">Monthly Total Requests</div></div>' +
+            '<div class="metric-tile"><div class="metric-val" style="color:#059669;">' + fmtVolume(cacheHits) + '</div><div class="metric-label">Served from Cache</div></div>' +
+            '<div class="metric-tile"><div class="metric-val origin">' + fmtVolume(cacheMisses) + '</div><div class="metric-label">Misses → Origin Fetch</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtGb(totalGb) + '</div><div class="metric-label">Total Monthly Bandwidth</div></div>' +
+            '<div class="metric-tile"><div class="metric-val" style="color:#059669;">' + fmtGb(cacheHitGb) + '</div><div class="metric-label">Bandwidth Offloaded (Cache)</div></div>' +
+            '<div class="metric-tile"><div class="metric-val origin">' + fmtGb(cacheMissGb) + '</div><div class="metric-label">Bandwidth to Origin (Miss)</div></div>';
+
+        // Phase bar: request flow split
+        var phaseBar = document.getElementById('phase-bar');
+        phaseBar.innerHTML =
+            '<div class="phase-cache" style="flex:' + hitRatioPct + ';">' +
+                (hitRatioPct >= 20 ? '⚡ Edge Served: ' + fmtVolume(cacheHits) + ' req' : '') +
+            '</div>' +
+            '<div class="phase-origin" style="flex:' + (100 - hitRatioPct) + ';">' +
+                ((100 - hitRatioPct) >= 20 ? '🏭 Origin Fetch: ' + fmtVolume(cacheMisses) + ' req' : '') +
+            '</div>';
+
+        // Compute per-provider costs
+        var results = PROVIDERS.map(function(p) {
+            // CDN bandwidth cost: cache hits (edge→client) + cache misses (origin→edge fetch counts as CDN egress too when CDN-to-client)
+            // Actually: CDN bandwidth = all bytes served to clients (hit + miss)
+            // CDN request fees apply to all requests (hits and misses)
+            // Origin egress = only cache misses × object size × origin egrees rate (CDN fetches from origin)
+            var cdnBandwidthCost = totalGb * p.bandwidthPerGb;
+            var cdnRequestCost = (monthlyRequests / 1e6) * p.requestPerMillion;
+            var residualOriginCost = cacheMissGb * originEgressCost;
+            var totalCdnCost = p.baseMonthly + cdnBandwidthCost + cdnRequestCost;
+            var totalWithCdn = totalCdnCost + residualOriginCost;
+
+            // Savings vs origin-only
+            var savings = originOnlyCost - totalWithCdn;
+
+            return {
+                provider: p,
+                cdnBandwidthCost: cdnBandwidthCost,
+                cdnRequestCost: cdnRequestCost,
+                residualOriginCost: residualOriginCost,
+                totalCdnCost: totalCdnCost,
+                totalWithCdn: totalWithCdn,
+                savings: savings
+            };
+        });
+
+        // Find best (lowest total cost)
+        var minTotal = Infinity;
+        results.forEach(function(r) { if (r.totalWithCdn < minTotal) minTotal = r.totalWithCdn; });
+
+        // Cost bar chart
+        var maxCost = 0;
+        results.forEach(function(r) { if (r.totalWithCdn > maxCost) maxCost = r.totalWithCdn; });
+        // Include origin-only in max
+        if (originOnlyCost > maxCost) maxCost = originOnlyCost;
+        var barMax = Math.max(maxCost, 1);
+
+        var barHtml = '';
+        // Origin-only reference bar
+        var originPct = Math.max(2, (originOnlyCost / barMax) * 100);
+        barHtml += '<div class="cost-bar-col" style="min-width:60px;">' +
+            '<div class="cost-bar-value">' + fmtCurrency(originOnlyCost) + '</div>' +
+            '<div class="cost-bar-fill" style="height:' + originPct + '%;background:#6b7280;">' +
+                (originPct > 15 ? 'BASELINE' : '') +
+            '</div>' +
+            '<div class="cost-bar-label"><span class="provider-tag tag-origin">ORIGIN</span></div>' +
+        '</div>';
+
+        results.forEach(function(r) {
+            if (r.provider.id === 'origin-only') return; // Skip duplicate
+            var pct = Math.max(2, (r.totalWithCdn / barMax) * 100);
+            var isBest = r.totalWithCdn === minTotal;
+            barHtml += '<div class="cost-bar-col" style="min-width:60px;">' +
+                '<div class="cost-bar-value">' + fmtCurrency(r.totalWithCdn) + '</div>' +
+                '<div class="cost-bar-fill" style="height:' + pct + '%;background:' + r.provider.color + ';' + (isBest ? 'border:2px solid var(--success);' : '') + '">' +
+                    (pct > 15 ? (isBest ? '★ BEST' : '') : '') +
+                '</div>' +
+                '<div class="cost-bar-label"><span class="provider-tag tag-' + r.provider.tag + '">' + r.provider.id.toUpperCase() + '</span></div>' +
+            '</div>';
+        });
+        document.getElementById('cost-bar-chart').innerHTML = barHtml;
+
+        // Cost table
+        var tbodyHtml = '';
+        // Origin-only row first
+        tbodyHtml += '<tr>' +
+            '<td><span class="provider-tag tag-origin">ORG</span> Origin-Only (No CDN)</td>' +
+            '<td class="num" style="color:var(--text-muted);">—</td>' +
+            '<td class="num">' + fmtCurrency(originOnlyCost) + '</td>' +
+            '<td class="num cost-highlight">' + fmtCurrency(originOnlyCost) + '</td>' +
+            '<td class="num">' + fmtCurrency(originOnlyCost * 12) + '</td>' +
+            '<td class="num" style="color:var(--text-muted);">Baseline</td>' +
+            '<td style="font-size:0.75rem;color:var(--text-muted);">All traffic hits origin at $' + fmtNum(originEgressCost, 2) + '/GB</td>' +
+        '</tr>';
+
+        results.forEach(function(r) {
+            if (r.provider.id === 'origin-only') return;
+            var isBest = r.totalWithCdn === minTotal;
+            var savingsClass = r.savings >= 0 ? 'savings-positive' : 'savings-negative';
+            var savingsSign = r.savings >= 0 ? '−' : '+';
+            tbodyHtml += '<tr class="' + (isBest ? 'best-row' : '') + '">' +
+                '<td><span class="provider-tag tag-' + r.provider.tag + '">' + r.provider.tag.toUpperCase() + '</span> ' + r.provider.name + '</td>' +
+                '<td class="num">' + fmtCurrency(r.totalCdnCost) + '</td>' +
+                '<td class="num" style="color:' + (r.residualOriginCost > 0 ? 'var(--gold)' : 'var(--text-muted)') + ';">' + (r.residualOriginCost > 0 ? fmtCurrency(r.residualOriginCost) : '—') + '</td>' +
+                '<td class="num cost-highlight">' + fmtCurrency(r.totalWithCdn) + '</td>' +
+                '<td class="num">' + fmtCurrency(r.totalWithCdn * 12) + '</td>' +
+                '<td class="num ' + savingsClass + '">' + (r.savings >= 0 ? 'Save ' : 'Cost ') + fmtCurrency(Math.abs(r.savings)) + '</td>' +
+                '<td style="font-size:0.75rem;color:var(--text-muted);">' + r.provider.desc + '</td>' +
+            '</tr>';
+        });
+        document.getElementById('cost-tbody').innerHTML = tbodyHtml;
+
+        // Scroll to results
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function applyPreset(presetKey) {
+        var preset = PRESETS[presetKey];
+        if (!preset) return;
+        document.getElementById('rps-input').value = preset.rps;
+        document.getElementById('hit-ratio-slider').value = preset.hitRatio;
+        document.getElementById('object-size-kb').value = preset.objKb;
+        document.getElementById('unique-objects').value = preset.uniqueObjs;
+        document.getElementById('origin-egress-cost').value = preset.originEgress;
+        document.getElementById('ttl-strategy').value = preset.ttl;
+        document.getElementById('traffic-pattern').value = preset.pattern;
+        computeCosts();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Compute on load with default preset
+        applyPreset('static-site');
+
+        // Preset change
+        document.getElementById('preset-select').addEventListener('change', function() {
+            var val = this.value;
+            if (val === 'custom') return;
+            applyPreset(val);
+        });
+
+        // Recompute button
+        document.querySelector('.btn-calc').addEventListener('click', computeCosts);
+
+        // Hit ratio slider
+        document.getElementById('hit-ratio-slider').addEventListener('input', function() {
+            updateHitRatioDisplay(parseInt(this.value));
+            document.getElementById('preset-select').value = 'custom';
+        });
+        document.getElementById('hit-ratio-slider').addEventListener('change', function() {
+            document.getElementById('preset-select').value = 'custom';
+            computeCosts();
+        });
+
+        // Auto-recompute on input changes
+        var numberInputs = document.querySelectorAll('#rps-input, #object-size-kb, #unique-objects, #origin-egress-cost');
+        numberInputs.forEach(function(input) {
+            input.addEventListener('input', function() {
+                document.getElementById('preset-select').value = 'custom';
+                computeCosts();
+            });
+        });
+        var selectInputs = document.querySelectorAll('#traffic-pattern, #ttl-strategy');
+        selectInputs.forEach(function(select) {
+            select.addEventListener('change', function() {
+                document.getElementById('preset-select').value = 'custom';
+                computeCosts();
+            });
+        });
+    });
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

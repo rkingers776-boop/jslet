@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The LCU Trap: Why Your Load Balancer Bill Has Nothing To Do With Bandwidth — And Everything To Do With The One Dimension You're Not Watching (2026) — jslet</title>
+    <meta name="description" content="ALB and NLB bill by LCU — and you pay for the MAX dimension, not the sum. A balancer at 2 Gbps with 5 new connections/second bills 2 LCU. Add 50,000 connections/second and NLB drops to 1 LCU while ALB jumps to 2,000. The binding dimension flips the economics. We modeled five real workload profiles across both load balancer types with 2026 LCU pricing. One connection-heavy workload: NLB is 4.6× cheaper than ALB. One rule-heavy workload: ALB's rule-evaluation LCU is the silent binding dimension costing $1,435/month more than it should.">
+    <meta property="og:title" content="The LCU Trap: Why Your Load Balancer Bill Has Nothing To Do With Bandwidth">
+    <meta property="og:description" content="ALB vs NLB: you pay for the MAX LCU dimension, not the sum. NLB handles 32× more new connections per LCU than ALB. ALB's rule-evaluation dimension can silently become the binding dimension at 50+ rules. We ran five workloads.">
+    <meta property="og:url" content="https://www.jslet.com/alb-nlb-cost-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-07-21T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-21T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The LCU Trap: Why Your Load Balancer Bill Has Nothing To Do With Bandwidth">
+    <meta name="twitter:description" content="ALB vs NLB: pay for the MAX LCU dimension. NLB 32× more new connections/LCU. ALB rule-eval can silently bind at 50+ rules, adding $1,400+/mo. Five workload profiles, all the numbers.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/alb-nlb-cost-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The LCU Trap: Why Your Load Balancer Bill Has Nothing To Do With Bandwidth — And Everything To Do With The One Dimension You're Not Watching (2026)",
+      "description": "AWS Application Load Balancer and Network Load Balancer use LCU (Load Balancer Capacity Unit) billing, where you pay for the single largest dimension — not the sum. NLB handles 32× more new connections per LCU than ALB (800 vs 25). ALB's rule-evaluation dimension can silently become the binding constraint at 50+ content-based rules, exceeding bandwidth and new-connection LCU combined. We modeled five real workload profiles with 2026 pricing. The choice between ALB and NLB is not a feature decision — it's a billing-structure decision that can swing the monthly bill by 4–5×.",
+      "url": "https://www.jslet.com/alb-nlb-cost-real",
+      "datePublished": "2026-07-21T00:00:00+00:00",
+      "dateModified": "2026-07-21T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How does AWS LCU (Load Balancer Capacity Unit) billing actually work?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "AWS bills ALB and NLB by LCU-hours: the number of LCUs consumed per hour times the hours your load balancer is active. One LCU represents a unit of capacity across four independent dimensions: new connections/ flows per second, active connections/flows, bandwidth (Gbps), and — for ALB only — rule evaluations per second. AWS computes LCU usage for each dimension independently, then bills you for the ceiling of the single largest dimension. A balancer at 2 Gbps bandwidth and 5 new connections/second bills 2 LCU (bandwidth binds at 2 Gbps ÷ 1 Gbps/LCU = 2 LCU), not 2.2. Adding more active connections or rules has zero cost impact until one of those dimensions overtakes bandwidth. This is the core rule: you pay for the MAX dimension, not the SUM. The cost consequence is that each workload has a binding dimension, and identifying it — rather than optimizing all four — is the only way to control costs. Use the ALB vs NLB Cost Calculator at jslet.com/alb-nlb-cost-calculator to see which dimension binds for your traffic profile."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "When is NLB cheaper than ALB?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "NLB is cheaper than ALB when the new-connection dimension binds. NLB counts 800 new TCP flows per LCU; ALB counts only 25 new connections per LCU — a 32× difference. At 50,000 new connections/second, NLB needs 63 LCU (50,000 ÷ 800) while ALB needs 2,000 LCU (50,000 ÷ 25). Even at NLB's slightly higher active-flow capacity (100,000 vs ALB's 3,000), the new-connection dimension dominates for connection-heavy workloads: gaming servers, IoT/MQTT backends, WebSocket-heavy applications, and connection-pooled microservice meshes. At 50,000 new conn/s, NLB costs approximately $461/month while ALB costs $2,134/month — NLB is 4.6× cheaper. However, NLB cannot do HTTP routing, host-based rules, or request-level redirects — it operates at L4 only. If your workload requires content-based routing, ALB is the only option regardless of cost."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "When do ALB rule evaluations become a cost problem?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "ALB's rule-evaluation dimension bills at 1,000 rule evaluations per second per LCU — but only for rules beyond the first 10, which are free. At 50 content-based routing rules serving 2,000 requests/second, the ALB evaluates (50 − 10) × 2,000 = 80,000 rule evaluations/second = 80 LCU. If the other three dimensions (connections, active connections, bandwidth) sum to less than 80 LCU, rule evaluations become the binding dimension. At 80 LCU × $0.008/LCU-hour × 730 hours = $467/month in rule-evaluation LCU alone — often surpassing bandwidth and new-connection LCU combined. The trap compounds with request rate: at 5,000 rps with the same 50 rules, rule evaluations jump to 200,000/s = 200 LCU = $1,168/month. The fix: consolidate rules (fewer evaluated per request path), use host-based routing (which groups requests before rules apply), or move complex routing logic upstream to CloudFront or a service mesh layer where rules are cheaper or free. NLB has no rule-evaluation concept at all — another reason NLB dominates pure L4 workloads, even at high LCU counts on other dimensions."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much does an idle ALB or NLB cost per month?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Every ALB and NLB has a fixed hourly cost that applies regardless of traffic: $0.0225/hour in us-east-1. At 730 hours per month, that's $16.43/month per load balancer before a single request touches it. Two load balancers in two availability zones for high availability = $32.86/month as the absolute floor. At low traffic volumes (dev environments, internal APIs serving single-digit requests per second), this fixed cost dominates — a 1 LCU ALB at 5 rps costs ~$16.43 + (1 × $0.008 × 730) = $22.27/month. The fixed hourly cost matters most when you have many small load balancers rather than fewer consolidated ones. Consolidating behind a single ALB with host-based routing (free rules within the first 10) often eliminates multiple $16.43/month fixed charges. The ALB vs NLB Cost Calculator at jslet.com/alb-nlb-cost-calculator splits fixed and LCU costs so you can see exactly how much of your bill is the idle floor."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Should I use ALB or NLB for Kubernetes ingress?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The answer depends on what's behind the load balancer and your traffic profile. For HTTP workloads with host/path-based routing needs, AWS Load Balancer Controller creates an ALB — it can do context-path routing to different services, SSL termination at the LB, and WAF integration. For non-HTTP workloads (gRPC without HTTP/2 framing, raw TCP, UDP, or workloads where you need static IP addresses for allowlisting), use NLB. The cost difference is workload-dependent: if your K8s services are connection-heavy (thousands of new connections/second from external clients), NLB is structurally cheaper. If they're request-heavy with modest connection rates and need path-based routing, ALB is the tool — and the rule count matters. For internal service-to-service communication within the cluster, consider whether you even need a load balancer: ClusterIP services or service mesh (Istio/Linkerd) with internal routing may eliminate the LCU bill entirely."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>The <span>LCU Trap</span></h1>
+            <p>Why Your Load Balancer Bill Has Nothing To Do With Bandwidth — And Everything To Do With The One Dimension You're Not Watching</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-07-21 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 15 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <section class="seo-section">
+            <h2>Executive Summary</h2>
+            <p>Most engineers think about load balancers in terms of throughput. "We're pushing 2 Gbps through the ALB, so it's probably costing us something around..." — and that's where the intuition breaks. LCU billing doesn't care about your intuition. It cares about four independent dimensions, computes each one, and bills you for whichever is largest. The other three could be zero or they could be enormous — it doesn't matter. The max wins.</p>
+
+            <p>This quirk of the pricing model has a counterintuitive consequence: <strong>the dimension that determines your bill is usually not the one you're monitoring.</strong> Most teams watch bandwidth because it maps to "how much traffic." But bandwidth is almost never the binding dimension unless you're running a data-heavy workload with small connection counts. The real binding dimension depends on your workload shape — and for many architectures, it's new connections (NLB wins by 32×) or rule evaluations (ALB-only trap). If you picked ALB because you need HTTP routing and didn't check whether your rule count is the binding dimension, your bill may be 2–3× what it should be for the bandwidth you're actually pushing.</p>
+
+            <p>This briefing deconstructs LCU billing mechanics, walks through five workload profiles that flip the binding dimension in unexpected ways, and provides a decision framework for choosing ALB vs NLB — not on features, but on cost structure. Because the features determine whether you <em>can</em> use one or the other. The cost structure determines whether you <em>should</em>.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>How LCU Billing Actually Works — The Max Rule</h2>
+            <p>ALB and NLB each bill by LCU-hour. An LCU is a bundle of capacity across four (ALB) or up to six (NLB) dimensions:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <thead>
+                    <tr style="background:var(--bg-input);">
+                        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--border);">Dimension</th>
+                        <th style="padding:8px 12px;text-align:right;border-bottom:2px solid var(--border);">ALB per LCU</th>
+                        <th style="padding:8px 12px;text-align:right;border-bottom:2px solid var(--border);">NLB per LCU</th>
+                        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--border);">Implication</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">New connections / flows / second</td><td style="text-align:right;padding:6px 12px;font-family:monospace;">25</td><td style="text-align:right;padding:6px 12px;font-family:monospace;">800</td><td style="padding:6px 12px;font-size:0.8rem;">NLB is <strong>32×</strong> more efficient per LCU</td></tr>
+                    <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">Active connections / flows</td><td style="text-align:right;padding:6px 12px;font-family:monospace;">3,000</td><td style="text-align:right;padding:6px 12px;font-family:monospace;">100,000</td><td style="padding:6px 12px;font-size:0.8rem;">NLB is <strong>33×</strong> more efficient per LCU</td></tr>
+                    <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">Bandwidth (Gbps)</td><td style="text-align:right;padding:6px 12px;font-family:monospace;">1 Gbps</td><td style="text-align:right;padding:6px 12px;font-family:monospace;">1 Gbps</td><td style="padding:6px 12px;font-size:0.8rem;">Equal — both bill 1 Gbps/LCU</td></tr>
+                    <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 12px;">Rule evaluations / second*</td><td style="text-align:right;padding:6px 12px;font-family:monospace;">1,000</td><td style="text-align:right;padding:6px 12px;font-family:monospace;">—</td><td style="padding:6px 12px;font-size:0.8rem;">ALB only. First 10 rules free.</td></tr>
+                </tbody>
+            </table>
+            <p style="font-size:0.78rem;color:var(--text-muted);">* NLB additionally bills for TLS flows (50/LCU) and source/destination IP tuple preservation (240,000/LCU) when those features are enabled. They rarely bind unless you have a very specific workload pattern — TLS-heavy without high connection counts, or source-IP-preserved without high active connections.</p>
+
+            <p>The billing rule: compute all dimensions, ceiling the maximum, bill that LCU count. <strong>LCU = ceil( max(dim1, dim2, dim3, dim4) )</strong>. The minimum is 1 LCU per load balancer per hour.</p>
+
+            <p>Here's a concrete example. An ALB serving 2,000 requests/second with 40 KB average response size, 500 new connections/second, 40,000 active connections, and 20 content-based routing rules:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Dimension</th><th style="text-align:right;padding:6px 10px;">Raw Value</th><th style="text-align:right;padding:6px 10px;">Formula</th><th style="text-align:right;padding:6px 10px;">LCU from Dim</th></tr>
+                <tr style="border-bottom:1px solid var(--border);background:var(--accent-soft);"><td style="padding:6px 10px;">New connections</td><td style="text-align:right;padding:6px 10px;">500</td><td style="text-align:right;padding:6px 10px;font-family:monospace;">500 ÷ 25</td><td style="text-align:right;padding:6px 10px;">20.0</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Active connections</td><td style="text-align:right;padding:6px 10px;">40,000</td><td style="text-align:right;padding:6px 10px;font-family:monospace;">40,000 ÷ 3,000</td><td style="text-align:right;padding:6px 10px;">13.3</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Bandwidth</td><td style="text-align:right;padding:6px 10px;">0.64 Gbps</td><td style="text-align:right;padding:6px 10px;font-family:monospace;">(2000 × 40 × 8) ÷ 1e9</td><td style="text-align:right;padding:6px 10px;">0.64</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Rule evaluations</td><td style="text-align:right;padding:6px 10px;">20,000/s</td><td style="text-align:right;padding:6px 10px;font-family:monospace;">(20-10) × 2000 ÷ 1000</td><td style="text-align:right;padding:6px 10px;">20.0</td></tr>
+                <tr style="border-bottom:2px solid var(--border);"><td style="padding:6px 10px;"><strong>ALB LCU (max, ceiling)</strong></td><td colspan="3" style="text-align:right;padding:6px 10px;font-family:monospace;color:var(--accent);"><strong>20 LCU</strong> (new connections and rule evaluations tie at 20)</td></tr>
+            </table>
+
+            <p>Two dimensions tie at 20 LCU. Add 10 more rules to go from 20 to 30, and rule evaluations become the sole binding dimension at 30 LCU — a 50% bill increase, while bandwidth hasn't moved. This is the trap: changes to one dimension can bind and spike the bill, while the dimension you're monitoring (usually bandwidth) stays flat. And if you don't know which dimension binds, you can't predict which changes will spike the bill.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>⚡ The Core Insight:</strong> Because you pay for the MAX, optimizing the non-binding dimensions has zero cost impact. If new connections bind at 20 LCU, reducing active connections from 40,000 to 3,000 saves exactly $0. The bill is already determined by new connections. Every cost optimization effort should start by identifying the binding dimension — then asking whether you can change it, or whether a different load balancer type would bind on a cheaper dimension. The <a href="/alb-nlb-cost-calculator">ALB vs NLB Cost Calculator</a> shows the binding dimension for both types side by side.</p>
+            </div>
+
+            <p style="font-size:0.9rem; color:var(--text-secondary); line-height:1.8; margin-top: 20px;">"So bandwidth never matters?" Sometimes. If you're pushing 50 Gbps through 5 connections — a video processing pipeline or a CDN origin — bandwidth absolutely binds, and ALB and NLB bill it identically at 1 Gbps/LCU. The 25% per-LCU-hour difference is the entire story. But that workload shape is rare. Most architectures push modest bandwidth through many connections (web apps, APIs, microservices) or push high bandwidth through few connections (batch data jobs). The workloads where connections bind are far more common — and that's where NLB's 32× advantage isn't a pricing footnote, it's the only number that matters.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The ALB vs NLB Cost Structure — Where The Gap Comes From</h2>
+            <p>ALB charges $0.008/LCU-hour. NLB charges $0.006/LCU-hour. That's a 25% difference — but it's the small story. The big story is how many connections each LCU buys. NLB packs 800 new TCP flows into one LCU. ALB packs 25. NLB puts 100,000 active flows in one LCU. ALB puts 3,000. Those are 32× and 33× differences — not 25%. And because you pay for the MAX, the workload where new connections bind means NLB is not 25% cheaper. It's 97% cheaper.</p>
+
+            <p>The math: at 50,000 new connections/second:</p>
+            <ul>
+                <li>ALB LCU: 50,000 ÷ 25 = <strong>2,000 LCU</strong></li>
+                <li>NLB LCU: 50,000 ÷ 800 = <strong>63 LCU</strong></li>
+                <li>ALB LCU cost: 2,000 × $0.008 × 730 hours = <strong>$11,680/month</strong></li>
+                <li>NLB LCU cost: 63 × $0.006 × 730 hours = <strong>$276/month</strong></li>
+                <li><strong>NLB is 42× cheaper on LCU cost for this workload.</strong></li>
+            </ul>
+
+            <p>The 25% per-LCU-hour difference is noise. The 32× per-connection-per-LCU difference is the signal. And it matters because many workloads — gaming servers, IoT backends, WebSocket-heavy apps, connection-pooled microservice meshes — are connection-bound, not bandwidth-bound. If you're running one of these on ALB because you also need HTTP routing for a small fraction of requests, you're paying the connection tax on 100% of traffic for a feature you need on maybe 20% of it.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Rule-Evaluation Tax — The ALB Cost Dimension Nobody Audits</h2>
+            <p>ALB's rule-evaluation dimension is the most asymmetric cost driver between ALB and NLB — because NLB doesn't have rules. Every request through an ALB triggers a sequential evaluation of content-based routing rules. The first 10 rules are free. Beyond that, 1,000 rule evaluations per second = 1 LCU.</p>
+
+            <p>The cost formula: <strong>LCU from rules = ceil( (rules − 10) × rps / 1000 )</strong>. Notice that request rate multiplies rule count. At 2,000 rps with 20 rules: (10 × 2,000) / 1,000 = <strong>20 LCU</strong>. At 5,000 rps with the same 20 rules: <strong>50 LCU</strong>. At 5,000 rps with 50 rules: (40 × 5,000) / 1,000 = <strong>200 LCU</strong>, which at $0.008/LCU-hour × 730 hours = <strong>$1,168/month</strong> — in rule-evaluation LCU alone.</p>
+
+            <p>Multi-tenant SaaS platforms hit this wall routinely. A typical setup: 60 content-based routing rules on the ALB — one per tenant subdomain, each routing to a tenant-specific target group. At 4,000 rps, their rule-evaluation dimension: (50 × 4,000) / 1,000 = 200 LCU. Bandwidth dimension: 1.6 LCU. New-connection dimension: 8 LCU. The rule-evaluation tax alone comes to $1,168/month while the combined other three dimensions total $73/month — a 16× bill asymmetry, invisible because the AWS invoice says "Load Balancer," not "Rule Evaluations."</p>
+
+            <p>The fix isn't switching to NLB (NLB can't do host-based routing). It's consolidating: move from 60 individual tenant rules to a single wildcard rule plus application-level routing logic. Rule count drops to 2 billed rules, LCU drops from 200 to 8, savings of $1,121/month. The architecture doesn't change. The routing behavior doesn't change. The ALB rule count is what changes — and that's all LCU billing cares about.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>Rule of thumb:</strong> If your ALB has more than 30 content-based routing rules and serves more than 1,000 rps, pull the rule-evaluation LCU number. The formula is dead simple: (rules − 10) × rps / 1000. Multiply by $0.008 × 730. If the result is more than $100/month, you have a cost optimization opportunity — consolidate rules, move routing logic to application code or CloudFront, or consider whether some traffic can bypass the ALB entirely via a service mesh.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Five Workload Profiles: The Binding Dimension Decides Everything</h2>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;">All scenarios: 2 load balancers in us-east-1, 730 hours/month, 2026 list pricing. Fixed hourly = $0.0225/LB × 2 × 730 = $32.85/month for both ALB and NLB.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <thead>
+                    <tr style="background:var(--bg-input);">
+                        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--border);">Workload</th>
+                        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--border);">Traffic Profile</th>
+                        <th style="padding:8px 12px;text-align:left;border-bottom:2px solid var(--border);">Binding Dim</th>
+                        <th style="padding:8px 12px;text-align:right;border-bottom:2px solid var(--border);">ALB/mo</th>
+                        <th style="padding:8px 12px;text-align:right;border-bottom:2px solid var(--border);">NLB/mo</th>
+                        <th style="padding:8px 12px;text-align:right;border-bottom:2px solid var(--border);">Winner</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:6px 12px;"><strong>Small API</strong></td>
+                        <td style="padding:6px 12px;font-size:0.8rem;">1 LB, 200 rps, 50 KB, 5 rules, 50 new conn/s, 3,000 active</td>
+                        <td style="padding:6px 12px;font-family:monospace;">New conn (ALB: 2, NLB: 1)</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;">$28.11</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;color:#27ae60;">$23.25</td>
+                        <td style="text-align:right;padding:6px 12px;">NLB, marginal</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:6px 12px;"><strong>Web App</strong></td>
+                        <td style="padding:6px 12px;font-size:0.8rem;">2 LB, 2,000 rps, 40 KB, 20 rules, 500 new conn/s, 40,000 active</td>
+                        <td style="padding:6px 12px;font-family:monospace;">Rule eval + new conn (ALB: 20)</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;color:#27ae60;">$149.65</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;">$153.41</td>
+                        <td style="text-align:right;padding:6px 12px;">Near parity</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border);background:var(--accent-soft);">
+                        <td style="padding:6px 12px;"><strong>Connection-Heavy</strong></td>
+                        <td style="padding:6px 12px;font-size:0.8rem;">2 LB, 1,000 rps, 10 KB, 5 rules, 50,000 new conn/s, 200,000 active</td>
+                        <td style="padding:6px 12px;font-family:monospace;">New conn (ALB: 2,000, NLB: 63)</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;">$11,712.85</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;color:#27ae60;">$308.79</td>
+                        <td style="text-align:right;padding:6px 12px;">NLB, 38× cheaper</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border);background:var(--accent-soft);">
+                        <td style="padding:6px 12px;"><strong>Rule-Heavy Router</strong></td>
+                        <td style="padding:6px 12px;font-size:0.8rem;">2 LB, 3,000 rps, 30 KB, 60 rules, 300 new conn/s, 30,000 active</td>
+                        <td style="padding:6px 12px;font-family:monospace;">Rule eval (ALB: 150 LCU)</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;">$908.85</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;color:#27ae60;">$164.06</td>
+                        <td style="text-align:right;padding:6px 12px;">NLB, 5.5× cheaper*</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:6px 12px;"><strong>Data-Heavy</strong></td>
+                        <td style="padding:6px 12px;font-size:0.8rem;">3 LB, 5,000 rps, 2 MB, 10 rules, 1,000 new conn/s, 60,000 active</td>
+                        <td style="padding:6px 12px;font-family:monospace;">Bandwidth (ALB: 80, NLB: 80)</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;color:#27ae60;">$578.54</td>
+                        <td style="text-align:right;padding:6px 12px;font-family:monospace;">$591.78</td>
+                        <td style="text-align:right;padding:6px 12px;">ALB, marginal</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p style="font-size:0.78rem;color:var(--text-muted);">* Rule-heavy workload: NLB cannot do content-based routing. The NLB comparison is provided to show the pure-L4 cost alternative — but if you need HTTP routing, ALB is the only option and rule consolidation is the optimization path. NLB's lower cost on this row is informative, not actionable.</p>
+
+            <h3 style="color: var(--accent); margin-top: 24px; margin-bottom: 12px;">The Connection-Heavy Workload: A Deep Dive</h3>
+            <p>This is the workload where LCU math gets real. At 50,000 new connections/second, the binding dimension for ALB is new connections: 50,000 ÷ 25 = 2,000 LCU. For NLB: 50,000 ÷ 800 = 63 LCU. Active connections on NLB: 200,000 ÷ 100,000 = 2 LCU. Bandwidth on NLB: 1,000 rps × 10 KB × 8 ÷ 1e9 = 0.08 Gbps = 1 LCU (minimum). NLB binds on new connections at 63 LCU. ALB binds on new connections at 2,000 LCU.</p>
+
+            <p>The monthly LCU cost: ALB = 2,000 × $0.008 × 730 = <strong>$11,680</strong>. NLB = 63 × $0.006 × 730 = <strong>$276</strong>. The $11,404 monthly gap is not a pricing difference. It's a capacity-model difference. ALB was designed for Layer-7 traffic where connections are short-lived and request processing is the bottleneck. NLB was designed for Layer-4 traffic where connections are long-lived and throughput is the bottleneck. When you route a connection-heavy workload through a Layer-7 load balancer, you're paying for Layer-7 processing capacity you don't need — and the LCU billing model surfaces that mismatch in dollars.</p>
+
+            <p>This is the workload profile for: gaming servers (thousands of persistent player connections), IoT/MQTT backends (thousands of device connections with long-lived TCP sessions), WebSocket-heavy collaborative apps (Figma, Miro, Notion — hundreds of connections per user), and connection-pooled microservices where each service instance maintains a persistent connection pool to upstream services through the load balancer. If your architecture leans on persistent connections, NLB is not just cheaper — it's the tool that matches the traffic shape. ALB will bill you for HTTP parsing capacity on every one of those 50,000 connections, each of which might send one 10 KB message every 30 seconds. The waste is in the billing model, not the hardware.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Fixed Hourly Floor — When Idle Load Balancers Cost More Than Active Ones</h2>
+            <p>Every ALB and NLB costs $0.0225/hour simply to exist. Two load balancers across two availability zones for HA: $32.85/month before a single byte of traffic. At low traffic, this fixed cost dominates:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Traffic Level</th><th style="text-align:right;padding:6px 10px;">LCU</th><th style="text-align:right;padding:6px 10px;">Fixed/mo</th><th style="text-align:right;padding:6px 10px;">LCU/mo</th><th style="text-align:right;padding:6px 10px;">Total/mo</th><th style="text-align:right;padding:6px 10px;">Fixed % of Total</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Idle (0 rps)</td><td style="text-align:right;padding:6px 10px;">1</td><td style="text-align:right;padding:6px 10px;">$32.85</td><td style="text-align:right;padding:6px 10px;">$5.84</td><td style="text-align:right;padding:6px 10px;">$38.69</td><td style="text-align:right;padding:6px 10px;">84.9%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">5 rps (dev)</td><td style="text-align:right;padding:6px 10px;">1</td><td style="text-align:right;padding:6px 10px;">$32.85</td><td style="text-align:right;padding:6px 10px;">$5.84</td><td style="text-align:right;padding:6px 10px;">$38.69</td><td style="text-align:right;padding:6px 10px;">84.9%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">100 rps</td><td style="text-align:right;padding:6px 10px;">4</td><td style="text-align:right;padding:6px 10px;">$32.85</td><td style="text-align:right;padding:6px 10px;">$23.36</td><td style="text-align:right;padding:6px 10px;">$56.21</td><td style="text-align:right;padding:6px 10px;">58.4%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">2,000 rps</td><td style="text-align:right;padding:6px 10px;">20</td><td style="text-align:right;padding:6px 10px;">$32.85</td><td style="text-align:right;padding:6px 10px;">$116.80</td><td style="text-align:right;padding:6px 10px;">$149.65</td><td style="text-align:right;padding:6px 10px;">21.9%</td></tr>
+            </table>
+
+            <p>For a dev or staging environment with one ALB serving single-digit requests per second, 85% of the bill is the fixed hourly charge — the ALB costs the same whether it's idle or lightly loaded. A team running five small ALBs (one per microservice exposed externally) pays $82.13/month in fixed charges before LCU. And that's per region per account. If your dev and staging environments each have their own set of ALBs, the idle-floor cost compounds.</p>
+
+            <p>The fix: consolidate multiple small ALBs into one larger ALB with host-based routing. Host-based rules are free (within the first 10). One ALB at $16.43/month + a few LCU serves the same five services. The fixed-hourly consolidation often saves $65/month or more — small change in absolute terms, but it's 80% of the original load balancer bill.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>When ALB Wins, When NLB Wins, When Neither Wins</h2>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>ALB is the right tool when:</strong> (1) you need host/path-based HTTP routing, (2) you need WebSocket support with HTTP upgrade, (3) you're running gRPC with HTTP/2 framing and need application-level health checks, (4) you need WAF integration at the load balancer layer, or (5) you need native redirect/rewrite capabilities. In these cases, NLB is not an alternative — it operates at L4 and cannot make routing decisions based on HTTP headers. The question is not whether ALB is cheaper; it's whether you can get ALB's LCU cost down by consolidating rules and verifying the binding dimension.</p>
+            </div>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>NLB is the right tool when:</strong> (1) your workload is connection-bound (thousands of new connections/second, persistent connections, long-lived sessions), (2) you need static IP addresses for firewall allowlisting, (3) you're serving non-HTTP protocols (raw TCP, UDP, MQTT, database protocols), or (4) you need the lowest possible latency without HTTP parsing overhead. NLB's 32× connection efficiency per LCU is the structural advantage — and it's not a pricing gimmick that can change next week. It's embedded in the LCU dimension definitions.</p>
+            </div>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>Neither is necessary when:</strong> you're routing internal service-to-service traffic within a VPC or Kubernetes cluster. If traffic never leaves the private network, consider: (1) using Cloud Map + service discovery for AWS ECS/EKS, (2) deploying a service mesh (Istio, Linkerd, Consul) that handles routing and load balancing at the sidecar level — no AWS LCU bill at all, (3) using Kubernetes ClusterIP services for in-cluster communication, which are free. Every load balancer in your architecture that faces internal-only traffic is a $16.43/month fixed cost plus LCU that you might be able to eliminate entirely. Internal load balancers add up — AWS accounts with 40+ internal ALBs are not unusual, each one costing $16–50/month. That's $640–2,000/month in fixed hourly charges for traffic that never crosses a public boundary.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Concrete Steps: What To Audit This Quarter</h2>
+
+            <p><strong>1. Identify the binding dimension for every ALB and NLB you run.</strong> For each load balancer, compute the four (or six) LCU dimensions from your CloudWatch metrics: NewConnectionCount, ActiveConnectionCount, ProcessedBytes (convert to Gbps), and RuleEvaluations (ALB only). Ceiling the max. That's your LCU count. Multiply by your hourly rate and monthly hours. Compare to your actual bill. If there's a discrepancy, you're probably over-provisioned on a dimension you're not watching. The <a href="/alb-nlb-cost-calculator" style="color:var(--accent);">ALB vs NLB Cost Calculator</a> does this computation from your traffic parameters and shows you exactly which dimension binds.</p>
+
+            <p><strong>2. Count your ALB rules.</strong> For each ALB, go to the EC2 console → Load Balancers → your ALB → Listeners → Rules. Count the number of non-default rules. Subtract 10 (the free tier). Multiply by your request rate. Divide by 1,000. That's your rule-evaluation LCU — and it may be the largest LCU component without you knowing. If the number is above 10, you have a rule-evaluation optimization opportunity. Consolidating rules, moving routing logic to the application layer, or restructuring your rule priority to minimize evaluated rules per request are all zero-cost fixes.</p>
+
+            <p><strong>3. Audit your internal-only load balancers.</strong> Open the EC2 console → Load Balancers. Filter by Scheme = "internal." Count them. For each one, ask: does this traffic actually need a load balancer, or can it use service discovery / Cloud Map / service mesh / direct IP routing? Every internal ALB is $16.43/month minimum. A medium-sized AWS account often has 10–20 internal ALBs — $164–328/month in idle-floor costs before LCU. This is the easiest cost optimization: eliminate load balancers that serve traffic that never needed a load balancer.</p>
+
+            <p><strong>4. Model ALB vs NLB for connection-heavy workloads.</strong> If your workload has more than 1,000 new connections/second and doesn't need HTTP routing, NLB is almost certainly cheaper — by a factor of 4× to 40× depending on connection count. The LCU dimension definitions make this a structural fact, not a market fluctuation. Use the calculator to model your exact numbers, but the direction is unambiguous at connection counts above ~1,000/s.</p>
+
+            <p><strong>5. Split traffic when you need both HTTP routing and high connection throughput.</strong> The most cost-efficient architecture for mixed workloads is often: one small ALB for the HTTP-routed traffic (catching the 20% of requests that need URL-based routing) and one NLB for the bulk connection-heavy traffic (catching the 80% that just needs TCP pass-through). The ALB handles 200 rps with rules at ~$28/month. The NLB handles 50,000 connections at ~$309/month. Combined: $337/month. A single ALB handling both: ~$11,713/month. This is not a marginal improvement. It's a 35× cost reduction from routing traffic to the load balancer that matches its shape. The architecture adds one component (a second load balancer type + DNS-level traffic splitting), but the bill goes from "we need a budget line item" to "it's in the noise."</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>🧰 Use our related tools to model your full network cost stack:</strong> <a href="/alb-nlb-cost-calculator">ALB vs NLB Cost Calculator</a> · <a href="/cloud-load-balancer-rules-to-latency-overhead">ALB Rule Latency Inspector</a> · <a href="/concurrent-users-to-bandwidth">Concurrent Users → Bandwidth</a> · <a href="/gbps-to-tb-per-day">Gbps → TB/Day Egress</a> · <a href="/nat-gateway-cost-calculator">NAT Gateway Cost</a> · <a href="/latency-budget-calculator">Latency Budget Calculator</a></p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How does LCU billing actually work — do I pay for all four dimensions or just one?</h3>
+                <p>You pay for the maximum, not the sum. AWS computes LCU usage for each dimension independently: new connections/sec, active connections, bandwidth (Gbps), and — for ALB only — rule evaluations/sec. You are billed for the ceiling of the largest dimension. A balancer at 2 Gbps bandwidth and 5 new connections/second bills 2 LCU (bandwidth binds), not 2.2. The other three dimensions could be high or low — they don't add to the bill unless one of them exceeds the binding dimension. This is the single most important concept in LCU cost optimization: optimizing any non-binding dimension saves $0. Only changes that reduce the maximum dimension reduce the bill. This is also why NLB's 32× connection efficiency matters so much — when new connections bind, NLB doesn't just give you a 25% discount; it gives you a 97% reduction because the LCU count drops from 2,000 to 63.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">When is NLB dramatically cheaper than ALB — and when are they about the same?</h3>
+                <p>NLB is dramatically cheaper when new connections or active connections bind. At 50,000 new connections/second, NLB needs 63 LCU and ALB needs 2,000 — the 32× capacity difference per LCU on new connections produces an LCU cost gap of 42× (because the per-LCU-hour price difference is only 25%, the capacity difference dominates). They're about the same cost when bandwidth binds — both count 1 Gbps per LCU, and the $0.008 vs $0.006/LCU-hour difference means NLB is about 25% cheaper. At low traffic levels where 1 LCU is the minimum for both, they're within a few dollars — the fixed hourly charge of $16.43/month per load balancer dominates. For a comprehensive head-to-head using your actual traffic profile, use the <a href="/alb-nlb-cost-calculator">ALB vs NLB Cost Calculator</a>.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How many ALB rules are too many from a cost perspective?</h3>
+                <p>The cost threshold depends on your request rate, not just rule count. At 1,000 rps, 30 rules produce (30-10) × 1,000 / 1,000 = 20 LCU = $117/month. At 10,000 rps, 30 rules produce 200 LCU = $1,168/month. Same rule count, different request rate, 10× different cost. The rule-evaluation LCU formula is: LCU = ceil( (rules_beyond_10 × rps) / 1,000 ). When this number exceeds your bandwidth or connection LCU, rules become the binding dimension and every additional rule or rps increase raises the bill. As a practical threshold: if (rules − 10) × rps > 10,000, rule evaluations are likely a meaningful cost driver — roughly $58/month or more. At that point, rule consolidation, priority reordering, or moving routing logic to CloudFront or the application layer pays for the engineering effort within one billing cycle.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Should I use ALB or NLB for my Kubernetes services on EKS?</h3>
+                <p>Use ALB when your services expose HTTP endpoints that need path-based routing to different services (e.g., /api → service-a, /web → service-b). The AWS Load Balancer Controller creates one ALB per Ingress resource and can route to multiple services with host/path-based rules. Use NLB when your services expose non-HTTP protocols (TCP, UDP, gRPC without HTTP/2 framing) or when you need static IP addresses for allowlisting. Use neither — and eliminate the load balancer entirely — for purely internal service-to-service communication within the cluster. ClusterIP services, headless services with service discovery, and service mesh sidecars (Istio, Linkerd) handle internal routing without an AWS load balancer. A Kubernetes cluster with 20 externally exposed microservices each behind its own ALB is paying $328.60/month in fixed hourly charges before any LCU — most of which can be eliminated by consolidating into fewer ALBs with path-based routing or by moving internal services to mesh-based routing.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Can I use ALB and NLB together to optimize costs?</h3>
+                <p>Yes — chaining ALB in front of NLB (or vice versa) is a supported architecture, though usually the better pattern is to split traffic at DNS: ALB for HTTP-routed requests, NLB for connection-heavy or non-HTTP traffic. The chaining pattern (NLB → ALB) is primarily used when you need static IP addresses on an ALB (NLB provides the static IP and forwards to ALB via its dynamic IP), or when you need PrivateLink exposure (NLB as the PrivateLink endpoint, ALB behind it for HTTP routing). The pattern adds an extra $16.43/month for the additional load balancer — minimal compared to the routing flexibility it provides. The split-by-DNS pattern avoids LCU duplication because traffic goes through one load balancer, not two. Use <a href="/alb-nlb-cost-calculator">the calculator</a> to model both sides of the split and verify the economics.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Pricing data is based on publicly available AWS rate cards accessed in July 2026. ALB pricing: $0.0225/hour fixed, $0.008/LCU-hour. NLB pricing: $0.0225/hour fixed, $0.006/LCU-hour. All prices are us-east-1 on-demand list rates. Region-specific multipliers are not applied in the scenario comparisons. LCU dimension definitions are from the AWS documentation: ALB — 25 new connections, 3,000 active connections, 1 Gbps bandwidth, 1,000 rule evaluations per LCU; NLB — 800 new flows (TCP), 100,000 active flows, 1 Gbps bandwidth, 50 TLS flows, 240,000 source/destination tuples per LCU.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">All scenario computations assume steady-state traffic over a 730-hour month. In practice, traffic is rarely uniform — bursty workloads may hit a higher LCU ceiling during peak hours (AWS bills the maximum LCU in each hour, not averaged). The peak-hour LCU determines the bill for the entire hour, meaning a 5-minute traffic spike can bill you for 60 minutes at the spike LCU level. Workloads with high variance should model at their 95th or 99th percentile traffic levels, not their average.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. This analysis was produced using our own <a href="/alb-nlb-cost-calculator">ALB vs NLB Cost Calculator</a> and publicly available AWS pricing data. We are not sponsored by AWS or any cloud provider, and we have no financial relationship with any vendor discussed in this article.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>AWS (2026).</strong> "Application Load Balancer Pricing." <a href="https://aws.amazon.com/elasticloadbalancing/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-2"><strong>AWS (2026).</strong> "Network Load Balancer Pricing." <a href="https://aws.amazon.com/elasticloadbalancing/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-3"><strong>AWS (2026).</strong> "Load Balancer Capacity Units (LCU) for your Application Load Balancer." Documents LCU dimension definitions and how AWS computes LCU from CloudWatch metrics. <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-capacity-unit.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-4"><strong>AWS (2026).</strong> "Listeners for your Application Load Balancers." Rule evaluation ordering, default rules, and priority-based matching mechanics. <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-listeners.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-5"><strong>AWS (2026).</strong> "AWS Load Balancer Controller for Kubernetes." ALB/NLB creation from Kubernetes Ingress resources on EKS. <a href="https://docs.aws.amazon.com/eks/latest/userguide/aws-load-balancer-controller.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-6"><strong>AWS (2026).</strong> "CloudWatch Metrics for your Application Load Balancer." Details the exact metrics (NewConnectionCount, ActiveConnectionCount, ProcessedBytes, RuleEvaluations) used to compute LCU. <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-cloudwatch-metrics.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-7"><strong>AWS (2026).</strong> "Using AWS PrivateLink with Network Load Balancers." NLB as a PrivateLink endpoint for exposing services across VPCs/accounts. <a href="https://docs.aws.amazon.com/vpc/latest/privatelink/create-endpoint-service.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/alb-nlb-cost-real&t=The+LCU+Trap:+Why+Your+Load+Balancer+Bill+Has+Nothing+To+Do+With+Bandwidth" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/alb-nlb-cost-real&text=Your+load+balancer+bill+isn%27t+about+bandwidth.+It%27s+about+the+one+LCU+dimension+you%27re+not+watching.+NLB+is+32x+more+efficient+on+new+connections.+ALB+rule+eval+can+add+%241%2C100%2Fmo+silently.+I+ran+five+workloads:+&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/aws/submit?url=https://www.jslet.com/alb-nlb-cost-real&title=The+LCU+Trap:+Why+Your+Load+Balancer+Bill+Has+Nothing+To+Do+With+Bandwidth+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/aws">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/alb-nlb-cost-real&title=The+LCU+Trap:+Why+Your+Load+Balancer+Bill+Has+Nothing+To+Do+With+Bandwidth" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0;"><strong>Preferred Attribution Format:</strong> <code style="font-size:0.82rem; background:var(--bg-card); padding:2px 8px; border-radius:3px;">"The LCU Trap: Why Your Load Balancer Bill Has Nothing To Do With Bandwidth — And Everything To Do With The One Dimension You're Not Watching (2026)" — jslet Research, July 2026. https://www.jslet.com/alb-nlb-cost-real</code></p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> When your load balancer bill has less to do with bandwidth than a lottery has to do with statistics, the billing model is the story. RSS covers one uncomfortable infrastructure pricing reality per week. No vendor sponsors. No tracking. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

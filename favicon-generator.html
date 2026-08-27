@@ -1,0 +1,369 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Favicon Generator — Create Icons & Favicon Package Online — jslet</title>
+    <meta name="description" content="Generate a full favicon package from emoji, text or color — 16/32/180/192/512 PNG icons, manifest.json and HTML link code. Draw with canvas in your browser, nothing is uploaded. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/favicon-generator">
+    <meta property="og:title" content="Favicon Generator — Icon Package in Your Browser"><meta property="og:description" content="Emoji, text or color → 16/32/180/192/512 favicon PNGs + manifest.json + HTML code. 100% client-side, nothing uploaded."><meta property="og:url" content="https://www.jslet.com/favicon-generator"><meta property="og:type" content="website"><meta property="og:site_name" content="jslet"><meta property="og:image" content="https://www.jslet.com/og-image.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Favicon Generator"><meta name="twitter:description" content="Generate a full favicon package from emoji or text. 16-512px PNGs, manifest.json, HTML code. 100% client-side."><meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Favicon Generator","description":"Create a complete favicon package from an emoji, text or color: 16, 32, 180, 192 and 512 px PNG icons plus manifest.json and HTML link code. Icons are drawn on a canvas entirely in the browser — nothing is uploaded.","url":"https://www.jslet.com/favicon-generator","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Which favicon sizes do I actually need?","acceptedAnswer":{"@type":"Answer","text":"The practical minimum is four: 32x32 (browser tab), 180x180 (Apple touch icon), 192x192 (Android/PWA home screen) and 512x512 (PWA install maskable icon). Add 16x16 for legacy browsers and bookmark bars. This generator produces all five plus the manifest.json that ties them together — copy the HTML snippet and the PWA install prompt works out of the box."}},{"@type":"Question","name":"Can I use an emoji as a favicon?","acceptedAnswer":{"@type":"Answer","text":"Yes — emoji render as color glyphs on a canvas, so this tool draws the emoji you pick onto the icon and exports it as PNG at every size. Use a single emoji for clarity; complex emoji with ZWJ sequences (like family emoji) may not render consistently across platforms. Emoji favicons are a great low-effort brand: pick one, match the background to your brand color, and you have a recognizable icon."}},{"@type":"Question","name":"What is a maskable icon and why do I need one?","acceptedAnswer":{"@type":"Answer","text":"A maskable icon is the PWA icon format Android crops into a circle or rounded shape. The safe zone is the inner 80% of the canvas — anything in the outer 10% border can be cut off. This generator draws the emoji/text within the safe zone and marks the 512px output as purpose: maskable in the manifest, so your icon survives the platform's masking without important parts getting cropped."}},{"@type":"Question","name":"How do I deploy the generated favicon package?","acceptedAnswer":{"@type":"Answer","text":"Download the 16/32 icons and drop them next to your HTML files, then paste the link tags into your head. For the full PWA experience, serve the 192 and 512 icons and the manifest.json from your site root, add <link rel=\"manifest\" href=\"/manifest.json\"> and the theme-color meta tag. Everything this tool generates is a static file — no build step, works on any host."}},{"@type":"Question","name":"Is the favicon generator really private?","acceptedAnswer":{"@type":"Answer","text":"Yes. The icon is drawn on an HTML canvas using only your input — no image is uploaded, no server is contacted, and the page makes zero network requests while generating. You can verify by opening the Network tab: only the page's own CSS/JS load. This matters because favicon designers often ask you to upload brand assets; here your logo never leaves your machine."}}]}</script>
+    <style>
+        .fg-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+        @media (max-width: 760px) { .fg-wrap { grid-template-columns: 1fr; } }
+        .fg-controls { background: var(--bg-card, #fff); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+        .fg-preview { background: var(--bg-card, #fff); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; text-align: center; }
+        .slider-group { display: flex; align-items: center; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
+        .slider-group label { font-size: 0.85rem; font-weight: 600; color: var(--text-heading); min-width: 96px; }
+        .slider-group input[type="range"] { flex: 1; min-width: 100px; accent-color: var(--accent); }
+        .slider-group .val { font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.85rem; color: var(--accent); min-width: 40px; text-align: right; }
+        .fg-input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text-body); font-size: 0.92rem; box-sizing: border-box; font-family: 'Cascadia Code','Consolas',monospace; }
+        .fg-emoji-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+        .fg-emoji { width: 40px; height: 40px; font-size: 1.4rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; background: var(--bg-input); }
+        .fg-emoji:hover, .fg-emoji.active { border-color: var(--accent); background: var(--accent-soft, rgba(234,88,12,0.08)); }
+        .fg-color-row { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+        .fg-color { width: 34px; height: 34px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
+        .fg-color:hover, .fg-color.active { border-color: var(--accent); }
+        .fg-icon-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 12px; margin: 14px 0; }
+        .fg-icon-item { border: 1px solid var(--border); border-radius: 10px; padding: 12px 8px; text-align: center; background: var(--bg-input); }
+        .fg-icon-item canvas { width: 64px; height: 64px; image-rendering: pixelated; }
+        .fg-icon-item .sz { font-size: 0.75rem; color: var(--text-muted); margin: 6px 0 2px; font-family: 'Cascadia Code','Consolas',monospace; }
+        .fg-icon-item button { font-size: 0.72rem; padding: 3px 10px; border: 1px solid var(--border); border-radius: 5px; background: transparent; cursor: pointer; }
+        .fg-icon-item button:hover { border-color: var(--accent); color: var(--accent); }
+        .css-output { font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.78rem; line-height: 1.6; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin: 10px 0; white-space: pre; overflow-x: auto; cursor: pointer; color: var(--text-body); }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); } .btn-outline:hover { background: var(--accent-soft, rgba(234,88,12,0.08)); }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>Favicon <span>Generator</span></h1><p>Turn an emoji, your brand text, or a color into a complete favicon package — 16/32/180/192/512 PNG icons, manifest.json, and the HTML code. Drawn on a canvas in your browser; nothing is uploaded.</p></header>
+
+        <div class="fg-wrap">
+            <div class="fg-controls">
+                <div class="slider-group">
+                    <label for="fg-type">Content</label>
+                    <select id="fg-type" onchange="renderFavicon()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text-body);font-size:0.85rem;">
+                        <option value="emoji" selected>Emoji</option>
+                        <option value="text">Text</option>
+                        <option value="flat">Flat color</option>
+                    </select>
+                </div>
+                <div class="fg-emoji-row" id="fg-emoji-row">
+                    <span class="fg-emoji" onclick="pickEmoji('⚡')">⚡</span>
+                    <span class="fg-emoji" onclick="pickEmoji('🚀')">🚀</span>
+                    <span class="fg-emoji" onclick="pickEmoji('🔥')">🔥</span>
+                    <span class="fg-emoji" onclick="pickEmoji('🎨')">🎨</span>
+                    <span class="fg-emoji" onclick="pickEmoji('⚙️')">⚙️</span>
+                    <span class="fg-emoji" onclick="pickEmoji('💻')">💻</span>
+                    <span class="fg-emoji" onclick="pickEmoji('🧮')">🧮</span>
+                    <span class="fg-emoji" onclick="pickEmoji('📦')">📦</span>
+                    <span class="fg-emoji" onclick="pickEmoji('🔧')">🔧</span>
+                    <span class="fg-emoji" onclick="pickEmoji('🟢')">🟢</span>
+                </div>
+                <div class="slider-group" id="fg-text-group" style="display:none;">
+                    <label for="fg-text">Text</label>
+                    <input type="text" id="fg-text" class="fg-input" value="js" maxlength="4" aria-label="Icon text" oninput="renderFavicon()">
+                </div>
+                <div class="fg-color-row" id="fg-bg-row">
+                    <span class="fg-color" style="background:#f97316" onclick="pickBg('#f97316')"></span>
+                    <span class="fg-color" style="background:#1d3f66" onclick="pickBg('#1d3f66')"></span>
+                    <span class="fg-color" style="background:#3b82f6" onclick="pickBg('#3b82f6')"></span>
+                    <span class="fg-color" style="background:#10b981" onclick="pickBg('#10b981')"></span>
+                    <span class="fg-color" style="background:#8b5cf6" onclick="pickBg('#8b5cf6')"></span>
+                    <span class="fg-color" style="background:#ef4444" onclick="pickBg('#ef4444')"></span>
+                    <span class="fg-color" style="background:#111827" onclick="pickBg('#111827')"></span>
+                    <span class="fg-color" style="background:#ffffff;border:1px solid var(--border);" onclick="pickBg('#ffffff')"></span>
+                </div>
+                <div class="slider-group">
+                    <label for="fg-radius">Radius</label>
+                    <input type="range" id="fg-radius" min="0" max="40" value="22" oninput="renderFavicon()">
+                    <span class="val" id="val-radius">22%</span>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" onclick="renderFavicon()">🔄 Regenerate</button>
+                    <button class="btn-outline" onclick="downloadAll()">⬇️ Download All</button>
+                </div>
+            </div>
+            <div class="fg-preview">
+                <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 8px;">Preview (512px scaled)</p>
+                <canvas id="fg-big" width="160" height="160" style="width:160px;height:160px;image-rendering:pixelated;border:1px solid var(--border);border-radius:12px;background:#fff;"></canvas>
+                <div class="fg-icon-list" id="fg-icon-list"></div>
+            </div>
+        </div>
+
+        <div class="css-output" id="fg-html" onclick="copyFaviconHTML()" title="Click to copy HTML">Click to copy HTML code &rarr;</div>
+        <div class="css-output" id="fg-manifest" onclick="copyManifest()" title="Click to copy manifest">Click to copy manifest.json &rarr;</div>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">🟢📖 Favicon Essentials</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>The four sizes that matter.</strong> <code>32x32</code> for the browser tab and bookmarks, <code>180x180</code> for Apple touch icons (iOS ignores all other sizes), <code>192x192</code> and <code>512x512</code> for Android/PWA install icons. The 512 icon should be <code>purpose: maskable</code> — Android crops it into a circle, and the safe zone is the inner 80%, so keep your content inside that circle (this generator does it for you). Serving only a 16px favicon is why your site looks blurry in the address bar on high-DPI screens.</p>
+                <p><strong>manifest.json is what makes a PWA.</strong> Without a web manifest, mobile browsers can't offer "Add to Home Screen" with a proper icon. The manifest generated here wires up the 192/512 icons, theme color, and display mode — paste it into your <code>head</code> via <code>&lt;link rel="manifest" href="/manifest.json"&gt;</code> and your favicon package becomes an installable app shell.</p>
+                <p><strong>Emoji favicons are a legitimate brand shortcut.</strong> A single well-chosen emoji on a brand-color background reads clearly at 16px (the hardest size — details vanish fast). Pick high-contrast, single-codepoint emoji: ⚡ 🚀 🔥 ✅. Avoid complex ZWJ sequences (family, flags render differently across platforms) and emoji with heavy gradients, which muddy at small sizes. At 16px the goal is a recognizable silhouette, not detail.</p>
+                <p><strong>SVG is the modern bonus.</strong> This generator exports PNGs because every platform needs them, but a crisp <code>favicon.svg</code> in the <code>&lt;link rel="icon"&gt;</code> (as this site uses) gives sharp rendering on modern browsers — pair it with PNG fallbacks for the rest. The classic mistake is shipping only an ICO file from the 1990s; ICO has no real advantage over PNG today except extreme legacy compatibility.</p>
+                <p>See also: <a href="/image-compressor">Image Compressor</a> &middot; <a href="/color-converter">Color Converter</a> &middot; <a href="/color-palette-generator">Color Palette Generator</a> &middot; <a href="/base64-image-encoder">Base64 Image Encoder</a></p>
+            </div>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var SIZES = [16, 32, 180, 192, 512];
+        var state = { emoji: '⚡', text: 'js', bg: '#f97316', radius: 22, type: 'emoji' };
+        var big = document.getElementById('fg-big');
+        var iconList = document.getElementById('fg-icon-list');
+        var htmlOut = document.getElementById('fg-html');
+        var manOut = document.getElementById('fg-manifest');
+
+        function hexToRgba(hex, alpha) {
+            var h = hex.replace('#', '');
+            if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+            var r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16);
+            return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+        }
+
+        function drawIcon(size, r, emoji, text, bg, type) {
+            var c = document.createElement('canvas');
+            c.width = size; c.height = size;
+            var ctx = c.getContext('2d');
+            var rad = Math.round(size * r / 100);
+            // 背景圆角矩形
+            ctx.fillStyle = bg;
+            ctx.beginPath();
+            ctx.moveTo(rad, 0);
+            ctx.arcTo(size, 0, size, size, rad);
+            ctx.arcTo(size, size, 0, size, rad);
+            ctx.arcTo(0, size, 0, 0, rad);
+            ctx.arcTo(0, 0, size, 0, rad);
+            ctx.closePath();
+            ctx.fill();
+            // 前景（安全区 80%）
+            if (type === 'emoji' && emoji) {
+                ctx.font = Math.round(size * 0.52) + 'px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(emoji, size / 2, size * 0.52);
+            } else if (type === 'text' && text) {
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold ' + Math.round(size * 0.42) + 'px system-ui,-apple-system,sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(text, size / 2, size * 0.51);
+            }
+            return c;
+        }
+
+        function renderFavicon() {
+            state.type = document.getElementById('fg-type').value;
+            state.radius = parseInt(document.getElementById('fg-radius').value, 10);
+            document.getElementById('val-radius').textContent = state.radius + '%';
+            var emojiRow = document.getElementById('fg-emoji-row');
+            var textGroup = document.getElementById('fg-text-group');
+            emojiRow.style.display = state.type === 'emoji' ? '' : 'none';
+            textGroup.style.display = state.type === 'text' ? '' : 'none';
+            if (state.type === 'text') state.text = document.getElementById('fg-text').value;
+
+            // 大预览
+            var bigC = drawIcon(512, state.radius, state.emoji, state.text, state.bg, state.type);
+            var bigCtx = big.getContext('2d');
+            bigCtx.clearRect(0, 0, 160, 160);
+            bigCtx.drawImage(bigC, 0, 0, 160, 160);
+
+            // 尺寸列表
+            iconList.innerHTML = '';
+            for (var i = 0; i < SIZES.length; i++) {
+                (function(sz) {
+                    var c = drawIcon(sz, state.radius, state.emoji, state.text, state.bg, state.type);
+                    var div = document.createElement('div');
+                    div.className = 'fg-icon-item';
+                    c.style.width = '64px'; c.style.height = '64px';
+                    var label = document.createElement('div');
+                    label.className = 'sz';
+                    label.textContent = sz + 'x' + sz;
+                    var btn = document.createElement('button');
+                    btn.textContent = 'PNG';
+                    btn.onclick = function() { downloadPng(c, sz); };
+                    div.appendChild(c); div.appendChild(label); div.appendChild(btn);
+                    iconList.appendChild(div);
+                })(SIZES[i]);
+            }
+
+            // manifest + HTML
+            var man = {
+                name: 'jslet App',
+                short_name: 'jslet',
+                start_url: '/',
+                display: 'standalone',
+                background_color: state.bg,
+                theme_color: state.bg,
+                icons: [
+                    { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+                    { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+                    { src: '/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+                ]
+            };
+            manOut.textContent = JSON.stringify(man, null, 2);
+            var html = '<!-- Favicon -->\n';
+            html += '<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">\n';
+            html += '<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">\n';
+            html += '<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">\n';
+            html += '<link rel="manifest" href="/manifest.json">\n';
+            html += '<meta name="theme-color" content="' + state.bg + '">';
+            htmlOut.textContent = html;
+        }
+
+        function downloadPng(c, size) {
+            var a = document.createElement('a');
+            var name = size === 16 ? 'favicon-16.png' : size === 32 ? 'favicon-32.png' : size === 180 ? 'apple-touch-icon.png' : size === 192 ? 'icon-192.png' : 'icon-512.png';
+            a.href = c.toDataURL('image/png');
+            a.download = name;
+            a.click();
+        }
+
+        window.downloadAll = function() {
+            for (var i = 0; i < SIZES.length; i++) {
+                (function(sz) {
+                    var c = drawIcon(sz, state.radius, state.emoji, state.text, state.bg, state.type);
+                    downloadPng(c, sz);
+                })(SIZES[i]);
+            }
+        };
+
+        window.pickEmoji = function(e) {
+            state.emoji = e;
+            var chips = document.querySelectorAll('.fg-emoji');
+            for (var i = 0; i < chips.length; i++) chips[i].classList.remove('active');
+            if (event && event.currentTarget) event.currentTarget.classList.add('active');
+            renderFavicon();
+        };
+
+        window.pickBg = function(c) {
+            state.bg = c;
+            var chips = document.querySelectorAll('.fg-color');
+            for (var i = 0; i < chips.length; i++) chips[i].classList.remove('active');
+            if (event && event.currentTarget) event.currentTarget.classList.add('active');
+            renderFavicon();
+        };
+
+        window.copyFaviconHTML = function() {
+            var text = htmlOut.textContent.replace('Click to copy HTML code \u2192', '').trim();
+            copyText(text);
+        };
+
+        window.copyManifest = function() {
+            var text = manOut.textContent.replace('Click to copy manifest.json \u2192', '').trim();
+            copyText(text);
+        };
+
+        function copyText(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).catch(function() { fallbackCopy(text); });
+            } else {
+                fallbackCopy(text);
+            }
+        }
+
+        function fallbackCopy(text) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            document.body.removeChild(ta);
+        }
+
+        window.renderFavicon = renderFavicon;
+        renderFavicon();
+    })();
+    </script>
+</body>
+</html>

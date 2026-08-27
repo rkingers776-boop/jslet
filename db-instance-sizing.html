@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Database Instance Sizing Calculator — MySQL / PostgreSQL / MongoDB / Redis — jslet</title>
+    <meta name="description" content="DB instances degrade at cliffs, not linearly — memory, IOPS, connections. Model the cliff before you hit it in production. Cross-engine sizing for MySQL, PostgreSQL, MongoDB, Redis across AWS, GCP, Azure.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .rec-card {
+            border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px;
+            margin-bottom: 12px; background: var(--bg-input); transition: border-color 0.2s;
+        }
+        .rec-card:hover { border-color: var(--accent); }
+        .rec-card h4 { color: var(--accent); margin-bottom: 6px; font-size: 0.9rem; }
+        .rec-card .spec { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.82rem; color: var(--text-heading); }
+        .rec-card .price { font-weight: 700; color: var(--success); font-size: 0.85rem; }
+        .rec-card .provider-tag {
+            display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 3px; margin-right: 6px;
+        }
+        .tag-aws { background: #ff990022; color: #ff9900; }
+        .tag-gcp { background: #4285f422; color: #4285f4; }
+        .tag-azure { background: #0078d422; color: #0078d4; }
+        .tag-hetzner { background: #e91e6322; color: #e91e63; }
+        .conn-bar { height: 10px; border-radius: 5px; background: var(--border); margin-top: 6px; overflow: hidden; }
+        .conn-bar-fill { height: 100%; border-radius: 5px; transition: width 0.4s; }
+        .conn-bar-fill.safe { background: var(--success); }
+        .conn-bar-fill.warn { background: var(--gold); }
+        .conn-bar-fill.danger { background: var(--error); }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Db Instance Sizing",
+      "description": "Multi-engine database instance sizing calculator. Input your data volume, QPS, query complexity, connection count, and workload profile to get recommended instance specs across AWS RDS, GCP Cloud SQL,",
+      "url": "https://www.jslet.com/db-instance-sizing",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <link rel="canonical" href="https://www.jslet.com/db-instance-sizing">
+    <meta property="og:title" content="Database Instance Sizing Calculator — MySQL / PostgreSQL / MongoDB / Redis — jslet">
+    <meta property="og:description" content="Multi-engine database instance sizing calculator. Input your data volume, QPS, query complexity, connection count, and workload profile to get recommended instance specs across AWS RDS, GCP Cloud SQL, and Azure DB.">
+    <meta property="og:url" content="https://www.jslet.com/db-instance-sizing">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Database Instance Sizing Calculator — MySQL / PostgreSQL / MongoDB / Redis — jslet">
+    <meta name="twitter:description" content="Multi-engine database instance sizing calculator. Input your data volume, QPS, query complexity, connection count, and workload profile to get recommended instance specs across AWS RDS, GCP Cloud SQL,">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How does the sizing engine pick a database instance?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It models the three resources that degrade at cliffs — memory, IOPS, and connection limits — and recommends an instance where your workload stays below each cliff with headroom. You input your workload profile (rows, QPS, working set, connections) and get a recommendation across MySQL, PostgreSQL, MongoDB, and Redis on AWS, GCP, and Azure."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does \"just use RDS\" not solve instance sizing?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "RDS is a managed control plane, not a sizing engine. The default instance class can be wildly under- or over-provisioned for your working set, and you pay for the difference. The calculator converts your workload into the minimum instance that clears the memory/IOPS/connection cliffs, which is the part managed services do not do for you."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What happens when a database instance hits a cliff?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Performance collapses rather than degrading gracefully — memory pressure triggers swapping, IOPS exhaustion queues every query, and connection limits start rejecting traffic. The calculator identifies which cliff your workload hits first, so you right-size before production does the demo."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>Database <span>Instance Sizing</span></h1>
+            <p>DB instances don't degrade gracefully — they cliff. Memory fills, IOPS saturate, connections queue. The MySQL `innodb_buffer_pool_size` that was fine at 10 GB craters at 50 GB. Model your workload — data volume, QPS, query complexity, connections — against engine-specific sizing formulas before the cliff finds you in production.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Workload Profile</h3>
+                <p class="card-desc">Select engine, data size, QPS, query complexity, connections. The engine computes vCPU, RAM, storage, and IOPS per workload profile. Cross-cloud instance recommendations with estimated monthly cost.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="db-engine">Database Engine</label>
+                        <select class="unit-input" id="db-engine">
+                            <option value="mysql">MySQL / MariaDB</option>
+                            <option value="postgresql" selected>PostgreSQL</option>
+                            <option value="mongodb">MongoDB</option>
+                            <option value="redis">Redis / Valkey</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="data-size-gb">Total Data Size (GB)</label>
+                        <input type="number" class="unit-input" id="data-size-gb" value="500" step="any" min="1">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="peak-qps">Peak Queries Per Second (QPS)</label>
+                        <input type="number" class="unit-input" id="peak-qps" value="5000" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="max-connections">Max Concurrent Connections</label>
+                        <input type="number" class="unit-input" id="max-connections" value="500" step="any" min="1">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="rw-ratio">Read / Write Ratio</label>
+                        <select class="unit-input" id="rw-ratio">
+                            <option value="90-10">90% Read / 10% Write (Typical Web)</option>
+                            <option value="80-20" selected>80% Read / 20% Write (Mixed OLTP)</option>
+                            <option value="50-50">50% Read / 50% Write (Write-Heavy)</option>
+                            <option value="30-70">30% Read / 70% Write (Log/Event Ingestion)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="query-complexity">Query Complexity</label>
+                        <select class="unit-input" id="query-complexity">
+                            <option value="simple">Simple (Point Lookups, PK Queries)</option>
+                            <option value="moderate" selected>Moderate (JOINs, Indexed Range Scans)</option>
+                            <option value="complex">Complex (Multi-JOIN, Aggregations, Window Functions)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="cache-hit-ratio">Expected Cache Hit Ratio</label>
+                        <select class="unit-input" id="cache-hit-ratio">
+                            <option value="99">99%+ (Well-tuned, data fits in RAM)</option>
+                            <option value="95" selected>95% (Typical production workload)</option>
+                            <option value="85">85% (Working set > available RAM)</option>
+                            <option value="70">70% (Cache-constrained, heavy disk reads)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="growth-rate">Annual Data Growth</label>
+                        <select class="unit-input" id="growth-rate">
+                            <option value="1.2">20% / year (Moderate)</option>
+                            <option value="1.5" selected>50% / year (Growing)</option>
+                            <option value="2.0">100% / year (Fast Growth)</option>
+                            <option value="3.0">200%+ / year (Hypergrowth)</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Instance Recommendation Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Recommended Instance Specifications</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div id="recommendations"></div>
+                <div style="margin-top:16px;" id="connection-analysis"></div>
+            </div>
+        </main>
+
+        <!-- REFERENCE SECTION -->
+        <section class="seo-section">
+            <h2>Database Instance Sizing: The Engineering Behind the Numbers</h2>
+            <p>Selecting the right database instance size is one of the most consequential infrastructure decisions an engineering team makes. Under-provision and you get P99 latency spikes, connection exhaustion, and OOM kills. Over-provision and you waste 40–60% of your cloud bill on idle resources — the single largest line item in most SaaS infrastructure budgets.</p>
+            <h3>How the Sizing Engine Works</h3>
+            <p>This calculator applies engine-specific formulas derived from production benchmarking and vendor best practices:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Engine</th><th>Memory Formula</th><th>CPU Formula</th><th>Key Reference</th></tr></thead>
+                <tbody>
+                    <tr><td>PostgreSQL</td><td>shared_buffers (25% RAM) + work_mem × max_connections + OS cache</td><td>1 vCPU per ~1,000 QPS (moderate queries)</td><td>Percona PG Tuning Guide</td></tr>
+                    <tr><td>MySQL / MariaDB</td><td>innodb_buffer_pool_size (70–80% RAM) + per-connection overhead (~2–4 MB/conn)</td><td>1 vCPU per ~500–800 QPS (InnoDB)</td><td>MySQL Performance Schema</td></tr>
+                    <tr><td>MongoDB</td><td>WiredTiger cache (50% of RAM − 1 GB) + working set must fit in RAM</td><td>1 vCPU per ~2,000 ops/s (document CRUD)</td><td>MongoDB Production Notes</td></tr>
+                    <tr><td>Redis / Valkey</td><td>Entire dataset + overhead (~2× raw data for internal structures)</td><td>Single-threaded per instance; scale via clustering</td><td>Redis Latency & Sizing Docs</td></tr>
+                </tbody>
+            </table>
+</div>
+            <h3>Why "Just Use RDS" Isn't Enough</h3>
+            <p>Cloud provider instance families (AWS RDS, GCP Cloud SQL, Azure DB) use incompatible naming conventions — <code>db.r6g.xlarge</code> vs <code>db-custom-4-16384</code> vs <code>Standard_D4s_v5</code>. An engineer who knows they need "8 vCPU and 32 GB RAM" still has to manually decode each vendor's catalog. This calculator bridges that gap with mapped recommendations.</p>
+        </section>
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/log-storage-cost">Log Storage & Retention &rarr;</a>
+                <a href="/backup-cost">Backup Strategy Cost &rarr;</a>
+                <a href="/rds-instance-cost">Managed DB Cost &rarr;</a>
+            </div>
+        </div>
+
+
+                <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Instance catalog: { vCPU, RAM GB, storageType, approxMonthlyUSD } ──
+    function getInstanceCatalog(engine) {
+        var base = [
+            { label: 'Small (2 vCPU / 8 GB)', cpu: 2, ram: 8, aws: 'db.t4g.large', awsPrice: 100, gcp: 'db-custom-2-8192', gcpPrice: 95, azure: 'Standard_D2s_v5', azurePrice: 98, hetzner: 'CX32', hetznerPrice: 12 },
+            { label: 'Medium (4 vCPU / 16 GB)', cpu: 4, ram: 16, aws: 'db.r6g.xlarge', awsPrice: 280, gcp: 'db-custom-4-16384', gcpPrice: 260, azure: 'Standard_D4s_v5', azurePrice: 270, hetzner: 'CX42', hetznerPrice: 24 },
+            { label: 'Large (8 vCPU / 32 GB)', cpu: 8, ram: 32, aws: 'db.r6g.2xlarge', awsPrice: 560, gcp: 'db-custom-8-32768', gcpPrice: 520, azure: 'Standard_D8s_v5', azurePrice: 540, hetzner: 'CX52', hetznerPrice: 48 },
+            { label: 'XLarge (16 vCPU / 64 GB)', cpu: 16, ram: 64, aws: 'db.r6g.4xlarge', awsPrice: 1120, gcp: 'db-custom-16-65536', gcpPrice: 1040, azure: 'Standard_D16s_v5', azurePrice: 1080, hetzner: 'CX62', hetznerPrice: 96 },
+            { label: '2XLarge (32 vCPU / 128 GB)', cpu: 32, ram: 128, aws: 'db.r6g.8xlarge', awsPrice: 2240, gcp: 'db-custom-32-131072', gcpPrice: 2080, azure: 'Standard_D32s_v5', azurePrice: 2160, hetzner: null, hetznerPrice: null },
+            { label: '4XLarge (64 vCPU / 256 GB)', cpu: 64, ram: 256, aws: 'db.r6g.16xlarge', awsPrice: 4480, gcp: 'db-custom-64-262144', gcpPrice: 4160, azure: 'Standard_D64s_v5', azurePrice: 4320, hetzner: null, hetznerPrice: null },
+        ];
+        // Redis needs more memory per vCPU
+        if (engine === 'redis') {
+            return [
+                { label: 'Small (2 vCPU / 8 GB)', cpu: 2, ram: 8, aws: 'cache.t4g.large', awsPrice: 90, gcp: 'Memorystore M2', gcpPrice: 85, azure: 'Redis C3', azurePrice: 88 },
+                { label: 'Medium (4 vCPU / 16 GB)', cpu: 4, ram: 16, aws: 'cache.r6g.xlarge', awsPrice: 250, gcp: 'Memorystore M3', gcpPrice: 235, azure: 'Redis C4', azurePrice: 245 },
+                { label: 'Large (8 vCPU / 32 GB)', cpu: 8, ram: 32, aws: 'cache.r6g.2xlarge', awsPrice: 500, gcp: 'Memorystore M4', gcpPrice: 470, azure: 'Redis C5', azurePrice: 490 },
+                { label: 'XLarge (16 vCPU / 64 GB)', cpu: 16, ram: 64, aws: 'cache.r6g.4xlarge', awsPrice: 1000, gcp: 'Memorystore M5', gcpPrice: 940, azure: 'Redis C6', azurePrice: 980 },
+                { label: '2XLarge (32 vCPU / 128 GB)', cpu: 32, ram: 128, aws: 'cache.r6g.8xlarge', awsPrice: 2000, gcp: 'Memorystore M6', gcpPrice: 1880, azure: 'Redis C7', azurePrice: 1960 },
+                { label: '4XLarge (64 vCPU / 256 GB)', cpu: 64, ram: 256, aws: 'cache.r6g.16xlarge', awsPrice: 4000, gcp: 'Memorystore M7', gcpPrice: 3760, azure: 'Redis C8', azurePrice: 3920 },
+            ];
+        }
+        return base;
+    }
+
+    function computeSizing() {
+        var engine = document.getElementById('db-engine').value;
+        var dataSizeGB = parseFloat(document.getElementById('data-size-gb').value) || 0;
+        var peakQps = parseFloat(document.getElementById('peak-qps').value) || 0;
+        var maxConn = parseFloat(document.getElementById('max-connections').value) || 0;
+        var rwRatio = document.getElementById('rw-ratio').value;
+        var complexity = document.getElementById('query-complexity').value;
+        var cacheHitRatio = parseInt(document.getElementById('cache-hit-ratio').value);
+        var growthRate = parseFloat(document.getElementById('growth-rate').value);
+
+        // Engine-specific QPS-per-vCPU coefficients
+        var qpsPerCpu = {
+            'mysql': { simple: 1200, moderate: 800, complex: 400 },
+            'postgresql': { simple: 1400, moderate: 1000, complex: 500 },
+            'mongodb': { simple: 2500, moderate: 2000, complex: 800 },
+            'redis': { simple: 50000, moderate: 30000, complex: 10000 }
+        };
+        var baseQpsPerCpu = (qpsPerCpu[engine] || qpsPerCpu['postgresql'])[complexity];
+
+        // Engine-specific memory per connection (MB)
+        var memPerConn = { 'mysql': 4, 'postgresql': 5, 'mongodb': 2, 'redis': 0.5 };
+
+        // Compute required vCPUs
+        var requiredCpu = Math.ceil(peakQps / baseQpsPerCpu);
+
+        // Compute required RAM
+        var requiredRamConn = maxConn * (memPerConn[engine] || 4) / 1024; // GB
+        var requiredRamData;
+        if (engine === 'redis') {
+            requiredRamData = dataSizeGB * 2.0; // Redis: ~2× overhead for internal structures
+        } else if (engine === 'mongodb') {
+            requiredRamData = dataSizeGB * 0.7; // MongoDB: working set should fit in WiredTiger cache
+        } else {
+            // SQL: shared_buffers (25% of data) + working set
+            requiredRamData = dataSizeGB * (1 - cacheHitRatio / 100) * 1.3;
+        }
+        var requiredRam = Math.max(requiredRamData, requiredRamConn * 1.2, 4);
+
+        // Apply growth buffer (2-year provisioning)
+        var growth2yr = Math.pow(growthRate, 2);
+        requiredRam = Math.ceil(requiredRam * growth2yr);
+        requiredCpu = Math.ceil(requiredCpu * Math.sqrt(growth2yr));
+
+        // Required storage (2-year projection)
+        var requiredStorage = Math.ceil(dataSizeGB * growth2yr * 2); // 2× for indexes, WAL, temp
+
+        // Find best matching instance
+        var catalog = getInstanceCatalog(engine);
+        var selectedInstance = catalog[0];
+        for (var inst of catalog) {
+            if (inst.cpu >= requiredCpu && inst.ram >= requiredRam) {
+                selectedInstance = inst;
+                break;
+            }
+            selectedInstance = inst; // fall through to largest
+        }
+
+        // Connection pool sizing
+        var poolSize = Math.min(maxConn, Math.floor(selectedInstance.cpu * 150)); // typical pool sizing
+        var connUtilization = poolSize > 0 ? (maxConn / poolSize) * 100 : 0;
+        var connClass = 'safe';
+        if (connUtilization > 80) connClass = 'warn';
+        if (connUtilization > 100) connClass = 'danger';
+
+        // Render
+        document.getElementById('results-params').innerText =
+            `${dataSizeGB} GB · ${peakQps} QPS · ${maxConn} conns · ${rwRatio} R/W · ${complexity} queries · ${cacheHitRatio}% cache hit`;
+
+        var recsDiv = document.getElementById('recommendations');
+        recsDiv.innerHTML = `
+            <h4 style="margin-bottom:14px;color:var(--text-heading);">Required: ~${requiredCpu} vCPU / ~${requiredRam} GB RAM / ~${requiredStorage} GB Storage (2yr projection)</h4>
+            <div class="rec-card">
+                <h4>🏆 Best Fit: ${selectedInstance.label}</h4>
+                <p class="spec">${selectedInstance.cpu} vCPU · ${selectedInstance.ram} GB RAM</p>
+                <p style="margin-top:8px;">
+                    <span class="provider-tag tag-aws">AWS</span><span class="spec">${selectedInstance.aws || 'N/A'}</span> <span class="price">~$${selectedInstance.awsPrice}/mo</span><br>
+                    <span class="provider-tag tag-gcp">GCP</span><span class="spec">${selectedInstance.gcp || 'N/A'}</span> <span class="price">~$${selectedInstance.gcpPrice}/mo</span><br>
+                    <span class="provider-tag tag-azure">Azure</span><span class="spec">${selectedInstance.azure || 'N/A'}</span> <span class="price">~$${selectedInstance.azurePrice}/mo</span>
+                    ${selectedInstance.hetzner ? `<br><span class="provider-tag tag-hetzner">Hetzner</span><span class="spec">${selectedInstance.hetzner}</span> <span class="price">~$${selectedInstance.hetznerPrice}/mo (self-managed)</span>` : ''}
+                </p>
+            </div>
+            ${connUtilization > 100 ? `<div class="rec-card" style="border-color:var(--error);"><h4>⚠️ Connection Pool Required</h4><p class="spec">${maxConn} target connections exceeds estimated pool capacity of ${poolSize}. Deploy PgBouncer (PostgreSQL) / ProxySQL (MySQL) / connection pooling middleware.</p></div>` : ''}
+        `;
+
+        document.getElementById('connection-analysis').innerHTML = `
+            <h4 style="margin-bottom:8px;">Connection Utilization</h4>
+            <div style="display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:4px;">
+                <span>Target: ${maxConn} connections</span><span>Pool Capacity: ${poolSize}</span>
+            </div>
+            <div class="conn-bar"><div class="conn-bar-fill ${connClass}" style="width:${Math.min(connUtilization, 100)}%;"></div></div>
+            <p style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">${connUtilization.toFixed(0)}% utilization — ${connClass === 'safe' ? 'Healthy headroom.' : connClass === 'warn' ? 'Monitor closely; consider pool expansion.' : 'CRITICAL: Deploy connection pooling immediately.'}</p>
+        `;
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { computeSizing(); });
+    document.querySelector('.btn-calc').addEventListener('click', computeSizing);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

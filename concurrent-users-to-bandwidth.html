@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Concurrent User Traffic to Bandwidth Pipe Calculator — jslet</title>
+    <meta name="description" content="1,000 users at 5 Mbps = 5 Gbps. 10,000 users = 50 Gbps — time for dedicated interconnects. Model worst-case concurrent user bandwidth before launch day. Free, client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Concurrent User Traffic to Bandwidth Pipe Calculator — jslet">
+    <meta property="og:description" content="1,000 users at 5 Mbps = 5 Gbps. 10,000 users = 50 Gbps — time for dedicated interconnects. Model worst-case concurrent user bandwidth before launch day. Free, client-side.">
+    <meta property="og:url" content="https://www.jslet.com/concurrent-users-to-bandwidth">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Concurrent User Traffic to Bandwidth Pipe Calculator — jslet">
+    <meta name="twitter:description" content="1,000 users at 5 Mbps = 5 Gbps. 10,000 users = 50 Gbps — time for dedicated interconnects. Model worst-case concurrent user bandwidth before launch day. Free, client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/concurrent-users-to-bandwidth">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Concurrent User Traffic to Bandwidth Pipe Calculator",
+      "description": "1,000 users at 5 Mbps = 5 Gbps. 10,000 users = 50 Gbps — time for dedicated interconnects. Model worst-case concurrent user bandwidth before launch day. Free, client-side.",
+      "url": "https://www.jslet.com/concurrent-users-to-bandwidth",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much bandwidth do 5,000 concurrent users need?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It depends on per-user throughput: 1,000 users at 5 Mbps each is 5 Gbps, so 5,000 users at the same rate is 25 Gbps, and 10,000 users is 50 Gbps — the point where dedicated interconnects enter the picture. The calculator takes your concurrency and per-user bandwidth (with benchmarks by application type) and outputs the pipe size, including a recommended headroom factor."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why should I provision 1.3× headroom?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Real traffic has peaks far above the average — launch spikes, retries, and uneven distribution mean average concurrency underestimates the peak by a wide margin. The calculator applies a 1.3× headroom factor to keep the pipe from saturating during those peaks, which is the difference between a smooth launch and a paged on-call."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does a CDN change my bandwidth requirements?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A CDN offloads most static traffic to the edge, so the origin pipe only needs to serve cache misses. The calculator's CDN section shows how much of the peak bandwidth the edge absorbs, shrinking your origin and egress requirements significantly for content-heavy applications."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>👥 Concurrent <span>User Traffic</span> to Bandwidth Pipe</h1>
+            <p>1,000 concurrent users streaming 720p at 5 Mbps = 5 Gbps. At 10,000 users it is 50 Gbps — time for dedicated interconnects. Model the worst-case before launch day. The pipe size you budget for is not the pipe size you need at peak.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📶 Traffic Profile</h3>
+                <p class="card-desc">Peak concurrent sessions × Kbps per user ÷ 1,000 = minimum Mbps. Add 1.3× headroom so CUBIC and BBR have room to breathe. Daily transfer estimate included — because the cloud egress meter runs 24/7.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="concurrent">Peak Concurrent Sessions</label>
+                        <input type="number" class="unit-input" id="concurrent" value="5000" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="kbps">Kbps per User</label>
+                        <input type="number" class="unit-input" id="kbps" value="250" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">Web apps: 200–500 Kbps · Streaming: 2–5 Mbps</span>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Calculation</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📡 Bandwidth Pipe Requirements</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid" id="metric-results"></div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>Concurrent Users to Bandwidth: How Many Mbps Does 5,000 Users Need?</h2>
+            <p>When architecting a web application, the question "how much bandwidth do I need?" is deceptively simple. The answer depends on two variables: <strong>peak concurrent sessions</strong> and <strong>average bandwidth consumption per user session</strong>. This calculator applies the fundamental formula <code>Bandwidth (Mbps) = Users × Kbps per user / 1000</code> to produce a minimum line speed requirement — and then applies a 1.3× provisioning multiplier to account for TCP overhead, bursts, and degradation avoidance.</p>
+
+            <h3>The Bandwidth Formula: Breaking It Down</h3>
+            <p>The core calculation is straightforward but often underestimated during capacity planning:</p>
+            <ul style="margin-left:24px;margin-bottom:14px;color:var(--text-body);line-height:2;">
+                <li><strong>Minimum Bandwidth (Mbps)</strong> = Peak Concurrent Sessions × Kbps per User ÷ 1000</li>
+                <li><strong>Minimum Bandwidth (Gbps)</strong> = Mbps ÷ 1000</li>
+                <li><strong>Provisioned Bandwidth</strong> = Minimum Bandwidth × 1.3 (30% headroom)</li>
+                <li><strong>Daily Transfer (TB)</strong> = Gbps × 10.8 (assumes steady-state usage over 24 hours; 1 Gbps sustained = ~10.8 TB/day)</li>
+            </ul>
+
+            <h3>Per-User Bandwidth Benchmarks by Application Type</h3>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Application Type</th><th>Kbps per User</th><th>Notes</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Simple Web App (CRUD, text-heavy)</strong></td><td>100 – 250</td><td>Small JSON payloads, minimal assets. Typical SaaS dashboard.</td></tr>
+                    <tr><td><strong>Rich Web App (SPA, images)</strong></td><td>250 – 500</td><td>Larger JS bundles, image assets, frequent API polling.</td></tr>
+                    <tr><td><strong>Video Conferencing (per stream)</strong></td><td>500 – 2,000</td><td>WebRTC HD video. Bidirectional = double for total pipe.</td></tr>
+                    <tr><td><strong>HD Video Streaming</strong></td><td>2,000 – 5,000</td><td>Netflix ~3 Mbps for HD, ~7 Mbps for 4K. Add 15% for ABR overhead.</td></tr>
+                    <tr><td><strong>Real-Time Gaming</strong></td><td>50 – 100</td><td>Small state updates, but extremely latency-sensitive.</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>Why Provision 1.3× Headroom?</h3>
+            <p>Running a network link at 100% utilization invites disaster. TCP congestion control algorithms (CUBIC, BBR) need headroom to probe for available bandwidth. At >80% utilization, bufferbloat becomes a real problem — latency spikes as packets queue in switch buffers, triggering retransmissions that compound the congestion. The 1.3× multiplier (effectively targeting ~77% peak utilization) keeps your pipe in the safe operating zone and absorbs micro-bursts that statistical multiplexing cannot smooth out.</p>
+
+            <h3>CDN Offloading and Edge Caching</h3>
+            <p>If your application serves substantial static content or API responses that can be cached, a CDN can dramatically reduce the origin bandwidth requirement. Each cache hit eliminates a round-trip to your origin server. With a 90% cache hit ratio, your origin bandwidth demand drops to 10% of the raw requirement — turning a 5 Gbps pipe into a 500 Mbps pipe. Use our <a href="/cdn-cached-ratio-to-bandwidth-saving">CDN Cache Offload Calculator</a> to model your specific savings.</p>
+        </section>
+
+        <!-- Related Tools -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var c = v('concurrent');
+        var k = v('kbps');
+        var m = c * k / 1000;
+
+        document.getElementById('results-params').innerText =
+            c.toLocaleString() + ' concurrent users · ' + k + ' Kbps/user';
+
+        document.getElementById('metric-results').innerHTML =
+            '<div class="metric-tile"><div class="metric-val">' + m.toFixed(2) + ' Mbps</div><div class="metric-label">Min Bandwidth</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + (m / 1000).toFixed(4) + ' Gbps</div><div class="metric-label">In Gbps</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + (m * 1.3).toFixed(2) + ' Mbps</div><div class="metric-label">Provision 1.3×</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + (m / 1000 * 10.8).toFixed(2) + ' TB</div><div class="metric-label">Daily Transfer</div></div>';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

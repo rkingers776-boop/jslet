@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>LLM Parameters to FP16 VRAM Calculator — jslet</title>
+    <meta name="description" content="7B params × 2 bytes (FP16) = 14 GB. Plus KV cache. Plus framework overhead. Plus that batch size you forgot to account for. That is why your 16 GB consumer GPU cannot actually serve LLaMA-7B at batch size 8. This tool adds up everything CUDA actually allocates — not just the weights.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="LLM Parameters to FP16 VRAM Calculator — jslet">
+    <meta property="og:description" content="7B params × 2 bytes (FP16) = 14 GB. Plus KV cache. Plus framework overhead. Plus that batch size you forgot. That is why your 16 GB consumer GPU cannot serve LLaMA-7B at batch size 8. This adds up everything CUDA actually allocates — not just the weights on paper.">
+    <meta property="og:url" content="https://www.jslet.com/parameters-to-vram-fp16">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="LLM Parameters to FP16 VRAM Calculator — jslet">
+    <meta name="twitter:description" content="7B params × 2 bytes (FP16) = 14 GB. Plus KV cache. Plus framework overhead. Plus that batch size you forgot. That is why your 16 GB consumer GPU cannot serve LLaMA-7B at batch size 8. This adds up everything CUDA actually allocates — not just the weights on paper.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/parameters-to-vram-fp16">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "LLM Parameters to FP16 VRAM Calculator",
+      "description": "7B params × 2 bytes (FP16) = 14 GB. Plus KV cache. Plus framework overhead. Plus that batch size you forgot. That is why your 16 GB consumer GPU cannot serve LLaMA-7B at batch size 8. This adds up everything CUDA actually allocates — not just the weights on paper.",
+      "url": "https://www.jslet.com/parameters-to-vram-fp16",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      "name": "How to Estimate LLM Inference VRAM at FP16 Precision",
+      "description": "Calculate VRAM required for serving a large language model at FP16. Accounts for weights, KV cache, context window, batch size, and framework overhead.",
+      "step": [
+        {
+          "@type": "HowToStep",
+          "position": 1,
+          "name": "Enter model parameters",
+          "text": "Input the number of parameters in billions. A 7B model at FP16 needs 14 GB just for the weights (7B × 2 bytes). A 70B model needs 140 GB — that's two fully-loaded A100 80GB cards before training or serving even begins."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 2,
+          "name": "Set context window and batch size",
+          "text": "The KV cache grows linearly with context length and batch size. At 4096 tokens with batch 1, a 7B model adds ~0.5 GB of KV cache. At 32K tokens with batch 8 on a 70B model, the KV cache alone can exceed 40 GB — more than the weights themselves."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 3,
+          "name": "Review the memory breakdown",
+          "text": "The calculator shows weights, KV cache, activation memory, and a 15-25% framework overhead buffer. The breakdown tells you whether you need quantization (INT4/INT8), tensor parallelism across multiple GPUs, or a bigger VRAM budget."
+        }
+      ]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why can't my 16 GB consumer GPU serve LLaMA-7B at batch size 8?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "7B × 2 bytes (FP16 weights) = 14 GB. Add ~1 GB for the KV cache at 2048 context with batch 1, ~500 MB for activations, and ~2 GB framework overhead. You're already at ~17.5 GB — over the 16 GB limit. At batch 8, the KV cache scales linearly to ~8 GB, pushing total VRAM past 24 GB. You need INT4 quantization or a 24 GB GPU like an RTX 4090."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much VRAM does a 70B parameter model need for inference?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "At FP16: 140 GB just for weights, plus 10-40 GB for KV cache depending on context length and batch size. Total: 150-180 GB. That requires 2× A100 80GB or 2× H100 80GB with tensor parallelism. At INT4 quantization, weights drop to ~35 GB, making the model fit on a single A100 80GB for batch-1 inference at moderate context lengths."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What quantization level should I use for LLM serving?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "FP16 is the reference quality baseline. INT8 (8-bit) reduces VRAM by ~50% with negligible quality loss for most tasks. INT4 (4-bit) reduces VRAM by ~75% but may show quality degradation on reasoning and math tasks. GPTQ and AWQ are the most common INT4 methods. For chatbots and RAG, INT4 is usually fine. For code generation or math, stick with INT8 or FP16."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">›</span> <a href="/ai-gpu-compute">AI & GPU Compute</a> <span class="breadcrumb-sep">›</span> LLM Parameters to FP16 VRAM Calculator</nav>
+        <header>
+            <h1>LLM Parameters <span>to FP16 VRAM</span> Calculator</h1>
+            <p>7B params × 2 bytes (FP16) = 14 GB. Plus KV cache. Plus framework overhead. Plus that batch size you forgot. That is why your 16 GB consumer GPU cannot serve LLaMA-7B at batch size 8. This adds up everything CUDA actually allocates — not just the weights on paper.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🧠 Model Configuration</h3>
+                <p class="card-desc">Enter your dense LLM specifications. The engine computes raw weight memory, applies framework overhead, and recommends GPU topology.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="params">Model Parameter Size (Billion)</label>
+                        <input type="number" class="unit-input" id="params" value="7" step="any" min="0.01">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">e.g. Llama-2-7B → 7</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="bits">Precision Bits</label>
+                        <input type="number" class="unit-input" id="bits" value="16" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">FP16=16, FP32=32</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="overhead">Overhead %</label>
+                        <input type="number" class="unit-input" id="overhead" value="25" step="any" min="0">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">Framework + KV Cache 20–30%</span>
+                    </div>
+                </div>
+                <button class="btn-calc">Run VRAM Estimation Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 VRAM Estimation Results</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div id="recommendations"></div>
+            </div>
+        </main>
+
+        <!-- REFERENCE SECTION -->
+        <section class="seo-section">
+            <h2>FP16 VRAM Estimation: Why Precision Matters for GPU Provisioning</h2>
+            <p>Deploying large language models for inference requires careful GPU memory planning. At FP16 (half-precision), each parameter consumes 2 bytes of memory. A 7-billion-parameter model like Llama-2-7B needs approximately 14 GB just for the raw weights. But the <strong>total VRAM footprint</strong> is always larger than the raw weight storage due to framework runtime overhead, CUDA context, and the all-important KV cache.</p>
+
+            <h3>How This Calculator Works</h3>
+            <p>This tool computes VRAM requirements using the standard dense-model memory formula and then applies a configurable overhead multiplier to account for real-world inference overhead:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Component</th><th>Formula</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Raw Weights</strong></td><td><code>Parameters × Precision Bits ÷ 8</code></td><td>Converts parameter count and bit-width into raw byte storage. A 7B parameter model at FP16 (16 bits = 2 bytes) requires 14 GiB of raw weight storage.</td></tr>
+                    <tr><td><strong>Overhead Multiplier</strong></td><td><code>1 + Overhead%</code></td><td>Accounts for KV cache (key-value attention states), CUDA context allocations, framework runtime (PyTorch/vLLM/TGI), and activation memory. Production deployments typically observe 20–30% overhead beyond raw weights.</td></tr>
+                    <tr><td><strong>Total VRAM</strong></td><td><code>Raw Weights × (1 + Overhead%)</code></td><td>The final per-GPU or aggregate VRAM requirement. This number determines how many GPUs you need and whether tensor parallelism or pipeline parallelism is necessary.</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>The 20–30% Overhead Rule Explained</h3>
+            <p>The overhead buffer is not arbitrary — it reflects three real-world memory consumers that sit alongside model weights in GPU memory:</p>
+            <ul>
+                <li><strong>KV Cache (Key-Value Cache):</strong> The attention mechanism stores key and value tensors for every token in the context window across every transformer layer. For long-context inference (32K+ tokens), the KV cache can rival or exceed the weight memory. Use our companion <a href="/context-window-vram-inflation">KV Cache Inflation Calculator</a> to model this separately.</li>
+                <li><strong>CUDA Context and Driver Overhead:</strong> NVIDIA drivers, CUDA runtime, and cuBLAS/cuDNN libraries consume a fixed baseline of GPU memory (typically 300–700 MB per GPU). This overhead is independent of model size and must be accounted for in every deployment.</li>
+                <li><strong>Framework Runtime:</strong> Inference engines like vLLM, Text Generation Inference (TGI), and TensorRT-LLM allocate additional memory for batching queues, communication buffers (NCCL), and scheduling metadata. PyTorch itself reserves a CUDA memory pool that may appear as "allocated but unused" in nvidia-smi.</li>
+            </ul>
+
+            <h3>GPU Selection Guide</h3>
+            <p>Once you know your total VRAM requirement, GPU selection becomes a capacity-matching exercise:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>GPU Model</th><th>VRAM</th><th>Best Fit For</th><th>Limitations</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>NVIDIA A100 80GB</strong></td><td>80 GB</td><td>70B-class models at FP16 (requires 2–4 GPUs with tensor parallelism). Industry standard for high-throughput production serving.</td><td>Premium pricing. Overkill for sub-13B models.</td></tr>
+                    <tr><td><strong>NVIDIA A6000 (Ampere)</strong></td><td>48 GB</td><td>13B-class models at FP16 on a single GPU. 70B models with INT4 quantization.</td><td>Lower memory bandwidth than A100 (768 GB/s vs. 2,039 GB/s).</td></tr>
+                    <tr><td><strong>NVIDIA RTX 4090</strong></td><td>24 GB</td><td>7B-class models at FP16 on a single GPU. Excellent cost-per-GB for hobbyist and small-scale deployments.</td><td>Consumer card — no NVLink, limited to single-GPU inference without model parallelism. 24 GB is insufficient for 13B+ FP16 models.</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>Why FP16 Instead of FP32?</h3>
+            <p>FP16 (half-precision floating point) has become the de facto standard for LLM inference because it halves memory consumption relative to FP32 with negligible accuracy degradation for most tasks. Modern GPU architectures (Ampere, Hopper, Ada Lovelace) include dedicated FP16 tensor cores that deliver 2–4× higher throughput than FP32. Unless you are doing scientific computing that requires full 32-bit precision, FP16 is the correct default for LLM serving.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="margin-top:24px;">
+            <h2>📎 Embed This Calculator</h2>
+            <p style="font-size:0.88rem; margin-bottom:12px; color:var(--text-secondary);">Embed the LLM VRAM estimator on your ML team wiki, model card, or GPU provisioning doc. No API key, no tracking — everything runs in the visitor's browser.</p>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
+                <pre style="margin:0; font-size:0.78rem; overflow-x:auto; white-space:pre-wrap; font-family:'SF Mono','Cascadia Code',Consolas,monospace;"><code>&lt;iframe src="https://www.jslet.com/embed/parameters-to-vram-fp16" width="100%" height="550" style="border:none;border-radius:10px;" title="LLM Parameters to FP16 VRAM Calculator" loading="lazy"&gt;&lt;/iframe&gt;</code></pre>
+            </div>
+        </section>
+
+        <div class="social-share-bar"><span>Share:</span><a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/parameters-to-vram-fp16&t=LLM+Parameters+to+FP16+VRAM+Calculator" class="share-btn hn" target="_blank" rel="noopener noreferrer">HN</a><a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/parameters-to-vram-fp16&text=7B+params+×+2+bytes+=+14+GB.+Plus+KV+cache.+Plus+framework+overhead.+Plus+batch+size.+That's+why+your+16GB+GPU+can't+serve+LLaMA-7B+at+batch+8.&via=jslet" class="share-btn twitter" target="_blank" rel="noopener noreferrer">X</a><a href="https://www.reddit.com/r/MachineLearning/submit?url=https://www.jslet.com/parameters-to-vram-fp16&title=LLM+Parameters+to+FP16+VRAM+Calculator" class="share-btn reddit" target="_blank" rel="noopener noreferrer">Reddit</a><a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/parameters-to-vram-fp16&title=LLM+Parameters+to+FP16+VRAM+Calculator" class="share-btn linkedin" target="_blank" rel="noopener noreferrer">LinkedIn</a></div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function compute() {
+        var p = parseFloat(document.getElementById('params').value) || 0;
+        var b = parseFloat(document.getElementById('bits').value) || 0;
+        var ov = parseFloat(document.getElementById('overhead').value) / 100 || 0;
+        var raw = p * 1e9 * b / 8 / 1073741824;
+        var t = raw * (1 + ov);
+
+        document.getElementById('results-params').innerText =
+            p + 'B parameters · ' + b + '-bit precision · ' + (ov * 100).toFixed(0) + '% overhead';
+
+        document.getElementById('recommendations').innerHTML =
+            '<div class="metric-grid">' +
+                '<div class="metric-tile"><div class="metric-val">' + raw.toFixed(2) + ' GiB</div><div class="metric-label">Raw Weights (GiB)</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + t.toFixed(2) + ' GiB</div><div class="metric-label">Total VRAM</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + Math.ceil(t / 80) + '</div><div class="metric-label">A100-80GB GPUs</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + Math.ceil(t / 48) + '</div><div class="metric-label">A6000-48GB GPUs</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + Math.ceil(t / 24) + '</div><div class="metric-label">RTX 4090-24GB GPUs</div></div>' +
+            '</div>';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

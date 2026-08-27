@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Latency Budget Calculator — End-to-End Delay Decomposition — jslet</title>
+    <meta name="description" content="Speed of light in fiber: 5 µs/km. NY→London: 28 ms minimum. Decompose latency budgets before architecture locks in an impossible SLA. Model fiber delay, packet transmission, and protocol overhead. Free client-side tool.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+        .budget-bar-wrap {
+            position: relative; height: 36px; border-radius: 6px; background: var(--border);
+            overflow: hidden; margin: 16px 0 8px 0;
+        }
+        .budget-segment {
+            position: absolute; top: 0; height: 100%; display: flex; align-items: center;
+            justify-content: center; font-size: 0.7rem; font-weight: 700; color: #fff;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px;
+            transition: width 0.4s ease; cursor: default;
+        }
+        .budget-segment.propagation { background: #2563eb; left: 0; }
+        .budget-segment.transmission { background: #7c3aed; }
+        .budget-segment.serialization { background: #9333ea; }
+        .budget-segment.queueing { background: #f59e0b; }
+        .budget-segment.processing { background: #10b981; }
+        .budget-segment.protocol { background: #ef4444; }
+        .budget-segment.slack { background: #6b7280; opacity: 0.6; }
+
+        .budget-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+        .budget-legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--text-secondary); }
+        .budget-legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+        .budget-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin-top: 12px; }
+        .budget-table th { background: var(--bg-input); text-align: left; padding: 8px 12px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .budget-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+        .budget-table .budget-pct { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-weight: 700; color: var(--accent); }
+        .budget-table .budget-ms { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-weight: 600; }
+        .budget-table tr.total-row td { font-weight: 700; border-top: 2px solid var(--accent); border-bottom: none; font-size: 0.92rem; color: var(--text-heading); }
+
+        .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 12px; }
+        .preset-chip {
+            padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            cursor: pointer; transition: border-color 0.2s, background 0.2s;
+            font-size: 0.8rem; text-align: center; background: var(--bg-input);
+        }
+        .preset-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+        .preset-chip .preset-name { font-weight: 700; color: var(--text-heading); display: block; margin-bottom: 2px; }
+        .preset-chip .preset-budget { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.76rem; color: var(--accent); }
+
+        .latency-class-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .latency-class-table th { background: var(--bg-input); text-align: left; padding: 8px 12px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .latency-class-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .latency-class-table .num { text-align: right; font-weight: 700; color: var(--accent); }
+
+        .alert-sla { padding: 12px 16px; border-radius: var(--radius-sm); margin-top: 12px; font-size: 0.82rem; font-weight: 600; display: none; }
+        .alert-sla.over { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; display: block; }
+        .alert-sla.under { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; display: block; }
+        [data-theme="dark"] .alert-sla.over { background: #3b1212; border-color: #7f1d1d; color: #fca5a5; }
+        [data-theme="dark"] .alert-sla.under { background: #022c22; border-color: #064e3b; color: #6ee7b7; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Latency Budget Calculator",
+      "description": "Decompose end-to-end latency budgets across propagation, transmission, serialization, queueing, and processing components for distributed system SLA planning.",
+      "url": "https://www.jslet.com/latency-budget-calculator",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      "name": "How to Allocate Latency Budgets in Distributed Systems",
+      "description": "Decompose an end-to-end SLA latency target into per-component budgets accounting for propagation delay, transmission time, serialization, queueing, and processing.",
+      "step": [
+        {
+          "@type": "HowToStep",
+          "position": 1,
+          "name": "Set your end-to-end latency SLA",
+          "text": "Enter your target p99 or p999 latency in milliseconds. A typical web service SLA is 200ms p99. A real-time bidding system might target 50ms. This is the number your architecture must fit inside."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 2,
+          "name": "Configure propagation and transmission components",
+          "text": "Set the round-trip distance (speed of light in fiber is ~5 μs/km). Enter packet size and link bandwidth for transmission delay. A 1500-byte packet on a 1 Gbps link takes 12 μs to serialize — negligible for most SLAs. On a 10 Mbps link, that same packet takes 1.2 ms, eating 1.2% of a 100ms budget on transmission alone."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 3,
+          "name": "Add queueing and processing overhead",
+          "text": "Each network hop adds queueing delay. Each service adds processing time. At 12 microservices each taking 5ms p99, your base latency is 60ms before you account for serialization, propagation, or network variance. This is why microservice depth directly constrains your SLA target."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 4,
+          "name": "Review the budget allocation",
+          "text": "The calculator decomposes the total SLA into per-component budgets and shows how much headroom remains. The remaining budget tells you whether your architecture can meet the SLA, or whether you need to reduce hop count, upgrade links, or relax the target."
+        }
+      ]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How many microseconds of latency does each kilometer of fiber add?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Light travels at ~200,000 km/s in optical fiber (~2/3 of vacuum speed). That's 5 microseconds per kilometer of fiber, one-way. New York to London (~5,600 km) adds 28 ms one-way from propagation alone. New York to San Francisco (~4,100 km) adds 20.5 ms. These are fundamental physics limits — no amount of engineering reduces propagation delay except moving the endpoints closer together."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How many microservices can I chain before hitting a 200ms p99 SLA?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "At 5ms average p99 per service and serial fan-out (service A calls B which calls C), 12 services consume 60ms of processing alone. Add 2ms per hop for serialization and network variance, and you're at ~84ms before propagation, database queries, or external API calls. With parallel fan-out (service A calls B, C, D concurrently and waits for the slowest), the budget scales with the critical path depth, not total service count. The latency budget calculator models both patterns."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does p99 latency matter more than average?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "At 1,000 requests/second, p99 = 200ms means 10 requests every second take 200ms or more. Those 10 requests are disproportionately the ones users notice — the slowest 1% of page loads often contain the checkout flow, the login page, or the API call that blocks the entire UI. If your frontend fires 5 API calls per page and you target p99 = 200ms per service, the page-level p99 with serial dependencies is closer to p99 × depth, not p99."
+          }
+        }
+      ]
+    }
+    </script>
+
+    <link rel="canonical" href="https://www.jslet.com/latency-budget-calculator">
+    <meta property="og:title" content="Latency Budget Calculator — End-to-End Delay Decomposition — jslet">
+    <meta property="og:description" content="Decompose end-to-end latency budgets across propagation, transmission, serialization, queueing, and processing components. Model speed-of-light fiber delay, packet-level transmission, and protocol overhead for distributed system SLA planning.">
+    <meta property="og:url" content="https://www.jslet.com/latency-budget-calculator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Latency Budget Calculator — End-to-End Delay Decomposition — jslet">
+    <meta name="twitter:description" content="Decompose end-to-end latency budgets across propagation, transmission, serialization, queueing, and processing components. Model fiber delay, packet transmission, and protocol overhead.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+</head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">›</span> <a href="/decision-matrix">Decision Matrix</a> <span class="breadcrumb-sep">›</span> Latency Budget Calculator</nav>
+        <header>
+            <h1>Latency Budget <span>Calculator</span></h1>
+            <p>Speed of light in fiber: 5 microseconds/km. NY to London: 28 ms minimum — physics, not configuration. Decompose every millisecond of your 200ms budget across propagation, transmission, serialization, queueing, and processing. Find the slack before architecture locks in an impossible SLA.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Network Path &amp; Workload Profile</h3>
+                <p class="card-desc">Configure distance, bandwidth, payload size, and compute time. The engine computes propagation (speed-of-light), transmission (packet serialization), queueing, and processing delay. Remaining budget = your application's ceiling.</p>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="target-ms">Target End-to-End Latency SLA (ms)</label>
+                        <input type="number" class="unit-input" id="target-ms" value="200" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="preset-select">Scenario Preset</label>
+                        <select class="unit-input" id="preset-select">
+                            <option value="custom">Custom Configuration</option>
+                            <option value="web-app" selected>Web Application (p99 < 200ms)</option>
+                            <option value="api-microservice">API Microservice (p99 < 50ms)</option>
+                            <option value="cross-region-db">Cross-Region DB Replication (p99 < 100ms)</option>
+                            <option value="cdn-edge">CDN Edge Delivery (p99 < 30ms)</option>
+                            <option value="real-time-game">Real-Time Game Server (p99 < 50ms)</option>
+                            <option value="streaming-video">Live Video Streaming (p99 < 2s)</option>
+                            <option value="iot-telemetry">IoT Telemetry Ingest (p99 < 500ms)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="distance-km">One-Way Fiber Distance (km)</label>
+                        <input type="number" class="unit-input" id="distance-km" value="3000" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="bandwidth-mbps">Network Bandwidth (Mbps)</label>
+                        <input type="number" class="unit-input" id="bandwidth-mbps" value="1000" step="any" min="1">
+                    </div>
+                </div>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="payload-kb">Payload Size per Request (KB)</label>
+                        <input type="number" class="unit-input" id="payload-kb" value="10" step="any" min="0.1">
+                    </div>
+                    <div class="input-group">
+                        <label for="response-kb">Response Size (KB)</label>
+                        <input type="number" class="unit-input" id="response-kb" value="50" step="any" min="0.1">
+                    </div>
+                </div>
+
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="num-hops">Network Hops (routers/switches)</label>
+                        <input type="number" class="unit-input" id="num-hops" value="8" step="1" min="0" max="64">
+                    </div>
+                    <div class="input-group">
+                        <label for="queue-per-hop-us">Avg Queue Depth per Hop (μs)</label>
+                        <input type="number" class="unit-input" id="queue-per-hop-us" value="50" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="protocol">Protocol / Transport</label>
+                        <select class="unit-input" id="protocol">
+                            <option value="http2-tls">HTTP/2 + TLS 1.3 (1-RTT handshake)</option>
+                            <option value="http1-tls" selected>HTTP/1.1 + TLS 1.2 (2-RTT handshake)</option>
+                            <option value="grpc">gRPC (HTTP/2, persistent)</option>
+                            <option value="tcp">Raw TCP (persistent connection)</option>
+                            <option value="udp">UDP / QUIC (0-RTT possible)</option>
+                            <option value="websocket">WebSocket (persistent, framed)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="processing-ms">Estimated Server Processing (ms)</label>
+                        <input type="number" class="unit-input" id="processing-ms" value="15" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="serialization">Serialization Format</label>
+                        <select class="unit-input" id="serialization">
+                            <option value="json">JSON (text-based, ~50% overhead vs binary)</option>
+                            <option value="protobuf" selected>Protobuf / FlatBuffers (compact binary)</option>
+                            <option value="msgpack">MessagePack (binary JSON-compatible)</option>
+                            <option value="avro">Apache Avro (schema-evolved binary)</option>
+                            <option value="xml">XML / SOAP (verbose, ~3× JSON overhead)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn-calc">Run Latency Budget Analysis</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Latency Budget Allocation</h3>
+                <p class="card-desc" id="results-summary"></p>
+
+                <!-- SLA Alert -->
+                <div class="alert-sla" id="sla-alert"></div>
+
+                <!-- Stacked Bar -->
+                <div class="budget-bar-wrap" id="budget-bar-wrap">
+                    <div class="budget-segment propagation" id="seg-propagation" style="width:0%;left:0;">Propagation</div>
+                    <div class="budget-segment transmission" id="seg-transmission" style="width:0%;">Tx</div>
+                    <div class="budget-segment serialization" id="seg-serialization" style="width:0%;">Serial</div>
+                    <div class="budget-segment queueing" id="seg-queueing" style="width:0%;">Queue</div>
+                    <div class="budget-segment protocol" id="seg-protocol" style="width:0%;">Protocol</div>
+                    <div class="budget-segment processing" id="seg-processing" style="width:0%;">App</div>
+                    <div class="budget-segment slack" id="seg-slack" style="width:0%;">Slack</div>
+                </div>
+                <div class="budget-legend">
+                    <div class="budget-legend-item"><div class="budget-legend-dot" style="background:#2563eb;"></div> Propagation</div>
+                    <div class="budget-legend-item"><div class="budget-legend-dot" style="background:#7c3aed;"></div> Transmission</div>
+                    <div class="budget-legend-item"><div class="budget-legend-dot" style="background:#9333ea;"></div> Serialization</div>
+                    <div class="budget-legend-item"><div class="budget-legend-dot" style="background:#f59e0b;"></div> Queueing</div>
+                    <div class="budget-legend-item"><div class="budget-legend-dot" style="background:#ef4444;"></div> Protocol Handshake</div>
+                    <div class="budget-legend-item"><div class="budget-legend-dot" style="background:#10b981;"></div> App Processing</div>
+                    <div class="budget-legend-item"><div class="budget-legend-dot" style="background:#6b7280;opacity:0.6;"></div> Remaining Slack</div>
+                </div>
+
+                <!-- Budget Table -->
+                <div class="table-scroll">
+                <table class="budget-table" id="budget-table">
+                    <thead>
+                        <tr><th>Component</th><th>Latency (ms)</th><th>% of Budget</th><th>Notes</th></tr>
+                    </thead>
+                    <tbody id="budget-tbody"></tbody>
+                </table>
+                </div>
+            </div>
+
+            <!-- REFERENCE CARD -->
+            <div class="calculator-card">
+                <h3>⏱️ Latency Reference: Typical Component Costs</h3>
+                <p class="card-desc">Common latency values observed in production distributed systems. Use these as calibration points when building your budget.</p>
+                <div class="table-scroll">
+                <table class="latency-class-table">
+                    <thead>
+                        <tr><th>Operation</th><th class="num">Typical Latency</th><th>Context</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>L1 Cache Reference</td><td class="num">~1 ns</td><td>CPU core-local</td></tr>
+                        <tr><td>L3 Cache Reference</td><td class="num">~12 ns</td><td>CPU die-shared</td></tr>
+                        <tr><td>Main Memory (DRAM) Access</td><td class="num">~100 ns</td><td>NUMA local node</td></tr>
+                        <tr><td>NVMe SSD 4KB Random Read</td><td class="num">~100 μs</td><td>PCIe Gen4 x4</td></tr>
+                        <tr><td>Network: Same-AZ (AWS/GCP)</td><td class="num">~0.5–1 ms</td><td>RTT, within datacenter</td></tr>
+                        <tr><td>Network: Cross-AZ (same region)</td><td class="num">~2–3 ms</td><td>RTT, metro fiber ring</td></tr>
+                        <tr><td>Network: Cross-Region (US East→West)</td><td class="num">~60–70 ms</td><td>RTT, ~4,500 km fiber</td></tr>
+                        <tr><td>Network: US→Europe (NY→London)</td><td class="num">~70–80 ms</td><td>RTT, transatlantic fiber</td></tr>
+                        <tr><td>Network: US→Asia (SF→Tokyo)</td><td class="num">~110–130 ms</td><td>RTT, transpacific fiber</td></tr>
+                        <tr><td>Fiber Propagation (speed of light)</td><td class="num">~5 μs/km</td><td>One-way, ~0.67c in glass</td></tr>
+                        <tr><td>TCP 3-Way Handshake</td><td class="num">1 × RTT</td><td>SYN → SYN-ACK → ACK</td></tr>
+                        <tr><td>TLS 1.3 Handshake</td><td class="num">1 × RTT</td><td>After TCP established</td></tr>
+                        <tr><td>TLS 1.2 Handshake</td><td class="num">2 × RTT</td><td>After TCP established</td></tr>
+                        <tr><td>DNS Resolution (cached)</td><td class="num">~0.1–1 ms</td><td>Local resolver cache hit</td></tr>
+                        <tr><td>DNS Resolution (uncached)</td><td class="num">~10–100 ms</td><td>Recursive lookup chain</td></tr>
+                        <tr><td>Kernel TCP Buffer Copy</td><td class="num">~5–10 μs</td><td>Per 64KB segment</td></tr>
+                        <tr><td>Context Switch (thread)</td><td class="num">~1–10 μs</td><td>OS scheduler overhead</td></tr>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>Latency Budgeting: Why "Average" Is Dangerous</h2>
+            <p>End-to-end latency is the sum of many independent contributors — and each one has a distribution. Designing systems for average latency is a trap: a service that averages 50 ms can easily have a p99 of 500 ms once you account for queueing, TCP retransmissions, GC pauses, and tail-latency amplification in fan-out architectures.</p>
+            <p>The discipline of <strong>latency budget decomposition</strong> forces architects to allocate concrete millisecond budgets to each layer of the stack. If you're building a web service with a 200 ms p99 SLA and the network RTT already eats 70 ms (cross-region fiber) plus 30 ms for TLS handshake, you have only 100 ms left for DNS, load balancer, application logic, database queries, and serialization. That's the budget — and exceeding it means violating your SLA.</p>
+
+            <h3>The Physics of Fiber: Propagation Delay Is Non-Negotiable</h3>
+            <p>Light travels through optical fiber at approximately 200,000 km/s (about 67% of its speed in vacuum). This gives a one-way propagation delay of <strong>≈5 microseconds per kilometer</strong>. For a 4,500 km cross-continental fiber path (US East to West Coast), the one-way propagation is ~22.5 ms — and a round trip adds up to 45 ms before a single byte of application data moves. This is a hard floor set by physics; no amount of bandwidth or optimization can reduce it.</p>
+            <p>For reference: New York ↔ London (~5,600 km) ≈ 28 ms one-way; San Francisco ↔ Tokyo (~8,200 km) ≈ 41 ms one-way; Sydney ↔ Singapore (~6,300 km) ≈ 31.5 ms one-way. These numbers should be the first entry in any latency budget.</p>
+
+            <h3>Transmission Delay: Packets Take Time to Serialize</h3>
+            <p>Transmission delay is the time required to push all bits of a packet onto the wire: <code>packet_size / bandwidth</code>. A 1,500-byte packet on a 1 Gbps link takes ~12 μs to transmit. On a 100 Mbps link, the same packet takes ~120 μs. While small, this delay compounds with payload size and the number of packets per request (request + response headers, body fragmentation, ACKs).</p>
+            <p>The key insight: bandwidth reduces transmission delay, but it cannot reduce propagation delay. Adding more bandwidth to a cross-country link won't make the light travel faster — it only reduces the time to serialize the bits. For latency-sensitive workloads with small payloads, propagation dominates; for bulk data transfers with large payloads, transmission dominates.</p>
+
+            <h3>Queueing Delay: The Hidden Budget Killer</h3>
+            <p>Queueing delay at each router hop is the most variable component and the primary driver of tail latency. At 50% link utilization, queueing delay is typically near zero. At 90% utilization, queueing delay can spike to 10–100× the baseline — this is why operating networks above 60–70% utilization is dangerous for latency-sensitive traffic. Bufferbloat (excessive buffering in routers) can add hundreds of milliseconds to p99 latency even on otherwise fast paths.</p>
+            <p>For latency budget planning, assume 50–100 μs of queueing per hop at moderate utilization, and budget an additional 2–5× multiplier for tail events. If you have 10 hops between client and server, queueing alone could consume 1–5 ms at p50 and 5–25 ms at p99.</p>
+
+            <h3>Protocol Overhead: Handshakes Are Expensive</h3>
+            <p>Establishing a new connection requires protocol handshakes that consume round trips before any application data flows:</p>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Protocol Stack</th><th>Round Trips Before Data</th><th>Example (60 ms RTT)</th></tr></thead>
+                <tbody>
+                    <tr><td>TCP (SYN/SYN-ACK/ACK)</td><td>1 RTT</td><td>60 ms</td></tr>
+                    <tr><td>TLS 1.3 over TCP</td><td>2 RTT total (1 TCP + 1 TLS)</td><td>120 ms</td></tr>
+                    <tr><td>TLS 1.2 over TCP</td><td>3 RTT total (1 TCP + 2 TLS)</td><td>180 ms</td></tr>
+                    <tr><td>QUIC (UDP + TLS 1.3 built-in)</td><td>0–1 RTT (0-RTT resumption)</td><td>0–60 ms</td></tr>
+                    <tr><td>HTTP/1.1 (new connection per request)</td><td>TCP + TLS per request</td><td>120–180 ms per request</td></tr>
+                    <tr><td>HTTP/2 (multiplexed, keep-alive)</td><td>Amortized over many requests</td><td>~0 ms incremental</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p style="margin-top:12px;">This is why connection pooling, keep-alive, and QUIC/HTTP3 adoption are critical latency optimizations — they amortize the handshake cost across many requests. A cold connection to a server 60 ms away can consume your entire 200 ms budget before application processing even begins.</p>
+
+            <h3>Tail Latency Amplification in Fan-Out Architectures</h3>
+            <p>Modern microservice architectures often fan out a single user request to dozens of backend services. If each service has a p99 latency of 10 ms and the request touches 20 services, at least one of those 20 will hit its p99 tail with probability <strong>1 − (0.99²⁰) ≈ 18%</strong>. In other words, nearly 1 in 5 user requests will experience a tail-latency event. The solution: set per-service latency budgets much tighter than the end-to-end SLA, use hedged requests (send to multiple replicas, take the first response), and implement circuit breakers that shed load when budgets are exceeded.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/latency-budget-real">📰 The Tail Latency Trap (Full Briefing) →</a>
+                <a href="/mbps-to-mbytes-per-sec">Mbps to MB/s Throughput &rarr;</a>
+                <a href="/gbps-to-tb-per-day">Gbps to TB/Day Egress &rarr;</a>
+                <a href="/data-migration-time">Data Migration Planner &rarr;</a>
+                <a href="/iops-to-throughput">IOPS to Throughput &rarr;</a>
+            </div>
+        </div>
+
+
+        <div class="social-share-bar"><span>Share:</span><a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/latency-budget-calculator&t=Latency+Budget+Calculator+—+End-to-End+Delay+Decomposition+for+Distributed+Systems" class="share-btn hn" target="_blank" rel="noopener noreferrer">HN</a><a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/latency-budget-calculator&text=Speed+of+light+in+fiber:+5+μs/km.+NY+to+London:+28ms+minimum+—+physics,+not+configuration.+Decompose+every+ms+of+your+SLA+budget.&via=jslet" class="share-btn twitter" target="_blank" rel="noopener noreferrer">X</a><a href="https://www.reddit.com/r/sre/submit?url=https://www.jslet.com/latency-budget-calculator&title=Latency+Budget+Calculator+for+Distributed+Systems" class="share-btn reddit" target="_blank" rel="noopener noreferrer">Reddit</a><a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/latency-budget-calculator&title=Latency+Budget+Calculator" class="share-btn linkedin" target="_blank" rel="noopener noreferrer">LinkedIn</a></div>
+
+                <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Physics Constants ──
+    var SPEED_OF_LIGHT_FIBER = 200000; // km/s (≈0.67c in optical fiber)
+    var PROPAGATION_US_PER_KM = 1000 / SPEED_OF_LIGHT_FIBER; // ≈5 μs per km one-way
+
+    // Protocol RTT overheads (in units of RTT, on top of TCP base)
+    var PROTOCOL_CONFIG = {
+        'http1-tls':    { name: 'HTTP/1.1 + TLS 1.2', tcpRtts: 1, tlsRtts: 2, overheadPct: 12, desc: '3 RTT before data (1 TCP + 2 TLS)' },
+        'http2-tls':    { name: 'HTTP/2 + TLS 1.3',   tcpRtts: 1, tlsRtts: 1, overheadPct: 8,  desc: '2 RTT before data (1 TCP + 1 TLS)' },
+        'grpc':         { name: 'gRPC (HTTP/2)',       tcpRtts: 1, tlsRtts: 1, overheadPct: 8,  desc: '2 RTT initial, then persistent' },
+        'tcp':          { name: 'Raw TCP',             tcpRtts: 1, tlsRtts: 0, overheadPct: 3,  desc: '1 RTT handshake, no encryption' },
+        'udp':          { name: 'UDP / QUIC',          tcpRtts: 0, tlsRtts: 0, overheadPct: 2,  desc: '0-RTT (QUIC) on resumed connection' },
+        'websocket':    { name: 'WebSocket',           tcpRtts: 1, tlsRtts: 1, overheadPct: 8,  desc: '2 RTT upgrade, then persistent' }
+    };
+
+    var SERIALIZATION_OVERHEAD = {
+        'json':      { name: 'JSON', overheadFactor: 1.5, desc: 'Text-based, ~50% size overhead vs binary' },
+        'protobuf':  { name: 'Protobuf', overheadFactor: 1.0, desc: 'Compact binary, minimal overhead' },
+        'msgpack':   { name: 'MessagePack', overheadFactor: 1.15, desc: 'Binary JSON-compatible' },
+        'avro':      { name: 'Avro', overheadFactor: 1.1, desc: 'Schema-evolved binary' },
+        'xml':       { name: 'XML/SOAP', overheadFactor: 3.0, desc: 'Verbose text, ~3× JSON size' }
+    };
+
+    var PRESETS = {
+        'web-app': {
+            targetMs: 200, distanceKm: 3000, bandwidthMbps: 1000, payloadKb: 10, responseKb: 50,
+            numHops: 8, queueUs: 50, protocol: 'http1-tls', processingMs: 15, serialization: 'protobuf',
+            label: 'Web Application (p99 < 200ms)'
+        },
+        'api-microservice': {
+            targetMs: 50, distanceKm: 10, bandwidthMbps: 10000, payloadKb: 2, responseKb: 8,
+            numHops: 3, queueUs: 20, protocol: 'grpc', processingMs: 5, serialization: 'protobuf',
+            label: 'API Microservice (p99 < 50ms)'
+        },
+        'cross-region-db': {
+            targetMs: 100, distanceKm: 4500, bandwidthMbps: 10000, payloadKb: 5, responseKb: 100,
+            numHops: 10, queueUs: 30, protocol: 'tcp', processingMs: 10, serialization: 'avro',
+            label: 'Cross-Region DB Replication (p99 < 100ms)'
+        },
+        'cdn-edge': {
+            targetMs: 30, distanceKm: 500, bandwidthMbps: 10000, payloadKb: 1, responseKb: 20,
+            numHops: 4, queueUs: 10, protocol: 'http2-tls', processingMs: 2, serialization: 'protobuf',
+            label: 'CDN Edge Delivery (p99 < 30ms)'
+        },
+        'real-time-game': {
+            targetMs: 50, distanceKm: 1500, bandwidthMbps: 500, payloadKb: 0.5, responseKb: 2,
+            numHops: 6, queueUs: 30, protocol: 'udp', processingMs: 3, serialization: 'protobuf',
+            label: 'Real-Time Game Server (p99 < 50ms)'
+        },
+        'streaming-video': {
+            targetMs: 2000, distanceKm: 3000, bandwidthMbps: 5000, payloadKb: 1, responseKb: 500,
+            numHops: 8, queueUs: 100, protocol: 'http2-tls', processingMs: 50, serialization: 'protobuf',
+            label: 'Live Video Streaming (p99 < 2s)'
+        },
+        'iot-telemetry': {
+            targetMs: 500, distanceKm: 2000, bandwidthMbps: 100, payloadKb: 0.2, responseKb: 1,
+            numHops: 8, queueUs: 80, protocol: 'udp', processingMs: 20, serialization: 'msgpack',
+            label: 'IoT Telemetry Ingest (p99 < 500ms)'
+        }
+    };
+
+    function computeLatencyBudget() {
+        var targetMs = parseFloat(document.getElementById('target-ms').value) || 200;
+        var distanceKm = parseFloat(document.getElementById('distance-km').value) || 0;
+        var bandwidthMbps = parseFloat(document.getElementById('bandwidth-mbps').value) || 1000;
+        var payloadKb = parseFloat(document.getElementById('payload-kb').value) || 10;
+        var responseKb = parseFloat(document.getElementById('response-kb').value) || 50;
+        var numHops = parseInt(document.getElementById('num-hops').value) || 0;
+        var queuePerHopUs = parseFloat(document.getElementById('queue-per-hop-us').value) || 0;
+        var protocolKey = document.getElementById('protocol').value;
+        var processingMs = parseFloat(document.getElementById('processing-ms').value) || 0;
+        var serializationKey = document.getElementById('serialization').value;
+
+        var protoCfg = PROTOCOL_CONFIG[protocolKey] || PROTOCOL_CONFIG['http1-tls'];
+        var serCfg = SERIALIZATION_OVERHEAD[serializationKey] || SERIALIZATION_OVERHEAD['protobuf'];
+
+        // 1. Propagation delay (round-trip)
+        var propagationOneWayMs = distanceKm * PROPAGATION_US_PER_KM / 1000;
+        var propagationRttMs = propagationOneWayMs * 2;
+
+        // 2. Transmission delay (request + response payloads, including serialization overhead)
+        var totalPayloadKb = (payloadKb + responseKb) * serCfg.overheadFactor;
+        var bandwidthMbpsEffective = bandwidthMbps * (1 - protoCfg.overheadPct / 100);
+        var transmissionMs = (totalPayloadKb * 8) / bandwidthMbpsEffective; // Kb → bits, Mbps → ms
+
+        // 3. Serialization/deserialization time (rough: ~1 μs per KB for binary, ~3 μs for text)
+        var serPerKbUs = serCfg.overheadFactor > 1.5 ? 3 : 1;
+        var serializationMs = ((payloadKb + responseKb) * serPerKbUs * 2) / 1000; // serialize + deserialize
+
+        // 4. Queueing delay (summed across all hops, both directions)
+        var queueingMs = (numHops * queuePerHopUs * 2) / 1000;
+
+        // 5. Protocol handshake
+        var totalRtts = protoCfg.tcpRtts + protoCfg.tlsRtts;
+        var protocolHandshakeMs = totalRtts * propagationRttMs;
+
+        // 6. Processing (user-specified)
+        var processingTotalMs = processingMs;
+
+        // 7. Additional per-hop switching latency (~10 μs per hop typical)
+        var switchingMs = (numHops * 10 * 2) / 1000;
+
+        // Total computed
+        var totalComputed = propagationRttMs + transmissionMs + serializationMs + queueingMs + protocolHandshakeMs + processingTotalMs + switchingMs;
+
+        // Slack
+        var slackMs = Math.max(0, targetMs - totalComputed);
+
+        // Render
+        var resultsCard = document.getElementById('results-card');
+        resultsCard.style.display = 'block';
+
+        document.getElementById('results-summary').innerText =
+            `${distanceKm} km fiber path · ${bandwidthMbps} Mbps · ${numHops} hops · ${protoCfg.name} · ${serCfg.name} · ${payloadKb}KB req / ${responseKb}KB resp`;
+
+        // SLA alert
+        var alertDiv = document.getElementById('sla-alert');
+        if (slackMs < 0) {
+            alertDiv.className = 'alert-sla over';
+            alertDiv.innerText = `⚠️ BUDGET OVERRUN: Computed latency (${totalComputed.toFixed(1)} ms) exceeds target SLA (${targetMs} ms) by ${Math.abs(slackMs).toFixed(1)} ms. Consider: reducing distance (closer region), upgrading bandwidth, switching to persistent connections (gRPC/QUIC), or increasing the target SLA.`;
+        } else if (slackMs < targetMs * 0.1) {
+            alertDiv.className = 'alert-sla over';
+            alertDiv.innerText = `⚠️ TIGHT BUDGET: Only ${slackMs.toFixed(1)} ms slack remaining (${((slackMs/targetMs)*100).toFixed(1)}% of budget). Tail-latency spikes from GC pauses, TCP retransmissions, or network congestion could breach this SLA. Consider adding headroom.`;
+        } else {
+            alertDiv.className = 'alert-sla under';
+            alertDiv.innerText = `✓ BUDGET HEALTHY: ${slackMs.toFixed(1)} ms slack remaining (${((slackMs/targetMs)*100).toFixed(1)}% of budget). Sufficient headroom for tail-latency variability.`;
+        }
+
+        // Budget breakdown data
+        var items = [
+            { label: 'Propagation (RTT)', ms: propagationRttMs, pct: (propagationRttMs / targetMs) * 100, notes: `${distanceKm} km × 5 μs/km × 2 directions = ${propagationOneWayMs.toFixed(1)} ms one-way`, color: '#2563eb', id: 'propagation' },
+            { label: 'Transmission (Tx/Rx)', ms: transmissionMs, pct: (transmissionMs / targetMs) * 100, notes: `${totalPayloadKb.toFixed(1)} KB total @ ${bandwidthMbpsEffective.toFixed(0)} Mbps (${protoCfg.overheadPct}% protocol overhead)`, color: '#7c3aed', id: 'transmission' },
+            { label: 'Serialization', ms: serializationMs, pct: (serializationMs / targetMs) * 100, notes: `${serCfg.name} encode + decode, ~${serPerKbUs} μs/KB`, color: '#9333ea', id: 'serialization' },
+            { label: 'Queueing (all hops)', ms: queueingMs, pct: (queueingMs / targetMs) * 100, notes: `${numHops} hops × ${queuePerHopUs} μs/hop × 2 directions`, color: '#f59e0b', id: 'queueing' },
+            { label: 'Protocol Handshake', ms: protocolHandshakeMs, pct: (protocolHandshakeMs / targetMs) * 100, notes: `${totalRtts} RTT × ${propagationRttMs.toFixed(1)} ms/RTT (${protoCfg.desc})`, color: '#ef4444', id: 'protocol' },
+            { label: 'Switch/Router Forwarding', ms: switchingMs, pct: (switchingMs / targetMs) * 100, notes: `${numHops} hops × ~10 μs forwarding latency × 2 directions`, color: '#0891b2', id: 'switching' },
+            { label: 'Application Processing', ms: processingTotalMs, pct: (processingTotalMs / targetMs) * 100, notes: 'User-estimated server-side processing time', color: '#10b981', id: 'processing' },
+            { label: 'Remaining Slack (headroom)', ms: slackMs, pct: (slackMs / targetMs) * 100, notes: slackMs < 0 ? 'OVERRUN — reduce component latencies' : 'Available for GC pauses, retransmissions, tail events', color: '#6b7280', id: 'slack' }
+        ];
+
+        // Build table
+        var tbody = document.getElementById('budget-tbody');
+        tbody.innerHTML = items.map((item, i) => {
+            var isSlack = item.id === 'slack';
+            var isOver = item.ms < 0;
+            var msClass = isOver ? 'budget-ms" style="color:#ef4444;' : 'budget-ms';
+            return `<tr class="${isSlack ? 'total-row' : ''}">
+                <td style="display:flex;align-items:center;gap:8px;">
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${item.color};${isSlack ? 'opacity:0.6;' : ''}flex-shrink:0;"></span>
+                    ${item.label}
+                </td>
+                <td class="${msClass}">${item.ms.toFixed(2)} ms</td>
+                <td class="budget-pct" style="${isOver ? 'color:#ef4444;' : ''}">${item.pct.toFixed(1)}%</td>
+                <td style="font-size:0.75rem;color:var(--text-muted);">${item.notes}</td>
+            </tr>`;
+        }).join('');
+
+        // Total row
+        tbody.insertAdjacentHTML('beforeend', `<tr class="total-row">
+            <td><strong>Total Computed</strong></td>
+            <td class="budget-ms" style="color:${slackMs < 0 ? '#ef4444' : 'var(--accent)'};">${totalComputed.toFixed(2)} ms</td>
+            <td class="budget-pct">${((totalComputed/targetMs)*100).toFixed(1)}%</td>
+            <td style="font-size:0.75rem;color:var(--text-muted);">vs. ${targetMs} ms target SLA</td>
+        </tr>`);
+
+        // Update stacked bar
+        var segs = [
+            { id: 'seg-propagation', pct: (propagationRttMs / targetMs) * 100, left: 0 },
+            { id: 'seg-transmission', pct: (transmissionMs / targetMs) * 100, left: (propagationRttMs / targetMs) * 100 },
+            { id: 'seg-serialization', pct: (serializationMs / targetMs) * 100, left: ((propagationRttMs + transmissionMs) / targetMs) * 100 },
+            { id: 'seg-queueing', pct: (queueingMs / targetMs) * 100, left: ((propagationRttMs + transmissionMs + serializationMs) / targetMs) * 100 },
+            { id: 'seg-protocol', pct: (protocolHandshakeMs / targetMs) * 100, left: ((propagationRttMs + transmissionMs + serializationMs + queueingMs) / targetMs) * 100 },
+            { id: 'seg-processing', pct: ((processingTotalMs + switchingMs) / targetMs) * 100, left: ((propagationRttMs + transmissionMs + serializationMs + queueingMs + protocolHandshakeMs) / targetMs) * 100 },
+            { id: 'seg-slack', pct: Math.max(0, slackMs / targetMs) * 100, left: ((totalComputed - Math.max(0, slackMs)) / targetMs) * 100 }
+        ];
+
+        segs.forEach(s => {
+            var el = document.getElementById(s.id);
+            if (!el) return;
+            var pct = Math.max(0, s.pct);
+            if (pct < 0.5) {
+                el.style.width = '0%';
+                el.style.display = 'none';
+            } else {
+                el.style.width = pct + '%';
+                el.style.left = s.left + '%';
+                el.style.display = 'flex';
+                el.innerText = pct > 8 ? el.getAttribute('data-orig') || el.innerText : '';
+                if (!el.getAttribute('data-orig')) {
+                    el.setAttribute('data-orig', el.innerText);
+                }
+                el.innerText = pct > 8 ? el.getAttribute('data-orig') : '';
+            }
+        });
+
+        // Scroll to results
+        resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // Preset loader
+    function applyPreset(presetKey) {
+        var preset = PRESETS[presetKey];
+        if (!preset) return;
+        document.getElementById('target-ms').value = preset.targetMs;
+        document.getElementById('distance-km').value = preset.distanceKm;
+        document.getElementById('bandwidth-mbps').value = preset.bandwidthMbps;
+        document.getElementById('payload-kb').value = preset.payloadKb;
+        document.getElementById('response-kb').value = preset.responseKb;
+        document.getElementById('num-hops').value = preset.numHops;
+        document.getElementById('queue-per-hop-us').value = preset.queueUs;
+        document.getElementById('protocol').value = preset.protocol;
+        document.getElementById('processing-ms').value = preset.processingMs;
+        document.getElementById('serialization').value = preset.serialization;
+        computeLatencyBudget();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Compute on load with default preset
+        applyPreset('web-app');
+
+        // Preset change handler
+        document.getElementById('preset-select').addEventListener('change', function() {
+            var val = this.value;
+            if (val === 'custom') return;
+            applyPreset(val);
+        });
+
+        // Recompute button
+        document.querySelector('.btn-calc').addEventListener('click', computeLatencyBudget);
+
+        // Auto-recompute on input changes
+        var inputs = document.querySelectorAll('#target-ms, #distance-km, #bandwidth-mbps, #payload-kb, #response-kb, #num-hops, #queue-per-hop-us, #processing-ms');
+        inputs.forEach(input => {
+            input.addEventListener('input', function() {
+                document.getElementById('preset-select').value = 'custom';
+                computeLatencyBudget();
+            });
+        });
+        var selects = document.querySelectorAll('#protocol, #serialization');
+        selects.forEach(select => {
+            select.addEventListener('change', function() {
+                document.getElementById('preset-select').value = 'custom';
+                computeLatencyBudget();
+            });
+        });
+    });
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

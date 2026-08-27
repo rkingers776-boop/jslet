@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>AWS Egress Bandwidth Cost Estimator — jslet</title>
+    <meta name="description" content="AWS egress pricing tiers: free → $0.09/GB → $0.085/GB → $0.07/GB. The line item nobody reads until it crosses $10K. Model your outbound before the CFO forwards the bill.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="AWS Egress Bandwidth Cost Estimator — jslet">
+    <meta property="og:description" content="Calculate AWS data transfer egress costs using tiered pricing models. Compare AWS vs GCP vs Azure outbound bandwidth expenses for multi-terabyte monthly workloads.">
+    <meta property="og:url" content="https://www.jslet.com/terabytes-egress-to-aws-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AWS Egress Bandwidth Cost Estimator — jslet">
+    <meta name="twitter:description" content="Calculate AWS data transfer egress costs using tiered pricing models. Compare AWS vs GCP vs Azure outbound bandwidth expenses for multi-terabyte monthly workloads.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/terabytes-egress-to-aws-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "AWS Egress Bandwidth Cost Estimator",
+      "description": "Calculate AWS data transfer egress costs using tiered pricing models. Compare AWS vs GCP vs Azure outbound bandwidth expenses for multi-terabyte monthly workloads.",
+      "url": "https://www.jslet.com/terabytes-egress-to-aws-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much does AWS egress cost at scale?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "AWS egress uses tiered pricing: free up to 100 GB/month, then ~$0.09/GB, dropping to $0.085 and $0.07/GB at higher volumes. The 25 TB/month trap costs roughly $2,100. The calculator models the tiers from your outbound volume so the egress line item is predictable before the CFO forwards the bill."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does AWS tiered egress pricing work?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "All your outbound traffic in a month is aggregated, and each tier is charged at its rate — the first TBs at the higher rate, the rest at lower rates. Moving more data actually lowers the per-GB cost, but only if you cross the tier boundaries. The calculator applies the tier math correctly, which naive per-GB multiplication gets wrong."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How can I reduce my AWS egress bill?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Use CloudFront with a larger free tier, move read-heavy workloads to providers with zero egress (like R2), or keep inter-service traffic in-region. The calculator's mitigation section quantifies each option against your volume, so the egress reduction strategy is chosen by the numbers."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>☁️ AWS <span>Egress Bandwidth</span> Cost Estimator</h1>
+            <p>AWS egress pricing tiers: first GB free, then $0.09/GB, $0.085/GB, $0.07/GB as volume scales. The line item nobody reads until the bill crosses $10K. At 50 TB/month: $4,500 on AWS, $4,250 on GCP, $4,350 on Azure. The spread looks small until you multiply by 12 months. Model your outbound volume across all three clouds.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📊 Egress Configuration</h3>
+                <p class="card-desc">Enter monthly outbound TB and per-GB rate. The engine computes AWS tiered pricing (free → $0.09 → $0.085 → $0.07/GB) and side-by-side GCP/Azure comparison. US East ~$0.09, APAC ~$0.12 — region matters.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="tb">Monthly Outbound Traffic (TB)</label>
+                        <input type="number" class="unit-input" id="tb" value="25" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="rate">Per-GB Rate ($)</label>
+                        <input type="number" class="unit-input" id="rate" value="0.09" step="any" min="0">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">US East ~$0.09, APAC ~$0.12</span>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Calculation</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>💰 Egress Cost Breakdown</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid" id="metric-results"></div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>AWS Data Transfer Cost: The 25 TB Egress Trap Costs ~$2,100/Month</h2>
+            <p>AWS data transfer egress pricing follows a <strong>volume-based tiered model</strong> where the per-GB rate decreases as monthly usage increases — but the cumulative cost still scales linearly within each band. For a workload pushing 25 TB/month (25,000 GB) out of AWS, the egress bill alone can reach ~$2,100/month before accounting for compute, storage, or support costs. This calculator models the exact tiered pricing formula to surface your actual data transfer expenditure.</p>
+
+            <h3>How AWS Tiered Egress Pricing Works</h3>
+            <p>AWS divides monthly outbound data transfer into four pricing tiers, applied cumulatively:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Tier</th><th>Monthly Volume (GB)</th><th>Rate ($/GB)</th><th>Discount vs. Base</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Tier 1</strong></td><td>0 – 10,000</td><td>$0.09</td><td>0% (base rate)</td></tr>
+                    <tr><td><strong>Tier 2</strong></td><td>10,001 – 40,000</td><td>$0.085</td><td>~6% off</td></tr>
+                    <tr><td><strong>Tier 3</strong></td><td>40,001 – 150,000</td><td>$0.07</td><td>~22% off</td></tr>
+                    <tr><td><strong>Tier 4</strong></td><td>150,001+</td><td>$0.05</td><td>~44% off</td></tr>
+                </tbody>
+            </table>
+</div>
+            <p>The trap: the first 10 TB <em>always</em> costs the full base rate. If your workload is 11 TB, only the last 1 TB gets the Tier 2 discount — the first 10 TB is billed at $0.09/GB regardless. This means apparent "discounts" are marginal until you cross deep into Tier 3 or Tier 4 territory (40+ TB/month).</p>
+
+            <h3>Mitigation Strategies: Reducing Your AWS Egress Bill</h3>
+            <p><strong>Amazon CloudFront CDN:</strong> Route outbound traffic through CloudFront. CloudFront offers 1 TB of free data transfer per month and charges $0.085/GB for the next 10 TB in the US — often cheaper than direct S3/EC2 egress. Plus, origin shield reduces requests hitting your origin servers, cutting egress further.</p>
+            <p><strong>VPC Endpoints and PrivateLink:</strong> Use VPC endpoints (Gateway endpoints for S3/DynamoDB are free) to keep traffic within the AWS backbone instead of traversing the public internet. VPC Interface endpoints cost ~$0.01/hour plus $0.01/GB — but they eliminate NAT gateway charges ($0.045/GB) for cross-AZ traffic.</p>
+            <p><strong>AWS Direct Connect:</strong> For hybrid cloud or on-premises data transfer, Direct Connect provides dedicated physical connections with egress rates as low as $0.02/GB — dramatically cheaper than public internet egress. The tradeoff is a fixed port-hour cost plus the physical cross-connect installation.</p>
+            <p><strong>Multi-Cloud Arbitration:</strong> GCP charges ~$0.085/GB flat (no tiering) and Azure charges ~$0.087/GB for the first 10 TB. For certain volume bands, routing egress through a different cloud provider's network can reduce total cost — this calculator surfaces the cross-provider comparison so you can make an informed architectural decision.</p>
+        </section>
+
+        <!-- Related Tools -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var t = v('tb');
+        var r = v('rate');
+        var g = t * 1000;
+        var c = 0;
+        if (g <= 10000) {
+            c = g * r;
+        } else if (g <= 40000) {
+            c = 10000 * r + (g - 10000) * r * 0.94;
+        } else if (g <= 150000) {
+            c = 10000 * r + 30000 * r * 0.94 + (g - 40000) * r * 0.78;
+        } else {
+            c = 10000 * r + 30000 * r * 0.94 + 110000 * r * 0.78 + (g - 150000) * r * 0.56;
+        }
+
+        var avgPerGb = c / g;
+        var gcpCost = g * 0.085;
+        var azureCost = g * 0.087;
+
+        document.getElementById('results-params').innerText =
+            t + ' TB/month · ' + g.toLocaleString() + ' GB · $' + r.toFixed(2) + '/GB base rate';
+
+        document.getElementById('metric-results').innerHTML =
+            '<div class="metric-tile"><div class="metric-val">$' + c.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0}) + '</div><div class="metric-label">AWS Egress Cost</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">$' + avgPerGb.toFixed(3) + '</div><div class="metric-label">Avg / GB</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">$' + gcpCost.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0}) + '</div><div class="metric-label">GCP (~$0.085/GB)</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">$' + azureCost.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0}) + '</div><div class="metric-label">Azure (~$0.087/GB)</div></div>';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

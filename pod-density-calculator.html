@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>K8s Pod Density &amp; Bin Packing Calculator — Node Spec → Max Pods — jslet</title>
+    <meta name="description" content="K8s hard limit: 110 pods/node. Your CNI: maybe 40. AWS VPC CNI enforces per-ENI IP limits that kick in long before the kubelet. Model real pod density before your scheduler refuses pods at 4 PM Friday.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="K8s Pod Density & Bin Packing Calculator — jslet">
+    <meta property="og:description" content="Calculate maximum pod density per Kubernetes node. Model system reservations, cloud provider limits, and bin packing efficiency with bottleneck analysis.">
+    <meta property="og:url" content="https://www.jslet.com/pod-density-calculator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="K8s Pod Density & Bin Packing Calculator — jslet">
+    <meta name="twitter:description" content="Calculate maximum pod density per Kubernetes node. Model system reservations, cloud provider limits, and bin packing efficiency.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/pod-density-calculator">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .metric-tile.bottleneck { border-color: var(--error); box-shadow: 0 0 0 2px var(--error-glow, rgba(239, 68, 68, 0.15)); }
+        .metric-tile.bottleneck .metric-val { color: var(--error); }
+        .constraint-bar-wrap {
+            margin: 10px 0; display: flex; align-items: center; gap: 10px;
+        }
+        .constraint-label {
+            width: 80px; font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+            color: var(--text-muted); flex-shrink: 0; text-align: right;
+        }
+        .constraint-bar-outer {
+            flex: 1; height: 18px; border-radius: 4px; background: var(--border); overflow: hidden; position: relative;
+        }
+        .constraint-bar-inner {
+            height: 100%; border-radius: 4px; transition: width 0.4s ease; position: relative;
+            display: flex; align-items: center; padding-left: 8px; font-size: 0.7rem; font-weight: 700; color: #fff;
+        }
+        .constraint-bar-inner.cpu-bar { background: #3b82f6; }
+        .constraint-bar-inner.mem-bar { background: #10b981; }
+        .constraint-bar-inner.storage-bar { background: #f59e0b; }
+        .constraint-bar-inner.ip-bar { background: #8b5cf6; }
+        .constraint-detail {
+            font-size: 0.72rem; color: var(--text-muted); margin-left: 8px; flex-shrink: 0; min-width: 100px;
+        }
+        .efficiency-card {
+            border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px;
+            margin-bottom: 12px; background: var(--bg-input); transition: border-color 0.2s;
+        }
+        .efficiency-card:hover { border-color: var(--accent); }
+        .efficiency-card .eff-header { font-weight: 700; color: var(--accent); margin-bottom: 8px; font-size: 0.9rem; }
+        .efficiency-card .eff-stat {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.1rem; font-weight: 700;
+        }
+        .eff-good { color: var(--success); }
+        .eff-ok { color: var(--gold); }
+        .eff-bad { color: var(--error); }
+        .preset-tag {
+            display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 3px; margin-right: 6px;
+        }
+        .tag-eks { background: #ff990022; color: #ff9900; }
+        .tag-gke { background: #4285f422; color: #4285f4; }
+        .tag-aks { background: #0078d422; color: #0078d4; }
+        .tag-self { background: #326ce522; color: #326ce5; }
+        .risk-badge {
+            display: inline-block; padding: 3px 10px; border-radius: 3px; font-size: 0.72rem;
+            font-weight: 700; text-transform: uppercase;
+        }
+        .risk-low { background: var(--success); color: #fff; }
+        .risk-moderate { background: var(--gold); color: #000; }
+        .risk-high { background: var(--error); color: #fff; }
+        .yaml-block {
+            background: #1a1a2e; color: #e0e0e0; font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 0.78rem; padding: 16px 20px; border-radius: var(--radius-sm);
+            overflow-x: auto; white-space: pre; line-height: 1.6;
+            border: 1px solid var(--border); margin-top: 10px;
+        }
+        .yaml-block .key { color: #82aaff; }
+        .yaml-block .val { color: #c3e88d; }
+        .yaml-block .comment { color: #546e7a; }
+        .cluster-grid {
+            display: grid; grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px; margin-top: 16px;
+        }
+        @media (max-width: 700px) { .cluster-grid { grid-template-columns: 1fr; } }
+        .cluster-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .cluster-tile .cluster-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.4rem; font-weight: 700; color: var(--text-heading);
+        }
+        .cluster-tile .cluster-label { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        /* Gauge ring */
+        .gauge-wrap { display: flex; align-items: center; justify-content: center; gap: 20px; flex-wrap: wrap; margin: 16px 0; }
+        .gauge-ring {
+            position: relative; width: 120px; height: 120px; flex-shrink: 0;
+        }
+        .gauge-ring svg { transform: rotate(-90deg); }
+        .gauge-ring .bg { fill: none; stroke: var(--border); stroke-width: 10; }
+        .gauge-ring .fill { fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease; }
+        .gauge-ring .center-val {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.5rem; font-weight: 700; color: var(--text-heading);
+        }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "K8s Pod Density & Bin Packing Calculator",
+      "description": "Calculate maximum pod density per Kubernetes node based on vCPU, memory, and ephemeral storage constraints. Model system reservations, cloud provider limits, and bin packing efficiency.",
+      "url": "https://www.jslet.com/pod-density-calculator",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why can't I run the Kubernetes default of 110 pods per node?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The kubelet hard limit is 110 pods/node, but the real ceiling is usually lower: AWS VPC CNI enforces per-ENI IP limits, other CNIs have their own caps, and memory/CPU requests constrain density further. The calculator models node size, CNI limits, and workload requests to find the actual maximum pod density before the scheduler refuses pods."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does bin packing determine how many pods fit?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Pods are scheduled by resource requests, not actual usage — so \"12 pods\" on a 16 vCPU node is normal when each requests 1,000m plus memory. The calculator shows the request-based packing and the overcommit reality, which is why density planning must use requests, not observed usage."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the difference between kubelet limits and CNI IP limits?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The kubelet allows up to 110 pods, but the CNI must assign each pod an IP: AWS VPC CNI limits by ENI × IPs-per-ENI (often 15-50), long before 110. The calculator surfaces the binding constraint — kubelet, CNI, or requests — so you size nodes for the limit that actually applies."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">›</span> <a href="/cloud-quotas">Cloud Quotas</a> <span class="breadcrumb-sep">›</span> K8s Pod Density Calculator</nav>
+        <header>
+            <h1>K8s <span>Pod Density &amp; Bin Packing</span> Calculator</h1>
+            <p>K8s hard limit: 110 pods/node. Your CNI: maybe 40. AWS VPC CNI enforces per-ENI IP limits that kick in long before the kubelet says stop. Model vCPU, memory, ephemeral storage, and provider IP ceilings — find the binding constraint before your scheduler refuses pods at 4 PM Friday.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Node &amp; Workload Configuration</h3>
+                <p class="card-desc">Configure node specs and pod resource requests. The engine computes max schedulable pods across vCPU, memory, storage, and CNI IP limits. The smallest number wins — that is your bottleneck.</p>
+
+                <h4 style="margin-top:16px;margin-bottom:8px;font-size:0.85rem;color:var(--accent);">🖥️ Node Specification</h4>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="cloud-provider">Cloud Provider / Platform</label>
+                        <select class="unit-input" id="cloud-provider">
+                            <option value="self-managed" selected>Self-Managed (kubeadm / kOps / Rancher)</option>
+                            <option value="eks">AWS EKS</option>
+                            <option value="gke">Google GKE</option>
+                            <option value="aks">Azure AKS</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="instance-type">Instance / Node Type</label>
+                        <select class="unit-input" id="instance-type">
+                            <option value="custom" selected>Custom / Manual Entry</option>
+                            <option value="m5.xlarge">m5.xlarge (4 vCPU / 16 GiB)</option>
+                            <option value="m5.2xlarge">m5.2xlarge (8 vCPU / 32 GiB)</option>
+                            <option value="m5.4xlarge">m5.4xlarge (16 vCPU / 64 GiB)</option>
+                            <option value="c5.2xlarge">c5.2xlarge (8 vCPU / 16 GiB)</option>
+                            <option value="c5.4xlarge">c5.4xlarge (16 vCPU / 32 GiB)</option>
+                            <option value="r5.2xlarge">r5.2xlarge (8 vCPU / 64 GiB)</option>
+                            <option value="r5.4xlarge">r5.4xlarge (16 vCPU / 128 GiB)</option>
+                            <option value="n1-standard-8">n1-standard-8 (8 vCPU / 30 GiB)</option>
+                            <option value="n1-standard-16">n1-standard-16 (16 vCPU / 60 GiB)</option>
+                            <option value="n2-standard-16">n2-standard-16 (16 vCPU / 64 GiB)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="node-cpu">Node vCPUs</label>
+                        <input type="number" class="unit-input" id="node-cpu" value="16" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="node-memory-gib">Node Memory (GiB)</label>
+                        <input type="number" class="unit-input" id="node-memory-gib" value="64" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="node-storage-gib">Node Ephemeral Storage (GiB)</label>
+                        <input type="number" class="unit-input" id="node-storage-gib" value="100" step="any" min="0">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="max-pods-limit">Max Pods Per Node (IP / ENI Limit)</label>
+                        <input type="number" class="unit-input" id="max-pods-limit" value="110" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">Default 110 for self-managed. EKS: varies by ENI count. GKE: up to 256. AKS: 30–250.</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="reservation-profile">System Reservation Profile</label>
+                        <select class="unit-input" id="reservation-profile">
+                            <option value="default" selected>Default (10% CPU / 1.5 GiB / 5 GiB)</option>
+                            <option value="minimal">Minimal (5% CPU / 0.5 GiB / 2 GiB)</option>
+                            <option value="conservative">Conservative (15% CPU / 2.5 GiB / 10 GiB)</option>
+                            <option value="custom">Custom (set below)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <h4 style="margin-top:16px;margin-bottom:8px;font-size:0.85rem;color:var(--accent);">📦 Pod Resource Requests (per Pod)</h4>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="pod-cpu-m">CPU Request (milliCPU)</label>
+                        <input type="number" class="unit-input" id="pod-cpu-m" value="500" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">500m = 0.5 vCPU core</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="pod-memory-mib">Memory Request (MiB)</label>
+                        <input type="number" class="unit-input" id="pod-memory-mib" value="256" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">256 MiB baseline per replica</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="pod-storage-mib">Ephemeral Storage Request (MiB)</label>
+                        <input type="number" class="unit-input" id="pod-storage-mib" value="100" step="any" min="0">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">Logs, emptyDir, image layers</span>
+                    </div>
+                </div>
+
+                <button class="btn-calc">Run Pod Density Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Maximum Pod Density Results</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile" id="tile-max-pods">
+                        <div class="metric-val" id="val-max-pods">--</div>
+                        <div class="metric-label">Max Schedulable Pods</div>
+                    </div>
+                    <div class="metric-tile" id="tile-cpu-pods">
+                        <div class="metric-val" id="val-cpu-pods">--</div>
+                        <div class="metric-label">By CPU Constraint</div>
+                    </div>
+                    <div class="metric-tile" id="tile-mem-pods">
+                        <div class="metric-val" id="val-mem-pods">--</div>
+                        <div class="metric-label">By Memory Constraint</div>
+                    </div>
+                    <div class="metric-tile" id="tile-storage-pods">
+                        <div class="metric-val" id="val-storage-pods">--</div>
+                        <div class="metric-label">By Storage Constraint</div>
+                    </div>
+                    <div class="metric-tile" id="tile-ip-pods">
+                        <div class="metric-val" id="val-ip-pods">--</div>
+                        <div class="metric-label">By IP / Max-Pods Limit</div>
+                    </div>
+                    <div class="metric-tile" id="tile-utilization">
+                        <div class="metric-val" id="val-utilization">--</div>
+                        <div class="metric-label">Allocatable Utilization</div>
+                    </div>
+                </div>
+
+                <div id="bottleneck-banner" style="margin-top:16px;"></div>
+                <div id="constraint-bars" style="margin-top:16px;"></div>
+
+                <h4 style="margin-top:20px;margin-bottom:12px;">📊 Bin Packing Efficiency</h4>
+                <div id="efficiency-metrics" class="cluster-grid"></div>
+                <div id="gauge-section" class="gauge-wrap"></div>
+
+                <h4 style="margin-top:20px;margin-bottom:10px;">📋 Node Resource Allocation YAML</h4>
+                <div class="yaml-block" id="yaml-output"></div>
+
+                <h4 style="margin-top:20px;margin-bottom:10px;">🔍 Constraint Analysis</h4>
+                <div id="constraint-analysis"></div>
+            </div>
+        </main>
+
+        <!-- REFERENCE SECTION -->
+        <section class="seo-section">
+            <h2>Kubernetes Pod Density: Why Node Sizing Determines Cluster Capacity</h2>
+            <p>Pod density — the number of pods a single Kubernetes node can host — is a critical but often overestimated design parameter. The scheduler must satisfy multiple independent constraints simultaneously: CPU capacity, memory allocation, ephemeral storage, and the node's <code>--max-pods</code> ceiling. Misjudging any dimension leads to bin packing waste, unschedulable workloads, or cascading node-pressure evictions.</p>
+
+            <h3>How This Calculator Works</h3>
+            <p>This engine models the full Kubernetes node allocatable computation as defined by the <strong>Node Allocatable</strong> specification. The scheduler does not see the raw node capacity — it sees capacity minus <strong>system reservations</strong> (kube-reserved + system-reserved) and <strong>eviction thresholds</strong>:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Resource Dimension</th><th>Reserved By Default</th><th>What Consumes It</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>CPU</strong></td><td>~10% of total cores</td><td>kubelet, container runtime (containerd/CRI-O), OS daemons, systemd services, node-exporter, log collector agents. On a 16 vCPU node, ~1.6 vCPUs are unavailable for pods.</td></tr>
+                    <tr><td><strong>Memory</strong></td><td>~1.5–2.5 GiB</td><td>Kernel page cache (not fully evictable), kubelet's own RSS (~200 MB), container runtime (~300–500 MB per node), CNI plugin daemonsets (Calico/Cilium ~100–300 MB), and the hard eviction threshold (<code>--eviction-hard=memory.available&lt;100Mi</code>).</td></tr>
+                    <tr><td><strong>Ephemeral Storage</strong></td><td>~5–10 GiB</td><td>Container image layers (cached on node), pod emptyDir volumes, container log rotation, and the image GC threshold (<code>--image-gc-high-threshold</code> defaults to 85%).</td></tr>
+                    <tr><td><strong>Max Pods</strong></td><td>110 (default)</td><td>Each pod consumes one IP address from the node's assigned CIDR range. Cloud providers enforce lower limits based on ENI attachment count (AWS) or subnet prefix allocation (Azure CNI). This is the #1 binding constraint on large nodes (32+ vCPU).</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>Cloud Provider Pod Density Limits</h3>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Provider</th><th>Max Pods Formula</th><th>Example: 16 vCPU Node</th><th>Configurable?</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>AWS EKS</strong></td><td>Based on ENI count × IPs per ENI. <code>m5.4xlarge</code> → 8 ENIs × 30 IPs = <strong>234 pods</strong> (but limited by <code>--max-pods</code>). The <code>eni-max-pods</code> script derives the exact value.</td><td>58–234 depending on instance</td><td>Indirectly — by choosing instance type with more ENIs</td></tr>
+                    <tr><td><strong>Google GKE</strong></td><td>Default 110, up to 256 for larger node pools. GKE's max-pods scales with node memory: ≤15 GiB → 110, ≤30 GiB → 128, ≤60 GiB → 256.</td><td>110 default, 256 on n1-standard-16</td><td>Yes — <code>--max-pods-per-node</code> on node pool creation</td></tr>
+                    <tr><td><strong>Azure AKS</strong></td><td>Azure CNI: 30 pods default, configurable per subnet prefix size. Kubenet: 110 default. Azure CNI Overlay (newer): 250 pods.</td><td>30 (Azure CNI) or 250 (CNI Overlay)</td><td>Yes — via subnet prefix length and network plugin choice</td></tr>
+                    <tr><td><strong>Self-Managed</strong></td><td>110 default via <code>--max-pods</code> kubelet flag. Can be raised to 250+ with appropriate CIDR allocation (/24 subnet = 254 usable IPs).</td><td>110 (default)</td><td>Yes — <code>--max-pods</code> in kubelet config</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>Bin Packing: Why "12 Pods" on a 16 vCPU Node Is Normal</h3>
+            <p>Engineers often expect to fit <code>vCPUs ÷ pod CPU request</code> pods — e.g., 16 vCPUs ÷ 500m = 32 pods. In practice, after system reservations, daemonsets, anti-affinity rules, and the IP ceiling, the real density is typically <strong>40–60% of the naive calculation</strong>. A 16 vCPU node running production workloads at 500m/pod may only host 12–18 pods before CPU pressure triggers the scheduler's preemption logic.</p>
+            <p>Memory-bound workloads invert the constraint: a node running Redis, Elasticsearch, or Kafka sidecars at 2 GiB/pod can exhaust 64 GiB of memory with just 25–30 pods — far below the IP ceiling of 110. Always profile for <strong>your</strong> workload, not generic ratios.</p>
+
+            <h3>CPU Sizing in millicores</h3>
+            <p>Kubernetes measures CPU in <strong>milliCPU</strong> (1/1000 of a vCPU/hyperthread). A pod requesting <code>500m</code> gets 0.5 vCPU cores of guaranteed compute. Unlike memory, CPU is <strong>compressible</strong> — pods exceeding their request will be throttled (CFS quota), not killed. This makes CPU the safer over-subscription target, but sustained throttling introduces tail latency spikes that cascade through upstream callers.</p>
+            <p><strong>📖 Read the full analysis:</strong> <a href="/pod-density-real">Kubernetes Pod Density: Why 110 Pods Is a Lie — The Hidden Limits That Cap Your Node</a> — a 14-minute deep-dive covering the four binding constraints across EKS/GKE/AKS, the DaemonSet tax, bin packing fragmentation math, CPU vs memory overcommit strategies, and a five-rule node sizing framework.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools" style="margin-top:0;">
+            <h3>📰 Related Research</h3>
+            <div style="padding:12px 16px; background:var(--bg-card); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); margin-bottom:24px;">
+                <p style="margin:0; font-size:0.85rem; color:var(--text-body); line-height:1.55;"><strong>Deep-dive briefing:</strong> K8s says 110 pods per node. Your cloud provider caps at 30-60. ENI attachment limits, IP exhaustion per interface, and kubelet reserved resources are the real governors. This briefing unpacks the actual pod ceiling for AWS, GCP, and Azure node types.</p>
+                <a href="/pod-density-real" style="display:inline-block; margin-top:8px; font-size:0.8rem; font-weight:700; color:var(--accent); text-decoration:none;">Read the full briefing →</a>
+            </div>
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/cdn-cache-hit-ratio-impact">CDN Cache Hit Ratio &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/latency-budget-calculator">Latency Budget Calculator &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Instance Type Presets ──
+    var INSTANCE_PRESETS = {
+        'custom': { cpu: null, mem: null, storage: null, maxPods: null },
+        'm5.xlarge': { cpu: 4, mem: 16, storage: 80, maxPods: 58 },
+        'm5.2xlarge': { cpu: 8, mem: 32, storage: 120, maxPods: 58 },
+        'm5.4xlarge': { cpu: 16, mem: 64, storage: 200, maxPods: 234 },
+        'c5.2xlarge': { cpu: 8, mem: 16, storage: 100, maxPods: 58 },
+        'c5.4xlarge': { cpu: 16, mem: 32, storage: 200, maxPods: 234 },
+        'r5.2xlarge': { cpu: 8, mem: 64, storage: 120, maxPods: 58 },
+        'r5.4xlarge': { cpu: 16, mem: 128, storage: 200, maxPods: 234 },
+        'n1-standard-8': { cpu: 8, mem: 30, storage: 100, maxPods: 110 },
+        'n1-standard-16': { cpu: 16, mem: 60, storage: 200, maxPods: 256 },
+        'n2-standard-16': { cpu: 16, mem: 64, storage: 200, maxPods: 256 },
+    };
+
+    // ── Reservation Profiles ──
+    var RESERVATION_PROFILES = {
+        'default': { cpuPct: 0.10, memGib: 1.5, storageGib: 5 },
+        'minimal': { cpuPct: 0.05, memGib: 0.5, storageGib: 2 },
+        'conservative': { cpuPct: 0.15, memGib: 2.5, storageGib: 10 },
+        'custom': { cpuPct: 0.10, memGib: 1.5, storageGib: 5 },
+    };
+
+    function computePodDensity() {
+        var cloudProvider = document.getElementById('cloud-provider').value;
+        var instanceType = document.getElementById('instance-type').value;
+        var reservationProfile = document.getElementById('reservation-profile').value;
+
+        var nodeCpu = parseFloat(document.getElementById('node-cpu').value) || 0;
+        var nodeMemGib = parseFloat(document.getElementById('node-memory-gib').value) || 0;
+        var nodeStorageGib = parseFloat(document.getElementById('node-storage-gib').value) || 0;
+        var maxPodsLimit = parseFloat(document.getElementById('max-pods-limit').value) || 0;
+
+        // Apply instance type presets
+        if (instanceType !== 'custom' && INSTANCE_PRESETS[instanceType]) {
+            var preset = INSTANCE_PRESETS[instanceType];
+            if (preset.cpu !== null) nodeCpu = preset.cpu;
+            if (preset.mem !== null) nodeMemGib = preset.mem;
+            if (preset.storage !== null) nodeStorageGib = preset.storage;
+            if (preset.maxPods !== null) maxPodsLimit = preset.maxPods;
+            // Update DOM to reflect preset
+            document.getElementById('node-cpu').value = nodeCpu;
+            document.getElementById('node-memory-gib').value = nodeMemGib;
+            document.getElementById('node-storage-gib').value = nodeStorageGib;
+            document.getElementById('max-pods-limit').value = maxPodsLimit;
+        }
+
+        var podCpuM = parseFloat(document.getElementById('pod-cpu-m').value) || 0;
+        var podMemMib = parseFloat(document.getElementById('pod-memory-mib').value) || 0;
+        var podStorageMib = parseFloat(document.getElementById('pod-storage-mib').value) || 0;
+
+        var reservation = RESERVATION_PROFILES[reservationProfile] || RESERVATION_PROFILES['default'];
+
+        // ── System Reserved Resources ──
+        var reservedCpu = nodeCpu * reservation.cpuPct;
+        var reservedMemGib = reservation.memGib;
+        var reservedStorageGib = reservation.storageGib;
+
+        // ── Allocatable Resources ──
+        var allocatableCpu = Math.max(0, nodeCpu - reservedCpu);
+        var allocatableMemGib = Math.max(0, nodeMemGib - reservedMemGib);
+        var allocatableStorageGib = Math.max(0, nodeStorageGib - reservedStorageGib);
+
+        // Convert pod requests to vCPU and GiB
+        var podCpu = podCpuM / 1000;      // millicores → vCPU
+        var podMemGib = podMemMib / 1024; // MiB → GiB
+        var podStorageGib = podStorageMib / 1024;
+
+        // ── Max Pods by Each Constraint ──
+        var maxByCpu = podCpu > 0 ? Math.floor(allocatableCpu / podCpu) : Infinity;
+        var maxByMem = podMemGib > 0 ? Math.floor(allocatableMemGib / podMemGib) : Infinity;
+        var maxByStorage = podStorageGib > 0 ? Math.floor(allocatableStorageGib / podStorageGib) : Infinity;
+        var maxByIp = maxPodsLimit || Infinity;
+
+        var effectiveMax = Math.min(maxByCpu, maxByMem, maxByStorage, maxByIp);
+
+        // ── Resource Utilization at Max Pods ──
+        var cpuUsed = effectiveMax * podCpu;
+        var memUsed = effectiveMax * podMemGib;
+        var storageUsed = effectiveMax * podStorageGib;
+        var cpuUtilPct = allocatableCpu > 0 ? (cpuUsed / allocatableCpu * 100) : 0;
+        var memUtilPct = allocatableMemGib > 0 ? (memUsed / allocatableMemGib * 100) : 0;
+        var storageUtilPct = allocatableStorageGib > 0 ? (storageUsed / allocatableStorageGib * 100) : 0;
+
+        // ── Bin Packing Efficiency ──
+        var totalReqCpu = effectiveMax * podCpu;
+        var totalReqMem = effectiveMax * podMemGib;
+        var wastedCpuPct = allocatableCpu > 0 ? Math.max(0, (allocatableCpu - totalReqCpu) / allocatableCpu * 100) : 0;
+        var wastedMemPct = allocatableMemGib > 0 ? Math.max(0, (allocatableMemGib - totalReqMem) / allocatableMemGib * 100) : 0;
+
+        // ── Identify Bottleneck ──
+        var constraints = [
+            { name: 'CPU', value: maxByCpu, pct: cpuUtilPct, color: '#3b82f6' },
+            { name: 'Memory', value: maxByMem, pct: memUtilPct, color: '#10b981' },
+            { name: 'Storage', value: maxByStorage, pct: storageUtilPct, color: '#f59e0b' },
+            { name: 'IP / Max-Pods', value: maxByIp, pct: (effectiveMax / (maxByIp || 1) * 100), color: '#8b5cf6' },
+        ];
+        var bottleneck = constraints.reduce((a, b) => a.value < b.value ? a : b);
+
+        // ── Render Results ──
+        document.getElementById('results-params').innerText =
+            cloudProvider.toUpperCase() + ' · ' + nodeCpu + ' vCPU · ' + nodeMemGib + ' GiB RAM · ' + nodeStorageGib + ' GiB Storage · ' + maxPodsLimit + ' max-pods · Pod: ' + podCpuM + 'm / ' + podMemMib + ' MiB / ' + podStorageMib + ' MiB';
+
+        // Metric tiles
+        document.getElementById('val-max-pods').innerText = effectiveMax === Infinity ? '∞' : Math.floor(effectiveMax).toLocaleString();
+        document.getElementById('val-cpu-pods').innerText = maxByCpu === Infinity ? '∞' : Math.floor(maxByCpu).toLocaleString();
+        document.getElementById('val-mem-pods').innerText = maxByMem === Infinity ? '∞' : Math.floor(maxByMem).toLocaleString();
+        document.getElementById('val-storage-pods').innerText = maxByStorage === Infinity ? '∞' : Math.floor(maxByStorage).toLocaleString();
+        document.getElementById('val-ip-pods').innerText = maxByIp === Infinity ? '∞' : Math.floor(maxByIp).toLocaleString();
+
+        // Overall utilization
+        var avgUtil = (cpuUtilPct + memUtilPct + storageUtilPct) / 3;
+        document.getElementById('val-utilization').innerText = avgUtil.toFixed(1) + '%';
+
+        // Highlight bottleneck tile
+        ['tile-cpu-pods','tile-mem-pods','tile-storage-pods','tile-ip-pods','tile-max-pods'].forEach(id => {
+            document.getElementById(id).classList.remove('bottleneck');
+        });
+        var bottleneckTileMap = { 'CPU': 'tile-cpu-pods', 'Memory': 'tile-mem-pods', 'Storage': 'tile-storage-pods', 'IP / Max-Pods': 'tile-ip-pods' };
+        var bottleneckTileId = bottleneckTileMap[bottleneck.name];
+        if (bottleneckTileId) {
+            document.getElementById(bottleneckTileId).classList.add('bottleneck');
+        }
+        document.getElementById('tile-max-pods').classList.add('bottleneck'); // always highlight the final result
+
+        // Bottleneck banner
+        var riskLevel = 'low', riskText = '';
+        if (bottleneck.name === 'CPU' && cpuUtilPct > 80) {
+            riskLevel = 'high';
+            riskText = 'CPU is the binding constraint and utilization is >80%. Consider using nodes with more vCPUs (compute-optimized instances) or reducing pod CPU requests. CPU throttling will cause tail latency spikes.';
+        } else if (bottleneck.name === 'Memory' && memUtilPct > 80) {
+            riskLevel = 'high';
+            riskText = 'Memory is the binding constraint at high utilization. OOM kills are likely if usage spikes. Consider memory-optimized instances (r5/r6i) or reducing per-pod memory requests.';
+        } else if (bottleneck.name === 'IP / Max-Pods') {
+            riskLevel = 'moderate';
+            riskText = 'The node has spare CPU/memory but the pod IP limit is the binding constraint. Use a larger subnet CIDR, increase --max-pods, or select instance types with more ENIs (for EKS). This is a common bottleneck on large nodes.';
+        } else if (bottleneck.name === 'Storage') {
+            riskLevel = 'moderate';
+            riskText = 'Ephemeral storage is the binding constraint. Monitor container log rotation and emptyDir usage. Consider external persistent volumes or increasing node disk allocation.';
+        } else {
+            riskText = 'Resources are balanced with healthy headroom across all dimensions. No single constraint dominates — this is ideal bin packing territory.';
+        }
+        document.getElementById('bottleneck-banner').innerHTML =
+            '<div class="efficiency-card" style="border-color:' + (riskLevel === 'high' ? 'var(--error)' : riskLevel === 'moderate' ? 'var(--gold)' : 'var(--success)') + ';">' +
+                '<span class="risk-badge risk-' + riskLevel + '">BOTTLENECK: ' + bottleneck.name + '</span>' +
+                '<span style="margin-left:10px;font-weight:700;">' + Math.floor(effectiveMax) + ' pods max — limited by <strong>' + bottleneck.name + '</strong></span>' +
+                '<p style="font-size:0.82rem;color:var(--text-body);margin-top:8px;">' + riskText + '</p>' +
+            '</div>';
+
+        // Constraint bars
+        var barMaxPods = Math.max(maxByCpu, maxByMem, maxByStorage, maxByIp, 1);
+        var barScale = 100 / barMaxPods; // percentage per pod
+        document.getElementById('constraint-bars').innerHTML =
+            '<h4 style="margin-bottom:8px;font-size:0.85rem;">📏 Per-Constraint Pod Capacity</h4>' +
+            '<div class="constraint-bar-wrap">' +
+                '<span class="constraint-label">CPU</span>' +
+                '<div class="constraint-bar-outer">' +
+                    '<div class="constraint-bar-inner cpu-bar" style="width:' + Math.min(100, maxByCpu * barScale) + '%;">' + Math.floor(maxByCpu) + '</div>' +
+                '</div>' +
+                '<span class="constraint-detail">' + Math.round(allocatableCpu * 10) / 10 + ' vCPU allocatable · ' + podCpuM + 'm/pod</span>' +
+            '</div>' +
+            '<div class="constraint-bar-wrap">' +
+                '<span class="constraint-label">Memory</span>' +
+                '<div class="constraint-bar-outer">' +
+                    '<div class="constraint-bar-inner mem-bar" style="width:' + Math.min(100, maxByMem * barScale) + '%;">' + Math.floor(maxByMem) + '</div>' +
+                '</div>' +
+                '<span class="constraint-detail">' + allocatableMemGib.toFixed(2) + ' GiB allocatable · ' + podMemMib + ' MiB/pod</span>' +
+            '</div>' +
+            '<div class="constraint-bar-wrap">' +
+                '<span class="constraint-label">Storage</span>' +
+                '<div class="constraint-bar-outer">' +
+                    '<div class="constraint-bar-inner storage-bar" style="width:' + Math.min(100, maxByStorage * barScale) + '%;">' + Math.floor(maxByStorage) + '</div>' +
+                '</div>' +
+                '<span class="constraint-detail">' + allocatableStorageGib.toFixed(2) + ' GiB allocatable · ' + podStorageMib + ' MiB/pod</span>' +
+            '</div>' +
+            '<div class="constraint-bar-wrap">' +
+                '<span class="constraint-label">IP Limit</span>' +
+                '<div class="constraint-bar-outer">' +
+                    '<div class="constraint-bar-inner ip-bar" style="width:' + Math.min(100, maxByIp * barScale) + '%;">' + Math.floor(maxByIp) + '</div>' +
+                '</div>' +
+                '<span class="constraint-detail">--max-pods=' + maxPodsLimit + '</span>' +
+            '</div>';
+
+        // Efficiency metrics
+        var effLabel, effClass;
+        if (wastedCpuPct < 15 && wastedMemPct < 15) { effLabel = 'Excellent'; effClass = 'eff-good'; }
+        else if (wastedCpuPct < 35 && wastedMemPct < 35) { effLabel = 'Acceptable'; effClass = 'eff-ok'; }
+        else { effLabel = 'Suboptimal'; effClass = 'eff-bad'; }
+
+        document.getElementById('efficiency-metrics').innerHTML =
+            '<div class="cluster-tile">' +
+                '<div class="cluster-val">' + Math.round(totalReqCpu * 100) / 100 + ' vCPU</div>' +
+                '<div class="cluster-label">Total CPU Requested</div>' +
+            '</div>' +
+            '<div class="cluster-tile">' +
+                '<div class="cluster-val">' + Math.round(totalReqMem * 100) / 100 + ' GiB</div>' +
+                '<div class="cluster-label">Total Memory Requested</div>' +
+            '</div>' +
+            '<div class="cluster-tile">' +
+                '<div class="cluster-val ' + effClass + '">' + effLabel + '</div>' +
+                '<div class="cluster-label">Packing Quality</div>' +
+            '</div>' +
+            '<div class="cluster-tile">' +
+                '<div class="cluster-val">' + Math.round(wastedCpuPct * 10) / 10 + '%</div>' +
+                '<div class="cluster-label">Wasted CPU (fragmentation)</div>' +
+            '</div>' +
+            '<div class="cluster-tile">' +
+                '<div class="cluster-val">' + Math.round(wastedMemPct * 10) / 10 + '%</div>' +
+                '<div class="cluster-label">Wasted Memory (fragmentation)</div>' +
+            '</div>' +
+            '<div class="cluster-tile">' +
+                '<div class="cluster-val">' + (maxPodsLimit > 0 ? Math.round(effectiveMax / maxPodsLimit * 100) + '%' : 'N/A') + '</div>' +
+                '<div class="cluster-label">IP Slot Utilization</div>' +
+            '</div>';
+
+        // Gauge ring
+        var gaugePct = Math.min(100, avgUtil);
+        var circumference = 2 * Math.PI * 45;
+        var gaugeOffset = circumference * (1 - gaugePct / 100);
+        document.getElementById('gauge-section').innerHTML =
+            '<div class="gauge-ring">' +
+                '<svg width="120" height="120" viewBox="0 0 120 120">' +
+                    '<circle class="bg" cx="60" cy="60" r="45"></circle>' +
+                    '<circle class="fill" cx="60" cy="60" r="45" stroke-dasharray="' + circumference + '" stroke-dashoffset="' + gaugeOffset + '" style="stroke:' + (gaugePct > 85 ? 'var(--error)' : gaugePct > 65 ? 'var(--gold)' : 'var(--success)') + ';"></circle>' +
+                '</svg>' +
+                '<div class="center-val">' + Math.round(avgUtil) + '%</div>' +
+            '</div>' +
+            '<div style="font-size:0.78rem;color:var(--text-muted);">Node Allocatable Utilization<br>(avg across CPU / Memory / Storage)</div>';
+
+        // YAML output
+        var cpuLimitStr = (podCpuM * effectiveMax) + 'm';
+        var memLimitStr = (podMemMib * effectiveMax / 1024) >= 1 ? (podMemMib * effectiveMax / 1024).toFixed(2) + 'Gi' : (podMemMib * effectiveMax) + 'Mi';
+        document.getElementById('yaml-output').innerHTML =
+            '<span class="comment"># jslet Pod Density Calculator — Node Allocation Summary</span>\n' +
+            '<span class="comment"># Node: ' + nodeCpu + ' vCPU / ' + nodeMemGib + ' GiB / ' + nodeStorageGib + ' GiB storage | Provider: ' + cloudProvider.toUpperCase() + '</span>\n' +
+            '<span class="comment"># Max Pods: ' + effectiveMax + ' | Bottleneck: ' + bottleneck.name + '</span>\n\n' +
+            '<span class="key">nodeAllocatable</span>:\n' +
+            '  <span class="key">cpu</span>: <span class="val">' + allocatableCpu.toFixed(2) + '</span>  <span class="comment"># After system reservation (' + (reservation.cpuPct * 100) + '%)</span>\n' +
+            '  <span class="key">memory</span>: <span class="val">' + allocatableMemGib.toFixed(2) + 'Gi</span>  <span class="comment"># After system reservation (' + reservation.memGib + ' GiB)</span>\n' +
+            '  <span class="key">ephemeral-storage</span>: <span class="val">' + allocatableStorageGib.toFixed(2) + 'Gi</span>  <span class="comment"># After system reservation (' + reservation.storageGib + ' GiB)</span>\n' +
+            '  <span class="key">pods</span>: <span class="val">' + maxPodsLimit + '</span>  <span class="comment"># --max-pods ceiling</span>\n\n' +
+            '<span class="key">podDensity</span>:\n' +
+            '  <span class="key">maxPods</span>: <span class="val">' + effectiveMax + '</span>\n' +
+            '  <span class="key">bindingConstraint</span>: <span class="val">' + bottleneck.name.toLowerCase() + '</span>\n' +
+            '  <span class="key">cpuUtilization</span>: <span class="val">' + Math.round(cpuUtilPct) + '%</span>\n' +
+            '  <span class="key">memoryUtilization</span>: <span class="val">' + Math.round(memUtilPct) + '%</span>\n' +
+            '  <span class="key">podCpuRequest</span>: <span class="val">' + podCpuM + 'm</span>\n' +
+            '  <span class="key">podMemoryRequest</span>: <span class="val">' + podMemMib + 'Mi</span>\n\n' +
+            '<span class="comment"># Cluster projection (10-node cluster)</span>\n' +
+            '<span class="key">clusterCapacity</span>:\n' +
+            '  <span class="key">totalPods</span>: <span class="val">' + (effectiveMax * 10) + '</span>\n' +
+            '  <span class="key">totalCpu</span>: <span class="val">' + (allocatableCpu * 10).toFixed(1) + '</span>\n' +
+            '  <span class="key">totalMemory</span>: <span class="val">' + (allocatableMemGib * 10).toFixed(1) + 'Gi</span>';
+
+        // Constraint analysis detail
+        document.getElementById('constraint-analysis').innerHTML =
+            '<div class="efficiency-card">' +
+                '<div class="eff-header">🔎 Detailed Constraint Breakdown</div>' +
+                '<div class="table-scroll">' +
+                '<table style="font-size:0.82rem;">' +
+                    '<thead><tr><th>Constraint</th><th>Allocatable</th><th>Per Pod</th><th>Max Pods</th><th>Used at Max</th><th>Utilization</th></tr></thead>' +
+                    '<tbody>' +
+                        '<tr style="' + (bottleneck.name === 'CPU' ? 'font-weight:700;color:var(--error);' : '') + '">' +
+                            '<td>CPU</td><td>' + allocatableCpu.toFixed(2) + ' vCPU</td><td>' + podCpuM + 'm</td><td>' + Math.floor(maxByCpu) + '</td><td>' + cpuUsed.toFixed(2) + ' vCPU</td><td>' + Math.round(cpuUtilPct) + '%</td>' +
+                        '</tr>' +
+                        '<tr style="' + (bottleneck.name === 'Memory' ? 'font-weight:700;color:var(--error);' : '') + '">' +
+                            '<td>Memory</td><td>' + allocatableMemGib.toFixed(2) + ' GiB</td><td>' + podMemMib + ' MiB</td><td>' + Math.floor(maxByMem) + '</td><td>' + memUsed.toFixed(2) + ' GiB</td><td>' + Math.round(memUtilPct) + '%</td>' +
+                        '</tr>' +
+                        '<tr style="' + (bottleneck.name === 'Storage' ? 'font-weight:700;color:var(--error);' : '') + '">' +
+                            '<td>Storage</td><td>' + allocatableStorageGib.toFixed(2) + ' GiB</td><td>' + podStorageMib + ' MiB</td><td>' + Math.floor(maxByStorage) + '</td><td>' + storageUsed.toFixed(2) + ' GiB</td><td>' + Math.round(storageUtilPct) + '%</td>' +
+                        '</tr>' +
+                        '<tr style="' + (bottleneck.name === 'IP / Max-Pods' ? 'font-weight:700;color:var(--error);' : '') + '">' +
+                            '<td>Max Pods</td><td>' + maxPodsLimit + ' slots</td><td>1 slot</td><td>' + Math.floor(maxByIp) + '</td><td>' + effectiveMax + ' pods</td><td>' + (maxPodsLimit > 0 ? Math.round(effectiveMax / maxPodsLimit * 100) + '%' : 'N/A') + '</td>' +
+                        '</tr>' +
+                    '</tbody>' +
+                '</table>' +
+                '</div>' +
+                '<p style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">System reserved: ' + reservedCpu.toFixed(2) + ' vCPU · ' + reservedMemGib.toFixed(2) + ' GiB RAM · ' + reservedStorageGib.toFixed(2) + ' GiB storage</p>' +
+            '</div>';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // ── Instance type change handler ──
+    document.getElementById('instance-type').addEventListener('change', function() {
+        var preset = INSTANCE_PRESETS[this.value];
+        if (!preset || this.value === 'custom') return;
+        if (preset.cpu !== null) document.getElementById('node-cpu').value = preset.cpu;
+        if (preset.mem !== null) document.getElementById('node-memory-gib').value = preset.mem;
+        if (preset.storage !== null) document.getElementById('node-storage-gib').value = preset.storage;
+        if (preset.maxPods !== null) document.getElementById('max-pods-limit').value = preset.maxPods;
+        // Automatically recalculate
+        computePodDensity();
+    });
+
+    // ── Cloud provider change → update max-pods hint ──
+    document.getElementById('cloud-provider').addEventListener('change', function() {
+        var defaultMaxPods = { 'eks': 110, 'gke': 110, 'aks': 110, 'self-managed': 110 };
+        var limit = defaultMaxPods[this.value] || 110;
+        document.getElementById('max-pods-limit').value = limit;
+        computePodDensity();
+    });
+
+    document.addEventListener('DOMContentLoaded', function() { computePodDensity(); });
+    document.querySelector('.btn-calc').addEventListener('click', computePodDensity);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

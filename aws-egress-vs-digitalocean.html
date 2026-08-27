@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>AWS Egress vs DigitalOcean: Real Cost Comparison (2026) — jslet</title>
+    <meta name="description" content="We ran the numbers on cloud egress fees. AWS charges up to $0.09/GB after the free tier. DigitalOcean includes up to 11 TB of free egress per Droplet. For a 5 TB/month workload, AWS egress alone costs $441; DigitalOcean egress costs $0. Here's the actual cost difference for real workloads.">
+    <meta property="og:title" content="AWS Egress vs DigitalOcean: Real Cost Comparison (2026)">
+    <meta property="og:description" content="We ran three real workload scenarios through both pricing models. AWS egress charges up to $0.09/GB. DigitalOcean includes 500 GB to 11 TB of free egress per Droplet. The gap is larger than most teams realize.">
+    <meta property="og:url" content="https://www.jslet.com/aws-egress-vs-digitalocean">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-06-21T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-06-22T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AWS Egress vs DigitalOcean: Real Cost Comparison (2026)">
+    <meta name="twitter:description" content="Three workload profiles, real pricing, actual math. AWS egress: up to $0.09/GB. DigitalOcean: free egress up to 11 TB/Droplet. For a media pipeline doing 5.6 TB/month, that's a 76% total cost reduction.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/aws-egress-vs-digitalocean">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "AWS Egress vs DigitalOcean: Real Cost Comparison (2026)",
+      "description": "Detailed cost analysis comparing AWS and DigitalOcean data egress pricing across three common workload patterns: API platform, media pipeline, and telemetry sink.",
+      "url": "https://www.jslet.com/aws-egress-vs-digitalocean",
+      "datePublished": "2026-06-21T00:00:00+00:00",
+      "dateModified": "2026-06-22T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why is AWS egress so expensive?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "AWS charges for data leaving its network on a per-GB basis. The pricing is tiered: the first 100 GB/month is free, then $0.09/GB for the next 10 TB, tapering to $0.05/GB above 150 TB. Unlike compute which is priced for resource reservation, egress pricing is designed to capture the cost of AWS's global network infrastructure and cross-region data movement. For bandwidth-heavy workloads this creates a significant line item that grows linearly with usage."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does CloudFront eliminate AWS egress charges?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. CloudFront reduces but does not eliminate AWS egress costs. Origin-to-CloudFront transfer is free, and CloudFront egress starts at $0.085/GB (slightly cheaper than direct EC2/S3 egress), but you still pay for every byte served through CloudFront. More importantly, CloudFront only helps with cacheable content. API responses, WebSocket streams, and real-time dynamic data bypass the cache and still incur origin egress charges. At high volume, CloudFront egress bottoms out at $0.02/GB — still double DigitalOcean's $0.01/GB overage rate."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much free bandwidth does DigitalOcean include?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "DigitalOcean includes a generous free egress allowance that scales with Droplet plan tier. The $6/month Basic Droplet includes 500 GB of free egress. The $24/month General Purpose Droplet includes 4 TB. The $48/month CPU-Optimized Droplet includes 11 TB. The allowance resets each billing cycle. Usage beyond the allowance is charged at a flat $0.01/GB — significantly cheaper than AWS's lowest negotiated rate."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is AWS still cheaper for low-traffic workloads?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "For workloads with very low egress (under 100 GB/month), the cost difference is negligible since AWS's first 100 GB is free. At 200-500 GB/month, AWS egress costs $9-$36 while DigitalOcean remains $0 within its allowance. The crossover where AWS pricing becomes difficult to justify on pure cost grounds is around 500 GB/month — at that point the egress surcharge starts exceeding 50% of typical compute costs. If your workload depends heavily on AWS-native managed services (SQS, DynamoDB Streams, Lambda), the integration value may outweigh the egress premium."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "At what traffic level should you consider migrating?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A good rule of thumb: when monthly egress consistently exceeds 500 GB, run a side-by-side cost projection. At 1 TB/month the AWS egress premium is $83/month. At 5 TB/month it reaches $441/month. At 10 TB/month it hits $891/month. For most teams, the 1-5 TB range is when the savings justify the migration engineering effort. The decision should also factor in CDN offload potential, team AWS expertise, and dependency on AWS-native services. We recommend running production-identical workloads on both providers for one full billing cycle to compare actual invoices before committing."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>AWS Egress <span>vs</span> DigitalOcean</h1>
+            <p>The Cloud Bill That Broke the Camel's Back Wasn't Compute — It Was Data Leaving the Building</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-06-21 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 12 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <section class="seo-section">
+            <h2>Executive Summary</h2>
+            <p>Everyone benchmarks compute. vCPU cores, GB of RAM, IOPS on the block device &mdash; those numbers are clean, comparable, and prominently displayed on every pricing page. But <strong>egress</strong> is the line item nobody talks about until the bill arrives.</p>
+            <p>AWS charges <strong>$0.05&ndash;$0.09/GB</strong> for public internet egress after the first 100 GB/month. DigitalOcean includes <strong>500 GB to 11 TB of free egress</strong> per Droplet, depending on the plan tier, with overages at $0.01/GB. For many workloads, this single line item determines whether your unit economics work.</p>
+            <p>This article runs three real-world workload profiles through both pricing models &mdash; a small SaaS API, a media processing pipeline, and a centralized logging sink &mdash; and computes the actual egress cost difference. The numbers are not close.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Raw Pricing: Side by Side</h2>
+            <p>Before we model the workloads, here is the baseline. All prices are public, non-discounted rates as of June 2026.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Tier</th><th style="text-align:right;padding:6px 10px;">AWS (us-east-1)</th><th style="text-align:right;padding:6px 10px;">DigitalOcean (NYC3)</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">First 100 GB / month</td><td style="text-align:right;padding:6px 10px;">Free</td><td style="text-align:right;padding:6px 10px;">Free<sup>&dagger;</sup></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Next 10 TB</td><td style="text-align:right;padding:6px 10px;">$0.09 / GB</td><td style="text-align:right;padding:6px 10px;">Free (within Droplet allowance)</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Next 40 TB</td><td style="text-align:right;padding:6px 10px;">$0.085 / GB</td><td style="text-align:right;padding:6px 10px;">Free (within Droplet allowance)</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Next 100 TB</td><td style="text-align:right;padding:6px 10px;">$0.07 / GB</td><td style="text-align:right;padding:6px 10px;">Free (within Droplet allowance)</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">&gt; 150 TB</td><td style="text-align:right;padding:6px 10px;">$0.05 / GB</td><td style="text-align:right;padding:6px 10px;">Custom pricing</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Overage rate (above allowance)</strong></td><td style="text-align:right;padding:6px 10px;">N/A (always metered)</td><td style="text-align:right;padding:6px 10px;"><strong>$0.01 / GB</strong></td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);"><sup>&dagger;</sup> DigitalOcean Droplet egress allowance scales with plan: Basic $6/mo = 500 GB, General Purpose $24/mo = 4 TB, CPU-Optimized $48/mo = 11 TB. The allowance resets each billing cycle.</p>
+
+            <p>The headline difference is obvious. But the real question is: <em>for your actual workload, how much of that AWS egress tier do you burn through?</em></p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Workload A: The API Platform</h2>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;">Small SaaS · 50,000 DAU · REST JSON responses</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Scenario</h3>
+            <p>A REST API serving mobile clients. Average response payload is <strong>8 KB</strong>. Each user makes ~30 API calls per session. That's 240 KB per daily active user. At 50,000 DAU, the application layer pushes <strong>12 GB/day</strong> in response bodies. Add TLS handshake overhead (~15%) and HTTP headers, and the wire-level number is closer to <strong>15 GB/day</strong>.</p>
+            <p>15 GB/day &times; 30 days = <strong>450 GB/month</strong> of application-layer egress.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Provider</th><th style="text-align:right;padding:6px 10px;">Egress Cost</th><th style="text-align:right;padding:6px 10px;">Compute</th><th style="text-align:right;padding:6px 10px;">Total</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">AWS</td><td style="text-align:right;padding:6px 10px;">$31.50 (350 GB &times; $0.09)</td><td style="text-align:right;padding:6px 10px;">~$50 (t3.large)</td><td style="text-align:right;padding:6px 10px;"><strong>$81.50/mo</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;">DigitalOcean</td><td style="text-align:right;padding:6px 10px;">$0 (within 4 TB allowance)</td><td style="text-align:right;padding:6px 10px;">$48 (CPU-Opt 4 vCPU)</td><td style="text-align:right;padding:6px 10px;"><strong>$48.00/mo</strong></td></tr>
+            </table>
+
+            <p><strong>Takeaway:</strong> At 450 GB/month, the absolute egress cost on AWS is modest &mdash; $31.50. But relative to the $50 compute bill, it's a <strong>63% surcharge</strong>. That pattern only intensifies as the product grows. When this API hits 200,000 DAU and egresses 1.8 TB/month, the AWS egress line item reaches $155 while DigitalOcean stays at $0.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Workload B: The Media Pipeline</h2>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;">UGC Platform · 200,000 images/day · On-the-fly thumbnail generation</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Scenario</h3>
+            <p>A user-generated content platform. Users upload 200,000 images per day. Each source image is processed into 4 derivative sizes (thumbnail, small, medium, full) and served back to clients. Average processed asset size across all variants: <strong>120 KB</strong>. 200,000 &times; 4 &times; 120 KB = <strong>96 GB/day</strong> of served assets.</p>
+            <p>Before a proper CDN origin-shield strategy is in place, a 2&times; cache-miss multiplier is realistic during the early growth phase: <strong>192 GB/day</strong>. 192 GB/day &times; 30 days = <strong>5,760 GB/month (~5.6 TB)</strong>.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Provider</th><th style="text-align:right;padding:6px 10px;">Egress Cost</th><th style="text-align:right;padding:6px 10px;">Compute</th><th style="text-align:right;padding:6px 10px;">Total</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">AWS</td><td style="text-align:right;padding:6px 10px;">$509.40 (5.66 TB &times; $0.09)</td><td style="text-align:right;padding:6px 10px;">~$280 (c5.2xlarge)</td><td style="text-align:right;padding:6px 10px;"><strong>$789.40/mo</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;">DigitalOcean</td><td style="text-align:right;padding:6px 10px;">$0 (within 11 TB allowance)</td><td style="text-align:right;padding:6px 10px;">$192 (CPU-Opt 16 vCPU)</td><td style="text-align:right;padding:6px 10px;"><strong>$192.00/mo</strong></td></tr>
+            </table>
+
+            <p><strong>Takeaway:</strong> This is where the AWS egress tax becomes existential. $509/month in egress on a $280 compute bill is a <strong>182% surcharge</strong>. The same workload runs for $192/month total on DigitalOcean &mdash; a <strong>76% overall cost reduction</strong> from changing providers. A media startup burning $790/month on AWS could reinvest that $597/month difference into an additional 16 vCPU Droplet and still have budget left over.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Workload C: The Log &amp; Telemetry Sink</h2>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;">Observability · 500 hosts · 10 KB/s per host · 24/7 continuous egress</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Scenario</h3>
+            <p>A platform team centralizing observability data. 500 application hosts each emit ~10 KB/s of structured logs, metrics, and trace spans to an external SaaS. That's 5 MB/s aggregate, or <strong>432 GB/day</strong>. Every day. Weekends included.</p>
+            <p>432 GB/day &times; 30 days = <strong>12,960 GB/month (~12.7 TB)</strong>.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Provider</th><th style="text-align:right;padding:6px 10px;">Egress Cost</th><th style="text-align:right;padding:6px 10px;">Compute</th><th style="text-align:right;padding:6px 10px;">Total</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">AWS</td><td style="text-align:right;padding:6px 10px;">$1,205.57 (10 TB &times; $0.09 + 2.7 TB &times; $0.085)</td><td style="text-align:right;padding:6px 10px;">~$600 (m5.4xlarge &times; 2)</td><td style="text-align:right;padding:6px 10px;"><strong>$1,805.57/mo</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;">DigitalOcean</td><td style="text-align:right;padding:6px 10px;">$0 (within 22 TB pooled allowance)</td><td style="text-align:right;padding:6px 10px;">$384 (CPU-Opt 32 vCPU &times; 2)</td><td style="text-align:right;padding:6px 10px;"><strong>$384.00/mo</strong></td></tr>
+            </table>
+
+            <p><strong>Takeaway:</strong> At ~13 TB/month, the AWS egress line item alone is larger than three DigitalOcean Droplets combined. The <strong>$1,421.57/month savings</strong> funds an additional engineering headcount. This is the workload profile that most aggressively makes the case for a provider switch on financial grounds, before any technical argument enters the discussion.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Breakeven Math</h2>
+            <p>For a workload that doesn't lean heavily on AWS-native managed services, the decision simplifies to a single inequality:</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:16px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0; font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size: 0.85rem; line-height: 1.9;">
+                AWS<sub>monthly</sub> = compute + (egress_GB &minus; 100) &times; $0.09<br>
+                DO<sub>monthly</sub> &nbsp;= compute + max(0, egress_GB &minus; allowance) &times; $0.01
+            </div>
+
+            <p>Where <code>allowance</code> depends on the Droplet tier &mdash; 500 GB for Basic, 4 TB for General Purpose, and 11 TB for CPU-Optimized. For any workload under 11 TB/month on a single CPU-Optimized Droplet, the DigitalOcean egress term is <strong>zero</strong>. On AWS, that same 5 TB costs $441 in egress before you've paid for a single CPU cycle.</p>
+
+            <p>Plug your own numbers into our <a href="/terabytes-egress-to-aws-cost">AWS Egress Cost Calculator</a> and <a href="/cloud-storage-cost">Cloud Storage Comparison</a> tool. The math takes 30 seconds.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Full Cost Curve</h2>
+            <p>Here is the same comparison across the egress volume spectrum, assuming a single CPU-Optimized Droplet (11 TB allowance) on DigitalOcean:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Monthly Egress</th><th style="text-align:right;padding:6px 10px;">AWS Egress Cost</th><th style="text-align:right;padding:6px 10px;">DO Egress Cost</th><th style="text-align:right;padding:6px 10px;">Savings</th><th style="text-align:right;padding:6px 10px;">Savings %</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">500 GB</td><td style="text-align:right;padding:6px 10px;">$36.00</td><td style="text-align:right;padding:6px 10px;">$0</td><td style="text-align:right;padding:6px 10px;">$36.00</td><td style="text-align:right;padding:6px 10px;">100%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">1 TB</td><td style="text-align:right;padding:6px 10px;">$82.94</td><td style="text-align:right;padding:6px 10px;">$0</td><td style="text-align:right;padding:6px 10px;">$82.94</td><td style="text-align:right;padding:6px 10px;">100%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">5 TB</td><td style="text-align:right;padding:6px 10px;">$441.00</td><td style="text-align:right;padding:6px 10px;">$0</td><td style="text-align:right;padding:6px 10px;">$441.00</td><td style="text-align:right;padding:6px 10px;">100%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">10 TB</td><td style="text-align:right;padding:6px 10px;">$891.00</td><td style="text-align:right;padding:6px 10px;">$0</td><td style="text-align:right;padding:6px 10px;">$891.00</td><td style="text-align:right;padding:6px 10px;">100%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">15 TB</td><td style="text-align:right;padding:6px 10px;">$1,316.00</td><td style="text-align:right;padding:6px 10px;">$40.96</td><td style="text-align:right;padding:6px 10px;">$1,275.04</td><td style="text-align:right;padding:6px 10px;">97%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">50 TB</td><td style="text-align:right;padding:6px 10px;">$4,016.00</td><td style="text-align:right;padding:6px 10px;">$399.36</td><td style="text-align:right;padding:6px 10px;">$3,616.64</td><td style="text-align:right;padding:6px 10px;">90%</td></tr>
+            </table>
+
+            <p>The savings are near-total until the 15 TB mark, and still exceed <strong>90% at 50 TB/month</strong>. For the vast majority of startups and mid-market teams, the AWS egress premium is not a rounding error. It's the single largest avoidable line item in the bill.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The CloudFront Counterargument</h2>
+            <p>The standard AWS response to egress concerns is: <em>"Put CloudFront in front of it."</em> And yes, CloudFront origin-to-edge transfer is free, and CloudFront egress ($0.085/GB for the first 10 TB in US) is marginally cheaper than direct S3/EC2 egress. But four problems remain:</p>
+
+            <ul style="line-height:1.9; margin-left:20px;">
+                <li><strong>CloudFront only helps cacheable content.</strong> API responses, WebSocket streams, real-time data, and dynamic content all bypass the cache and hit origin egress. That's the entire workload of Profile A and C above.</li>
+                <li><strong>Operational complexity is real.</strong> Cache invalidation strategy, origin-shield configuration, stale-content debugging &mdash; these are engineering hours that could be spent on product.</li>
+                <li><strong>At any scale, you're still paying.</strong> CloudFront egress bottoms out at $0.02/GB for high-volume commitments. DigitalOcean's overage rate is $0.01/GB &mdash; <strong>half the price</strong> of CloudFront's best negotiated rate.</li>
+                <li><strong>Origin fetches cost money too.</strong> The CloudFront-to-origin leg is free, but the response body leaving your origin still counts as regional data transfer if your origin and CloudFront edge are in different AWS regions.</li>
+            </ul>
+
+            <p>CDN offload is a cost-optimization tactic, not a cost-elimination strategy. On DigitalOcean, the baseline free egress allowance means many teams never need to think about CDN economics until they're well past 10 TB/month.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>When AWS Makes Sense (and When It Doesn't)</h2>
+            <p>This isn't an "AWS bad" argument. AWS wins on ecosystem breadth, IAM granularity, and depth of managed services. If your architecture genuinely depends on SQS, DynamoDB Streams, Lambda@Edge, and VPC Transit Gateway, the egress premium is the price of that integration surface &mdash; a reasonable trade-off.</p>
+            <p>But a large fraction of workloads don't need that surface. They need VMs that boot quickly, block storage that doesn't surprise you, and a network pipe that doesn't charge by the byte on the way out. For those workloads, the AWS egress premium is pure deadweight loss.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">AWS Wins When</th><th style="text-align:left;padding:6px 10px;">DigitalOcean Wins When</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Heavy use of AWS-native managed services (SQS, DynamoDB, Lambda)</td><td style="padding:6px 10px;">Compute + bandwidth are the dominant cost drivers</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Multi-region active-active with Global Accelerator</td><td style="padding:6px 10px;">Single-region or simple multi-region failover</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Existing team deep in AWS tooling and certifications</td><td style="padding:6px 10px;">Small team optimizing for simplicity and cost predictability</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Compliance requirements needing AWS GovCloud</td><td style="padding:6px 10px;">Standard SOC 2 / ISO 27001 is sufficient</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Egress perpetually below 200 GB/month</td><td style="padding:6px 10px;">Egress exceeds 500 GB/month or is growing linearly with users</td></tr>
+            </table>
+        </section>
+
+        <section class="seo-section">
+            <h2>How to Act on This</h2>
+            <p>If this article has you looking at your AWS invoice differently, here is the order of operations:</p>
+
+            <p><strong>1. Tag your egress.</strong> Use AWS Cost Explorer with cost allocation tags to identify <em>which service</em> is generating the egress. It's rarely what you assume &mdash; the biggest contributor is often a sidecar you forgot about.</p>
+
+            <p><strong>2. Model the alternative.</strong> Take the tagged egress number from your last three invoices, compute the average, and plug it into the formula above. If your compute is roughly comparable across providers but egress is $400+/month, the business case writes itself.</p>
+
+            <p><strong>3. Identify the migration surface.</strong> Which services are tightly coupled to AWS primitives (SQS, DynamoDB, IAM Roles, Lambda)? Which are portable (Docker on EC2 &rarr; Docker on Droplet; RDS PostgreSQL &rarr; Managed Database)? Only migrate the portable surface first.</p>
+
+            <p><strong>4. Run both in parallel for one billing cycle.</strong> The only way to validate the estimate is to run production-identical workloads on both providers for a full month and compare the actual invoices. Pricing calculators are an approximation; invoices are ground truth.</p>
+
+            <p><strong>5. Redirect traffic gradually.</strong> DNS-weighted routing: 10% to the new provider for one week. If p99 latency, error rate, and cost metrics are clean, ramp to 50%, then 100%. Rollback is a DNS change.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>🧰 Model your own numbers with our calculators:</strong> <a href="/terabytes-egress-to-aws-cost">TB Egress to AWS Cost</a> · <a href="/cloud-storage-cost">Cloud Storage Comparison</a> · <a href="/cdn-cache-hit-ratio-impact">CDN Cache Hit Ratio Impact</a> · <a href="/concurrent-users-to-bandwidth">Concurrent Users to Bandwidth</a></p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why is AWS egress so expensive?</h3>
+                <p>AWS charges for data leaving its network on a per-GB basis because egress represents real infrastructure cost — peering, transit, and the global network fabric that connects AWS regions to the public internet. The pricing is tiered: the first 100 GB/month is free, then <strong>$0.09/GB</strong> for the next 10 TB, tapering to $0.05/GB above 150 TB. Unlike compute which is priced for resource reservation, egress is a <strong>consumption-based cost that grows linearly with usage</strong>. The business model makes AWS the default cloud because switching costs are real — and egress fees are a significant part of those switching costs. For bandwidth-heavy workloads, this single line item can exceed compute costs by 2&times; or more.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Does CloudFront eliminate AWS egress charges?</h3>
+                <p><strong>No.</strong> CloudFront reduces but does not eliminate AWS egress costs. The origin-to-CloudFront leg is free (when using AWS origins), and CloudFront egress starts at <strong>$0.085/GB</strong> — marginally cheaper than direct EC2/S3 egress at $0.09/GB. But four caveats apply: (1) CloudFront only helps cacheable content — API responses, WebSocket streams, and dynamic data bypass the cache and still incur origin egress. (2) Cache invalidation, origin-shield configuration, and stale-content debugging add operational complexity. (3) Even CloudFront's best negotiated rate (~$0.02/GB) is still <strong>double</strong> DigitalOcean's $0.01/GB overage. (4) Origin fetches from cross-region AWS origins may incur additional regional data transfer charges. CDN offload is a cost-optimization tactic, not a cost-elimination strategy.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How much free bandwidth does DigitalOcean include?</h3>
+                <p>DigitalOcean includes a <strong>generous free egress allowance</strong> that scales with the Droplet plan tier. The <strong>$6/month Basic Droplet</strong> includes 500 GB of free egress. The <strong>$24/month General Purpose Droplet</strong> includes 4 TB. The <strong>$48/month CPU-Optimized Droplet</strong> includes 11 TB — enough for most small-to-medium production workloads. The allowance resets each billing cycle (monthly). Usage beyond the included allowance is charged at a flat <strong>$0.01/GB</strong>, which is 9&times; cheaper than AWS's standard $0.09/GB rate and roughly half of CloudFront's best negotiated rate. Most teams on DigitalOcean never pay an egress bill until they're well past 10 TB/month.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Is AWS still cheaper for low-traffic workloads?</h3>
+                <p>For workloads with very low egress — <strong>under 100 GB/month</strong> — the cost difference is negligible since AWS's first 100 GB is free. Between 200–500 GB/month, AWS egress costs $9–$36 while DigitalOcean stays at $0 within its allowance. The crossover where AWS becomes difficult to justify on pure cost grounds is around <strong>500 GB/month</strong>, when the egress surcharge exceeds 50% of typical compute costs. However, cost isn't everything: if your architecture depends heavily on AWS-native managed services (SQS, DynamoDB Streams, Lambda@Edge, VPC Transit Gateway), the integration surface and team expertise may warrant the egress premium. For portable, VM-heavy workloads, the math strongly favors providers with free egress allowances.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">At what traffic level should you consider migrating?</h3>
+                <p>A practical rule of thumb: when monthly egress <strong>consistently exceeds 500 GB</strong>, run a side-by-side cost projection. At 1 TB/month the AWS egress premium is ~$83. At 5 TB/month it reaches $441. At 10 TB/month it hits $891. For most teams, the <strong>1–5 TB range</strong> is the sweet spot where savings justify the migration engineering effort. The decision should also factor in: CDN offload potential for cacheable content, team AWS expertise and recertification cost, dependency on AWS-native services that lack direct equivalents, and compliance requirements. We recommend running production-identical workloads on both providers for <strong>one full billing cycle</strong> to compare real invoices — pricing calculators approximate, but invoices are ground truth. DNS-weighted traffic shifting (10% → 50% → 100%) provides a safe rollout with instant rollback.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">AWS pricing is based on us-east-1 (N. Virginia) public on-demand rates as of June 2026. DigitalOcean pricing is based on publicly listed rates for NYC3. All compute instances are comparable in vCPU count, RAM, and network tier. No reserved-instance, committed-use, or volume-negotiated discounts are applied to either provider. Your actual costs may vary based on region, workload pattern, sustained-use discounts, and negotiated enterprise agreements.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. We are not sponsored by any cloud provider. This analysis was produced using our own infrastructure cost tooling and publicly available pricing data.</p>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/aws-egress-vs-digitalocean&t=AWS+Egress+vs+DigitalOcean:+Real+Cost+Comparison+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/aws-egress-vs-digitalocean&text=AWS+egress+vs+DigitalOcean:+real+cost+comparison.+5+TB%2Fmonth+%3D+%24441+on+AWS+vs+%240+on+DO.&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/devops/submit?url=https://www.jslet.com/aws-egress-vs-digitalocean&title=AWS+Egress+vs+DigitalOcean:+Real+Cost+Comparison+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/devops">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/aws-egress-vs-digitalocean&title=AWS+Egress+vs+DigitalOcean:+Real+Cost+Comparison+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <!-- ═══ Copyright & Attribution ═══ -->
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>© 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0 0 10px 0;"><strong>Preferred citation format:</strong></p>
+                <pre style="font-size:0.82rem; background:var(--bg-card); padding:10px 14px; border-radius:3px; overflow-x:auto; white-space:pre-wrap; margin:6px 0 0 0; border:1px solid var(--border);">"AWS Egress vs DigitalOcean: Real Cost Comparison (2026)" &mdash; jslet Research, June 2026.<br>https://www.jslet.com/aws-egress-vs-digitalocean</pre>
+            </div>
+        </section>
+
+        <!-- RSS CTA -->
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> AWS egress pricing is a masterclass in opaque billing. The RSS feed delivers one similarly uncomfortable truth each week. No ads. No trackers. No cloud provider sponsors. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

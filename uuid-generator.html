@@ -1,0 +1,236 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>UUID Generator —Generate UUID v4, v7 Online —jslet</title>
+    <meta name="description" content="Free UUID generator: generate one or bulk-generate UUIDs. Supports UUID v4 (random, RFC 9562) and UUID v7 (time-ordered, sortable). Copy as array, CSV, or newline-separated. Time-sortable v7 UUIDs for database primary keys. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/uuid-generator">
+    <meta property="og:title" content="UUID Generator —Generate UUID v4, v7 Online"><meta property="og:description" content="Generate UUIDs online. v4 random and v7 time-ordered. Bulk generate. 100% client-side."><meta property="og:url" content="https://www.jslet.com/uuid-generator"><meta property="og:type" content="website"><meta property="og:site_name" content="jslet"><meta property="og:image" content="https://www.jslet.com/og-image.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="UUID Generator v4, v7"><meta name="twitter:description" content="Generate UUIDs. v4 + v7. Bulk. 100% client-side."><meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"UUID Generator","description":"Generate UUID v4 (random) and UUID v7 (time-ordered) identifiers. Bulk generate up to 500 UUIDs. Export as CSV, array, or newline-separated. 100% client-side.","url":"https://www.jslet.com/uuid-generator","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What's the difference between UUID v4 and UUID v7, and which should I use?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "UUID v4 and UUID v7 serve fundamentally different purposes despite both being 128-bit identifiers. UUID v4 (RFC 9562 §5.4) is generated from 122 random bits — every possible v4 UUID is equally likely, with no ordering or relationship between sequentially generated values. This makes v4 ideal for security-sensitive contexts (session tokens, CSRF tokens, API keys) where unpredictability is the priority. The downside: random UUIDs cause B-tree index fragmentation in databases because each insert lands at a random position in the index, leading to page splits and degraded write performance at scale. UUID v7 (RFC 9562 §5.7) solves this by embedding a Unix timestamp (millisecond precision) in the first 48 bits, followed by random bits for uniqueness. Because the timestamp portion is monotonically increasing, sequentially generated v7 UUIDs sort roughly in creation order. For databases: use v7 as primary keys — they preserve B-tree index locality, reducing page splits by ~90% compared to v4 in high-throughput OLTP workloads. For security tokens: use v4 — the full randomness prevents an attacker from guessing the next value. jslet's generator supports both, with bulk mode (up to 500 at once) for seeding test databases."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Should I use UUID v7 as a database primary key instead of auto-increment integers?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "UUID v7 primary keys offer a compelling middle ground between auto-increment integers and random UUID v4. Advantages over auto-increment integers: (1) No central sequence coordination — multiple application servers and microservices can generate IDs independently without collisions, eliminating the single-writer bottleneck and the need for distributed sequence generators. (2) No ID enumeration vulnerability — an attacker can't guess the next record by incrementing the ID (GET /users/1042 → GET /users/1043), making UUIDs preferred for public-facing API endpoints. (3) Multi-region writes — two database regions can insert concurrently without ID conflicts. Advantages over UUID v4: the timestamp prefix in v7 means new rows cluster together in B-tree indexes, giving near-sequential insert performance rather than the random-scatter penalty of v4. The trade-off: UUIDs are 128 bits (16 bytes) vs 64 bits (8 bytes) for bigint — roughly double the storage per row, and the larger key propagates to every secondary index and foreign key reference. For most OLTP workloads at moderate scale, UUID v7 is the best default choice — it's the first UUID version that doesn't force you to choose between distributed generation and index performance."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I generate multiple UUIDs at once for testing or database seeding?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Most UUID generators force you to click 'Generate' once per UUID, which is impractical when you need dozens or hundreds of identifiers for test fixtures, database seed scripts, or mock API responses. jslet's UUID Generator solves this with a bulk mode: set the count to any number between 1 and 500, choose v4 or v7, and click Generate. All UUIDs appear in a scrollable list instantly. You can copy them in three formats: (1) Newline-separated — one UUID per line, paste directly into a SQL VALUES clause or a text file, (2) JSON array — [\"uuid1\", \"uuid2\", ...] for use in JavaScript/TypeScript test files or API mock data, (3) CSV — for importing into spreadsheet tools or database GUIs. For database seeding specifically: use UUID v7 for primary key columns to get time-ordered inserts. The bulk count limit of 500 is designed to cover the most common test data scenarios without overwhelming the browser — generating 500 cryptographically random UUIDs happens in under 50ms. For larger batches, make multiple 500-UUID calls."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .uuid-card { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 20px; margin-bottom: 16px; }
+        .uuid-display { font-family: 'Cascadia Code','Consolas',monospace; font-size: 1rem; color: var(--accent); word-break: break-all; padding: 12px 16px; background: rgba(0,0,0,0.03); border-radius: 4px; margin: 10px 0; line-height: 1.6; }
+        .uuid-list { max-height: 400px; overflow-y: auto; font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.82rem; line-height: 2; padding: 12px 16px; background: rgba(0,0,0,0.03); border-radius: 4px; }
+        .btn-row { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; align-items: center; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); } .btn-outline:hover { background: var(--accent-soft); }
+        .btn-outline-sm { padding: 6px 14px; background: transparent; border: 1px solid var(--border); color: var(--text-body); font-size: 0.8rem; cursor: pointer; border-radius: var(--radius-sm); font-weight: 600; }
+        .btn-outline-sm:hover, .btn-outline-sm.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+        .field-group { display: inline-flex; align-items: center; gap: 8px; }
+        .field-group input { padding: 8px 12px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); font-size: 0.9rem; width: 70px; text-align: center; font-family: 'Cascadia Code',monospace; }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>UUID <span>Generator</span></h1><p>Generate universally unique identifiers. v4 for randomness. v7 for time-ordered primary keys. Bulk mode for seeding databases.</p></header>
+        <div class="uuid-card">
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;">
+                <button class="btn-outline-sm active" onclick="setVer('v4')" id="ver-v4">UUID v4 (Random)</button>
+                <button class="btn-outline-sm" onclick="setVer('v7')" id="ver-v7">UUID v7 (Time-Sorted)</button>
+                <span style="margin-left: 8px;">×</span>
+                <div class="field-group"><input type="number" id="count-input" aria-label="Number of UUIDs" value="1" min="1" max="500"> <span style="font-size:0.85rem;">UUIDs</span></div>
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-primary" onclick="generateUUIDs()">🟢🎲 Generate</button>
+                <button class="btn-outline" onclick="copyAllUUIDs()">🟢📋 Copy All</button>
+                <select id="format-sel" aria-label="Output format" onchange="renderUUIDs()" style="padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text-body);"><option value="lines">Newline</option><option value="csv">CSV</option><option value="array">JSON Array</option></select>
+                <button class="btn-outline" onclick="downloadUUIDs()">🟢💾 Save as .txt</button>
+            </div>
+        </div>
+        <div id="uuid-output" class="uuid-list"></div>
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">🟢📖 UUID v4 vs v7 —Which Should You Use?</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>UUID v4</strong> (RFC 9562 §5.4) uses 122 bits of random data. Collision probability: ~1 in 2.7×10<sup>18</sup> for a 50% chance. Perfect for distributed ID generation where you don't care about ordering.</p>
+                <p><strong>UUID v7</strong> (RFC 9562 §5.7) embeds a Unix timestamp in milliseconds as the first 48 bits, with random data for the remaining 74 bits. This makes v7 UUIDs <strong>sortable by creation time</strong> —a property v4 lacks. Databases (PostgreSQL, MySQL) perform dramatically better with sequential primary keys than random ones. If you're using UUIDs as database keys, use v7.</p>
+                <p><strong>When to use each:</strong> v4 for API request IDs, session tokens, non-database identifiers. v7 for database primary keys, event sourcing IDs, and any use case where time-ordering matters.</p>
+                <p>See also: <a href="/uuid-v4-vs-v7-real">UUID v4 vs v7: Database Performance Guide</a> · <a href="/uuid-v4-collision-probability-estimator">UUID Collision Estimator</a> · <a href="/unix-timestamp-converter">Unix Timestamp Converter</a></p>
+            </div>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var version = 'v4';
+        var generatedUUIDs = [];
+
+        function uuidv4() {
+            var rand = new Uint8Array(16);
+            crypto.getRandomValues(rand);
+            rand[6] = (rand[6] & 0x0f) | 0x40;
+            rand[8] = (rand[8] & 0x3f) | 0x80;
+            var hex = '';
+            for (var i = 0; i < 16; i++) {
+                hex += rand[i].toString(16).padStart(2, '0');
+                if (i === 3 || i === 5 || i === 7 || i === 9) hex += '-';
+            }
+            return hex;
+        }
+
+        function uuidv7() {
+            var ts = Date.now();
+            var rand = new Uint8Array(10);
+            crypto.getRandomValues(rand);
+            var hex = function(n, len) { var s = n.toString(16); while (s.length < len) s = '0' + s; return s; };
+            var p1 = hex(ts, 12);
+            var p2 = '7' + hex(rand[0] & 0x0f, 1) + hex(rand[1], 2);
+            var p3 = '8' + hex(rand[2] & 0x3f, 1) + hex(rand[3], 2);
+            var p4 = hex(rand[4], 2) + hex(rand[5], 2);
+            var p5 = hex(rand[6], 2) + hex(rand[7], 2) + hex(rand[8], 2) + hex(rand[9], 2);
+            return p1 + '-' + p2 + '-' + p3 + '-' + p4 + '-' + p5;
+        }
+
+        window.setVer = function(v) {
+            version = v;
+            document.querySelectorAll('.btn-outline-sm').forEach(function(b){b.classList.toggle('active',b.id==='ver-'+v);});
+        };
+
+        window.generateUUIDs = function() {
+            var count = parseInt(document.getElementById('count-input').value) || 1;
+            count = Math.max(1, Math.min(500, count));
+            generatedUUIDs = [];
+            for (var i = 0; i < count; i++) generatedUUIDs.push(version === 'v7' ? uuidv7() : uuidv4());
+            renderUUIDs();
+        };
+
+        window.renderUUIDs = function() {
+            var fmt = document.getElementById('format-sel').value;
+            var out = document.getElementById('uuid-output');
+            if (generatedUUIDs.length === 0) { out.innerHTML = '<span style="color:var(--text-muted)">Click Generate...</span>'; return; }
+            if (fmt === 'lines') out.innerHTML = generatedUUIDs.join('\n');
+            else if (fmt === 'csv') out.innerHTML = generatedUUIDs.join(',');
+            else if (fmt === 'array') out.innerHTML = '[\n  "' + generatedUUIDs.join('",\n  "') + '"\n]';
+        };
+
+        window.copyAllUUIDs = function() {
+            if (generatedUUIDs.length === 0) return;
+            navigator.clipboard.writeText(generatedUUIDs.join('\n'));
+        };
+
+        window.downloadUUIDs = function() {
+            if (generatedUUIDs.length === 0) return;
+            var blob = new Blob([generatedUUIDs.join('\n')], { type: 'text/plain' });
+            var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'uuids.txt'; a.click();
+        };
+
+        generateUUIDs();
+    })();
+    </script>
+</body>
+</html>
+

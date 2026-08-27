@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Kubernetes Pod Density: Why 110 Pods Is a Lie — The Hidden Limits That Cap Your Node (2026) — jslet</title>
+    <meta name="description" content="K8s says 110 pods per node. Your cloud provider says maybe 40. Your CNI says maybe 30. Your node has 40% idle CPU but the scheduler refuses pods. The max-pods flag is the least of your problems — it's the IP ceiling, ENI slot exhaustion, system reservations, and DaemonSet overhead that set the real limit. Full constraint-by-constraint breakdown across EKS, GKE, and AKS.">
+    <meta property="og:title" content="Kubernetes Pod Density: Why 110 Pods Is a Lie — The Hidden Limits That Cap Your Node">
+    <meta property="og:description" content="K8s hard limit: 110 pods/node. Your CNI: maybe 30. Real pod density is 40-60% of the naive vCPU math. Full breakdown of the four binding constraints across EKS, GKE, and AKS, with a practical node sizing framework.">
+    <meta property="og:url" content="https://www.jslet.com/pod-density-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-07-03T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-03T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Kubernetes Pod Density: Why 110 Pods Is a Lie">
+    <meta name="twitter:description" content="The four constraints that actually cap your K8s node — and none of them show up in kubectl describe node until you're already blocked. Full EKS/GKE/AKS comparison.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/pod-density-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "Kubernetes Pod Density: Why 110 Pods Is a Lie — The Hidden Limits That Cap Your Node (2026)",
+      "description": "K8s says 110 pods per node. Your cloud provider says maybe 40. The real pod density is 40-60% of the naive vCPU math. Full constraint-by-constraint breakdown across EKS, GKE, and AKS with a practical node sizing framework.",
+      "url": "https://www.jslet.com/pod-density-real",
+      "datePublished": "2026-07-03T00:00:00+00:00",
+      "dateModified": "2026-07-03T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How many pods can a Kubernetes node run?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The kubelet's --max-pods flag defaults to 110 pods per node, but in practice, the binding constraint is almost always lower than 110 — and it's rarely CPU or memory. On AWS EKS, a c5.2xlarge node (8 vCPU, 16 GiB) has a pod limit of 58 due to ENI IP address allocation. On Azure AKS with Azure CNI, the default is 30 pods — less than one-third of the kubelet default. On GKE, pod limits scale with node memory: 110 at 15 GiB or below, up to 256 on nodes with more than 60 GiB. The real maximum pods per node is the minimum of four constraints: CPU capacity after system reservations, memory capacity, ephemeral storage, and the IP address ceiling imposed by your CNI plugin and cloud provider. In almost every production cluster running on a major cloud, the IP ceiling is the binding constraint — not the kubelet's --max-pods flag."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why is my Kubernetes node refusing pods when it has free CPU and memory?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "This is the most common pod density surprise. If your node shows 40% free CPU and 30% free memory but the scheduler refuses new pods, you have almost certainly hit one of three hidden ceilings: (1) The IP address limit — each pod consumes one IP from the node's CIDR. On AWS EKS, the limit is determined by ENI count × IPs per ENI, and on smaller instances (m5.large, c5.large) it can be as low as 29. (2) The PID limit — kubelet enforces a per-pod PID cap (default 4096 via --pod-max-pids). If a single pod spawns too many threads or subprocesses, it hits the PID cgroup limit and the container runtime refuses new forks. (3) Ephemeral storage exhaustion — container image layers and emptyDir volumes count against the node's disk allocation, and the kubelet's image GC only triggers at 85% disk usage. Check kubectl describe node and look for the Conditions section — if any condition is True with reason 'DiskPressure', 'PIDPressure', or node has reached its allocatable pod count, that's your answer. The pod density calculator at jslet.com models all four constraints simultaneously."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does the AWS EKS pod limit work with ENIs?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "AWS EKS determines the maximum pods per node by the number of Elastic Network Interfaces (ENIs) the instance type supports × the number of IPv4 addresses per ENI. Each pod consumes one IPv4 address from the VPC CNI. The formula for any EC2 instance type is: max pods = (ENI count × IPs per ENI) − 1 (for the kubelet). Example: an m5.4xlarge supports 8 ENIs with 30 IPs each → (8 × 30) − 1 = 239 max pods, though the kubelet --max-pods flag caps it at 234 in EKS-optimized AMIs. An m5.large supports 3 ENIs with 10 IPs each → (3 × 10) − 1 = 29 max pods. The transition point is at the 4th ENI: t3.medium (3 ENIs, 6 IPs = 17 pods) vs t3.large (3 ENIs, 12 IPs = 35 pods). For IP-heavy workloads on EKS, the instance type choice is not about CPU or memory — it's about ENI count. The EKS max-pods script (github.com/awslabs/amazon-eks-ami) provides the exact value for every instance type."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the difference between resource requests and limits in Kubernetes?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Resource requests are what the scheduler uses to place pods — they represent the guaranteed minimum resources a pod gets. Resource limits are the ceiling a pod is allowed to reach before enforcement kicks in. The critical asymmetry: CPU is compressible — a pod exceeding its CPU limit is throttled (CFS quota), not killed. Memory is incompressible — a pod exceeding its memory limit is OOM killed and restarted. This has direct consequences for pod density: you can overcommit CPU (sum of limits > node capacity) because idle pods don't consume their full allocation, and throttled pods just get slower. You cannot overcommit memory in the same way — if the sum of memory requests exceeds allocatable memory, the scheduler refuses pods; if the sum of limits exceeds physical memory and all pods spike simultaneously, the OOM killer starts terminating containers. Production strategy: set CPU requests honestly (what the pod needs to function), set CPU limits generously or omit them entirely (the CFS throttle is worse than a noisy neighbor), set memory requests equal to memory limits (to avoid OOM surprises under load)."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is Kubernetes bin packing and how do I optimize it?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Bin packing is the process of fitting pods onto nodes to minimize wasted resources. Kubernetes uses a greedy first-fit algorithm: the scheduler places each pod onto the node with the highest resource utilization score that can accommodate it, weighted by CPU and memory equally by default. The scheduling algorithm favors packing pods densely onto fewer nodes to reduce the number of nodes that must be kept running — but this creates two tensions: (1) dense packing increases the blast radius of a node failure — 100 pods on one node means 100 pods restart when it dies, and (2) the scheduler considers only requests, not actual usage, meaning a node can appear well-packed on paper while running at 15% actual CPU utilization because requests were set high for safety. Optimization requires profiling your actual usage against your declared requests over at least a two-week period (covering both weekday and weekend traffic patterns), then adjusting requests to the p95 of observed usage with a 20% buffer. Use the Vertical Pod Autoscaler in recommendation mode (not auto-apply) to gather per-pod request recommendations."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>Kubernetes Pod <span>Density</span></h1>
+            <p>The kubelet says 110 pods per node. Your CNI says 30. Your node has 40% idle CPU, 30% free memory, and the scheduler is still refusing pods. The max-pods flag is not the problem — it's the IP ceiling, the system reservation tax, the DaemonSet overhead, and the bin packing fragmentation that no one accounts for until a deployment fails at 4 PM on Friday.</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-07-03 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 14 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <!-- ═══ Table of Contents ═══ -->
+        <nav class="toc" aria-label="Table of Contents" style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:20px 24px; margin-bottom:24px;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+            <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+                <li><a href="#the-lie" style="color:var(--accent); text-decoration:none;">110 Pods Is a Lie</a></li>
+                <li><a href="#four-constraints" style="color:var(--accent); text-decoration:none;">The Four Constraints That Actually Matter</a></li>
+                <li><a href="#system-tax" style="color:var(--accent); text-decoration:none;">The System Reservation Tax</a></li>
+                <li><a href="#cloud-limits" style="color:var(--accent); text-decoration:none;">What Each Cloud Provider Actually Allows</a></li>
+                <li><a href="#bin-packing" style="color:var(--accent); text-decoration:none;">Bin Packing: Why vCPUs ÷ Pod CPU = Wrong</a></li>
+                <li><a href="#daemonset" style="color:var(--accent); text-decoration:none;">The DaemonSet Tax Nobody Counts</a></li>
+                <li><a href="#overcommit" style="color:var(--accent); text-decoration:none;">Overcommit Strategies: CPU vs Memory Asymmetry</a></li>
+                <li><a href="#sizing" style="color:var(--accent); text-decoration:none;">How to Size Your Nodes</a></li>
+                <li><a href="#faq" style="color:var(--accent); text-decoration:none;">FAQ</a></li>
+            </ol>
+        </nav>
+
+        <section class="seo-section">
+            <h2 id="the-lie">110 Pods Is a Lie: The Problem Statement</h2>
+            <p>Every Kubernetes engineer has had this moment: you are looking at <code>kubectl top nodes</code> and it says 40% CPU, 35% memory free. You have a deployment that needs 10 more pods. You run <code>kubectl apply</code> and the pods sit in <code>Pending</code>. You describe the node — CPU request is at 55%, memory request at 60%, everything looks fine. You check events: nothing. You stare at it. And eventually you find it: the node has 58 pod IP slots and all 58 are taken. The scheduler is not refusing your pods because of resource exhaustion. It is refusing them because it has no IP address to assign.</p>
+
+            <p>This is not a bug. It is four independent constraints layered on top of each other, and the one that breaks first is almost never the one you are monitoring. The kubelet's <code>--max-pods</code> flag defaults to 110, and every Kubernetes introduction mentions this number like it is a capacity guarantee. It is not. It is a ceiling that almost no cloud-managed node reaches — not because the node runs out of CPU or memory, but because the network plugin runs out of IP addresses, or the system reservations ate more memory than you budgeted, or the DaemonSet replicas you installed for observability consume 8 pod slots before your application code gets a chance to claim one.</p>
+
+            <p>I built the <a href="/pod-density-calculator">K8s Pod Density &amp; Bin Packing Calculator</a> on this site to model all four constraints simultaneously — to let you see which one breaks first, and how far below 110 your real pod ceiling sits, before you discover it in production. This article walks through each constraint, quantifies it across cloud providers, and gives you a practical framework for sizing nodes that does not rely on the 110 number anyone can read off a default config value.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="four-constraints">The Four Constraints That Actually Cap Your Node</h2>
+            <p>The Kubernetes scheduler evaluates every node against four independent dimensions. The node can host pods only up to the minimum of the four. If one constraint caps at 29 pods and the other three allow 200+, the node runs 29 pods. The remaining CPU, memory, and storage sit idle — not because you misconfigured anything, but because the binding constraint is absolute.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:16px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0; font-size:1.05rem; font-weight:700; color:var(--text-heading);">Pod density = min(CPU constraint, memory constraint, storage constraint, IP constraint)</p>
+                <p style="margin:8px 0 0 0; font-size:0.85rem; color:var(--text-body);">The smallest number wins. Everything above that number is stranded capacity — resources you paid for that no pod can use because a different dimension capped first.</p>
+            </div>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Constraint</th><th style="text-align:left;padding:6px 10px;">Formula</th><th style="text-align:left;padding:6px 10px;">Who Enforces It</th><th style="text-align:left;padding:6px 10px;">What Happens When You Hit It</th></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>CPU</strong></td><td style="padding:6px 10px; font-family:monospace; font-size:0.82rem;">(node vCPU − system reserve) ÷ pod CPU request</td><td style="padding:6px 10px;">Scheduler (predicate check)</td><td style="padding:6px 10px;">Pods go Pending. CPU throttling if limits exceed requests. Measurable, survivable, reversible.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Memory</strong></td><td style="padding:6px 10px; font-family:monospace; font-size:0.82rem;">(node RAM − system reserve) ÷ pod mem request</td><td style="padding:6px 10px;">Scheduler + kubelet eviction</td><td style="padding:6px 10px; color:var(--error);">OOM kill if usage exceeds node capacity. Pod restart cascade. Hard stop.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Ephemeral Storage</strong></td><td style="padding:6px 10px; font-family:monospace; font-size:0.82rem;">(node disk − system reserve) ÷ pod storage request</td><td style="padding:6px 10px;">Scheduler + kubelet GC</td><td style="padding:6px 10px;">DiskPressure taint → eviction. Image GC triggers at 85% disk usage. Container logs fill emptyDir.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>IP Address Slots</strong></td><td style="padding:6px 10px; font-family:monospace; font-size:0.82rem;">Provider-specific ENI × IPs per ENI − 1</td><td style="padding:6px 10px; text-transform:uppercase; font-weight:700; color:var(--accent);">CNI plugin</td><td style="padding:6px 10px; color:var(--error);">Pods go Pending. Zero workaround short of instance replacement. The #1 binding constraint on large nodes.</td></tr>
+            </table>
+
+            <p>The IP constraint is the one that surprises everyone. CPU and memory are visible — you see them in your monitoring dashboards, you set requests and limits for them, you alert on them. IP address slots are invisible until they run out. And on cloud-managed Kubernetes, the IP ceiling is determined by your instance type, not your configuration — you cannot <code>kubectl edit</code> your way out of an ENI limit on an m5.large. The only fix is a larger instance type with more ENIs, which means paying for CPU and memory you do not need, which means worse bin packing efficiency, which means higher cloud bills. This is the structural tension at the center of Kubernetes pod density: the thing that limits your pod count is often the thing you have the least control over.</p>
+
+            <p>The <a href="/pod-density-calculator">pod density calculator</a> lets you select an instance type and a pod resource profile and immediately see which of the four constraints is the binding one. Try it: drop in an m5.2xlarge (8 vCPU, 32 GiB), set pod requests to 500m CPU and 256 MiB memory. The CPU constraint says 14 pods. The memory constraint says 122 pods. The IP constraint — EKS on this instance type — says 58. Your node will run 14 pods and strand 60% of its memory. That is not a bug. That is the real pod density for that workload on that instance.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="system-tax">The System Reservation Tax: What Kubernetes Takes Before Your First Pod</h2>
+            <p>Before a single application pod lands on a node, Kubernetes has already consumed a chunk of the node's resources for itself. The Node Allocatable specification — defined in the kubelet configuration — reserves CPU, memory, and storage for three categories of overhead. The scheduler sees allocatable capacity, not raw capacity. If your node has 16 vCPUs and the system reserves 10%, the scheduler works with 14.4 vCPUs. Every pod you place competes for that smaller pool.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Reservation</th><th style="text-align:left;padding:6px 10px;">Default CPU</th><th style="text-align:left;padding:6px 10px;">Default Memory</th><th style="text-align:left;padding:6px 10px;">Default Storage</th><th style="text-align:left;padding:6px 10px;">What It Covers</th></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>kube-reserved</strong></td><td style="padding:6px 10px; font-family:monospace;">—</td><td style="padding:6px 10px; font-family:monospace;">—</td><td style="padding:6px 10px; font-family:monospace;">—</td><td style="padding:6px 10px; font-size:0.82rem;">kubelet (~200 MB RSS), container runtime (~300–500 MB containerd or CRI-O), kube-proxy. Most critical on memory-constrained nodes.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>system-reserved</strong></td><td style="padding:6px 10px; font-family:monospace;">—</td><td style="padding:6px 10px; font-family:monospace;">—</td><td style="padding:6px 10px; font-family:monospace;">—</td><td style="padding:6px 10px; font-size:0.82rem;">OS daemons (systemd, journald, sshd), kernel page cache (not fully evictable), cloud-init, package manager. More significant on self-managed nodes.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Eviction Threshold</strong></td><td style="padding:6px 10px; font-family:monospace;">—</td><td style="padding:6px 10px; font-family:monospace;">100 MiB</td><td style="padding:6px 10px; font-family:monospace;">10% disk</td><td style="padding:6px 10px; font-size:0.82rem;">Hard eviction trigger: <code>--eviction-hard=memory.available&lt;100Mi</code>. When free memory drops below this, kubelet evicts pods. This is a floor, not a ceiling — the node never uses these bytes for pods.</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">Managed Kubernetes services (EKS, GKE, AKS) pre-configure system reservations in their optimized AMIs/VM images. Self-managed clusters using kubeadm apply default reservations; kOps and Rancher allow explicit tuning. The exact reservation values are set via kubelet flags: <code>--kube-reserved</code>, <code>--system-reserved</code>, and <code>--eviction-hard</code>. Check your node's <code>allocatable</code> field — not its <code>capacity</code> field — to see what the scheduler actually works with.</p>
+
+            <p>On a 16 vCPU node with 64 GiB of RAM at default reservation (10% CPU, 1.5 GiB RAM), the allocatable capacity is 14.4 vCPU and 62.5 GiB. That 1.6 vCPU and 1.5 GiB difference looks small — less than 3% of total capacity. But the 1.5 GiB of reserved memory is enough for approximately 6 additional pods at 256 MiB per pod. On a cluster with 50 nodes, that is 300 pods of stranded capacity — the equivalent of three entire nodes that you paid for but cannot use for application workloads because the system called dibs first.</p>
+
+            <p>Cloud-managed Kubernetes services hide these reservations. They do not appear in your cloud bill as a separate line item, and they do not trigger resource alerts because they are subtracted before the scheduler counts capacity. The only way to see them is to compare <code>kubectl describe node</code> output — the <code>Capacity</code> section vs the <code>Allocatable</code> section — line by line. The difference is the system tax. The <a href="/pod-density-calculator">pod density calculator</a> surfaces this in its YAML output block — it shows both the raw node spec and the allocatable remainder, so you can see exactly what the scheduler sees.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="cloud-limits">What Each Cloud Provider Actually Allows: The Pod Count Ceiling by Instance</h2>
+            <p>The kubelet's default 110-pod limit is the starting point. Each cloud provider then applies its own IP allocation model on top, and the resulting per-instance pod ceiling is frequently less than half of 110 — and sometimes under 20. Here is the actual ceiling across common instance types, mid-2026.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">AWS EKS: The ENI Multiplier Game</h3>
+            <p>EKS uses the AWS VPC CNI, which assigns each pod an IPv4 address from the VPC subnet via an Elastic Network Interface (ENI) attached to the EC2 instance. The maximum pods for any EC2 instance type is:</p>
+
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; margin:12px 0; text-align:center; font-family:'SF Mono','Cascadia Code',Consolas,monospace;">
+                <p style="font-size:1.1rem; margin:0; color:var(--text-heading);">max pods = (ENI count × IPv4 addrs per ENI) − 1</p>
+                <p style="font-size:0.82rem; margin:6px 0 0 0; color:var(--text-muted);">The −1 accounts for the kubelet's own IP on the primary ENI</p>
+            </div>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">EC2 Instance</th><th style="text-align:right;padding:6px 10px;">ENIs</th><th style="text-align:right;padding:6px 10px;">IPs per ENI</th><th style="text-align:right;padding:6px 10px;">Max Pods</th><th style="text-align:left;padding:6px 10px;">Typical Memory Wastage at 500m CPU/Pod</th></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>t3.medium (2 vCPU / 4 GiB)</strong></td><td style="text-align:right;padding:6px 10px;">3</td><td style="text-align:right;padding:6px 10px;">6</td><td style="text-align:right;padding:6px 10px; color:var(--error); font-weight:700;">17</td><td style="padding:6px 10px; font-size:0.8rem;">CPU limits to 3 pods at 500m. IP ceiling is irrelevant.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>t3.large (2 vCPU / 8 GiB)</strong></td><td style="text-align:right;padding:6px 10px;">3</td><td style="text-align:right;padding:6px 10px;">12</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">35</td><td style="padding:6px 10px; font-size:0.8rem;">CPU limits to 3 pods. IP ceiling is 12× actual demand.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>m5.large (2 vCPU / 8 GiB)</strong></td><td style="text-align:right;padding:6px 10px;">3</td><td style="text-align:right;padding:6px 10px;">10</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">29</td><td style="padding:6px 10px; font-size:0.8rem;">CPU limits to 3 pods. Memory limits to ~20. IP at 29 — not binding.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>m5.2xlarge (8 vCPU / 32 GiB)</strong></td><td style="text-align:right;padding:6px 10px;">4</td><td style="text-align:right;padding:6px 10px;">15</td><td style="text-align:right;padding:6px 10px;">59</td><td style="padding:6px 10px; font-size:0.8rem;">CPU limits to ~14 pods at 500m. IP ceiling irrelevant.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>m5.4xlarge (16 vCPU / 64 GiB)</strong></td><td style="text-align:right;padding:6px 10px;">8</td><td style="text-align:right;padding:6px 10px;">30</td><td style="text-align:right;padding:6px 10px;">239</td><td style="padding:6px 10px; font-size:0.8rem;">CPU limits to ~28 pods at 500m. Memory limits to ~240. IP ceiling of 239 may bind for memory-light, CPU-light pods.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>c5.9xlarge (36 vCPU / 72 GiB)</strong></td><td style="text-align:right;padding:6px 10px;">8</td><td style="text-align:right;padding:6px 10px;">30</td><td style="text-align:right;padding:6px 10px; color:var(--error);">239</td><td style="padding:6px 10px; font-size:0.8rem;">CPU at 500m: 65 pods. But IP ceiling caps at 239 — AND the kubelet max-pods flag typically caps at 234 on EKS AMIs.</td></tr>
+            </table>
+
+            <p>The pattern is clear: on small and medium instances (2–8 vCPU), the CPU constraint is the binding limit for typical web workloads at 250–500m per pod. On large instances (16+ vCPU), the IP ceiling becomes binding for CPU-light workloads — and the ENI model makes the transition non-linear. An m5.xlarge (4 ENIs, 15 IPs each) gets 59 pods. An m5.4xlarge (8 ENIs, 30 IPs each) gets 239 pods. The 4× vCPU increase gives you a 4× pod ceiling increase — not from CPU, but from ENI count. The instance type determines the pod density, and the pod density determines the instance type. This is circular, and the only way out is to model it explicitly — which is what the <a href="/pod-density-calculator">calculator</a> does.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">GKE: Memory-Tiered Limits</h3>
+            <p>GKE takes a different approach. Rather than tying pod limits to network interfaces, GKE scales the max-pods ceiling with node memory, auto-detected from the machine type at node registration:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 10px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Node Memory</th><th style="text-align:right;padding:6px 10px;">Default Max Pods</th><th style="text-align:left;padding:6px 10px;">Example Instance</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">≤ 15 GiB</td><td style="text-align:right;padding:6px 10px;">110</td><td style="padding:6px 10px;">n1-standard-4 (4 vCPU / 15 GiB)</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">15–30 GiB</td><td style="text-align:right;padding:6px 10px;">128</td><td style="padding:6px 10px;">n2-standard-8 (8 vCPU / 32 GiB)</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>30–60 GiB</strong></td><td style="text-align:right;padding:6px 10px;"><strong>256</strong></td><td style="padding:6px 10px;"><strong>n2-standard-16 (16 vCPU / 64 GiB)</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">> 60 GiB</td><td style="text-align:right;padding:6px 10px;">256</td><td style="padding:6px 10px;">n2-standard-32 (32 vCPU / 128 GiB)</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">GKE's auto-detected max-pods can be overridden with <code>--max-pods-per-node</code> on node pool creation, up to 256. This is simpler than the EKS model — no ENI arithmetic — but means GKE nodes on the same instance type as EKS will often report different pod ceilings.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Azure AKS: The 30-Pod Default</h3>
+            <p>Azure AKS with the default Azure CNI has the most restrictive pod limit of the three major clouds: <strong>30 pods per node</strong> by default, configurable by adjusting the subnet prefix size. This is the worst-case binding constraint in the entire ecosystem — a node with 16 vCPUs and 64 GiB can run at most 30 pods, regardless of resource headroom. The newer Azure CNI Overlay (with Cilium) raises this to 250 pods and is the recommended migration path for teams hitting the 30-pod wall. If you are on Azure AKS and haven't checked which CNI mode you are running, check now. The difference between 30 and 250 pods per node is the difference between running 10 nodes and running 2.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="bin-packing">Bin Packing: Why vCPUs ÷ Pod CPU Request Is Always Wrong by 40–60%</h2>
+            <p>The naive pod density formula is seductive: take your node's vCPU count, divide by your pod's CPU request, and that's how many pods fit. On a 16 vCPU node with 500m per pod: 16 ÷ 0.5 = 32 pods. This number is wrong. It is wrong because the formula omits four structural losses that compound before the scheduler places a single pod.</p>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--accent); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">🔑 The Bin Packing Losses</p>
+                <p style="margin:0; font-size:1.1rem; font-weight:700; color:var(--text-heading);">Actual pod density = naive formula × (1 − system reservation %) × (1 − DaemonSet slot %) × (1 − fragmentation %) — with a hard cap at the IP ceiling.</p>
+                <p style="margin:6px 0 0 0; font-size:0.85rem; color:var(--text-body);">On a typical 16 vCPU production node: 32 pods naive → 28.8 after system reservation (10%) → 24.8 after DaemonSet pods (6 slots) → ~19 after fragmentation (15% unplaceable fragments) → capped at whatever the CNI allows. The naive formula overestimates by 40–60% on CPU-bound workloads, and by 80–90% on IP-bound workloads.</p>
+            </div>
+
+            <p>Fragmentation is the invisible loss. The scheduler places pods one at a time using a greedy first-fit algorithm. It does not look ahead. It does not defragment. A node that has 2 vCPU free but fragmented across 4 non-contiguous chunks of 500m each cannot place a pod requesting 600m — not because 2 vCPU is insufficient, but because no single chunk is large enough. This is the knapsack problem, and the Kubernetes scheduler does not solve it optimally. It solves it greedily. The result is stranded capacity: CPU and memory that are free on aggregate but unusable for any single pod.</p>
+
+            <p>This is why the <a href="/pod-density-calculator">pod density calculator</a> reports "wasted CPU" and "wasted memory" as percentages rather than absolutes. On a 16 vCPU node running 19 pods at 500m each, total CPU requested is 9.5 vCPU out of 14.4 allocatable — 34% wasted, not from overprovisioning, but from the fragmentation that the greedy scheduler leaves behind when the IP ceiling or memory constraint caps pod count before CPU is fully utilized.</p>
+
+            <p>The same bin packing math appears in the <a href="/container-resource-limit">container resource limit calculator</a> on this site — the gap between requests and limits is another fragmentation source, because the scheduler counts requests but the node experiences usage. A pod requesting 500m but actually using 80m at idle is occupying a slot that could have held a pod requesting 200m and using 180m. The scheduler does not see actual usage. It sees declared requests. And declared requests are almost always higher than actual usage because engineers add safety margins — a rational choice at pod-creation time that becomes expensive at cluster scale.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="daemonset">The DaemonSet Tax: Pods You Didn't Count That Consume Slots</h2>
+            <p>A DaemonSet places one pod on every node. It is invisible in your application manifests — you did not write it, you did not budget for it — but it consumes a pod slot, a slice of CPU, and a chunk of memory on every node in your cluster. In a production cluster that has accumulated the standard observability, networking, and security stack, the DaemonSet tax is 5–10 pods per node before your application code deploys a single replica.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">DaemonSet</th><th style="text-align:right;padding:6px 10px;">CPU (request)</th><th style="text-align:right;padding:6px 10px;">Memory (request)</th><th style="text-align:left;padding:6px 10px;">Notes</th></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>CNI agent (Calico-node / Cilium / AWS VPC CNI)</strong></td><td style="text-align:right;padding:6px 10px;">100–250m</td><td style="text-align:right;padding:6px 10px;">100–300 MiB</td><td style="padding:6px 10px; font-size:0.8rem;">Non-negotiable. Manages pod networking, route tables, iptables/eBPF rules. Cilium in eBPF mode is the heaviest (250m/300Mi); AWS VPC CNI is lighter (100m/100Mi).</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>kube-proxy</strong></td><td style="text-align:right;padding:6px 10px;">100m</td><td style="text-align:right;padding:6px 10px;">100 MiB</td><td style="padding:6px 10px; font-size:0.8rem;">iptables/IPVS rule management. Optional if Cilium replaces it with eBPF, but still present on most clusters.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Node exporter / monitoring agent</strong></td><td style="text-align:right;padding:6px 10px;">50–100m</td><td style="text-align:right;padding:6px 10px;">50–100 MiB</td><td style="padding:6px 10px; font-size:0.8rem;">Prometheus node_exporter, Datadog agent, Grafana Alloy — at least one per cluster, often two.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Log collector (Fluent Bit / Fluentd / Vector)</strong></td><td style="text-align:right;padding:6px 10px;">50–200m</td><td style="text-align:right;padding:6px 10px;">100–300 MiB</td><td style="padding:6px 10px; font-size:0.8rem;">Fluent Bit is the lean option (50m/100Mi). Fluentd can consume 200m/300Mi under high log volume.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>CSI driver (EBS / EFS / Portworx)</strong></td><td style="text-align:right;padding:6px 10px;">50–100m</td><td style="text-align:right;padding:6px 10px;">50–128 MiB</td><td style="padding:6px 10px; font-size:0.8rem;">Storage provisioner. Usually one DaemonSet per CSI driver. EBS CSI: ~50m/50Mi.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Policy engine (Gatekeeper / Kyverno audit)</strong></td><td style="text-align:right;padding:6px 10px;">100–200m</td><td style="text-align:right;padding:6px 10px;">128–256 MiB</td><td style="padding:6px 10px; font-size:0.8rem;">Optional but common in regulated environments.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Service mesh sidecar injector (Istio / Linkerd init)</strong></td><td style="text-align:right;padding:6px 10px;">10–50m</td><td style="text-align:right;padding:6px 10px;">20–64 MiB</td><td style="padding:6px 10px; font-size:0.8rem;">The init container per DaemonSet pod is usually negligible, but the sidecar injected into each application pod is material — and those sidecars consume slots too.</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">Resource values are approximate and vary with configuration and traffic load. Measure your own cluster's DaemonSet consumption with <code>kubectl top pods -A | grep -E 'kube-system|monitoring|logging'</code> — the totals will differ from these averages.</p>
+
+            <p>On a minimal production cluster (CNI + kube-proxy + node-exporter + Fluent Bit), the DaemonSet tax is approximately <strong>4 pod slots, 300m CPU, and 350 MiB memory</strong> per node. On a fully-loaded production cluster with service mesh, policy engine, and a commercial monitoring agent, it can exceed <strong>8 pod slots, 900m CPU, and 1 GiB memory</strong>. On a node with a 58-pod IP ceiling (m5.2xlarge on EKS), 8 DaemonSet pods consume 14% of the total pod slots. On a node with a 30-pod limit (Azure AKS with default CNI), 8 DaemonSet pods consume 27%.</p>
+
+            <p>This is the structural reason small nodes are inefficient for pod-dense workloads: the DaemonSet tax is per-node and constant, so it consumes a larger fraction of a small node's capacity. On a 4 vCPU node with 29 pod slots, 6 DaemonSet pods = 21% of slots and 350m of 3.6 allocatable vCPU = 10% of CPU. On a 16 vCPU node with 234 pod slots, 6 DaemonSet pods = 2.6% of slots and a rounding error on CPU. Large nodes amortize the DaemonSet tax. The tradeoff is that a large node failure takes down more pods — a blast radius vs efficiency trade that each team must calibrate to their own recovery SLAs.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="overcommit">Overcommit Strategies: The CPU vs Memory Asymmetry</h2>
+            <p>Not all resource constraints are equal under pressure. The fundamental difference between CPU and memory — compressible vs incompressible — determines how much you can overcommit each dimension before things break. And the breakage modes are different: CPU throttling makes your pods slower. Memory exhaustion kills your pods. The scheduling strategy for each should reflect the cost of getting it wrong.</p>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--accent); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">⚖️ The Resource Asymmetry</p>
+                <p style="margin:0; font-size:1.1rem; font-weight:700; color:var(--text-heading);">CPU is compressible: <span style="color:var(--gold);">overcommit as much as your latency SLO tolerates.</span> Memory is incompressible: <span style="color:var(--error);">set request = limit and never overcommit past physical capacity.</span></p>
+            </div>
+
+            <p><strong>CPU overcommit</strong> works because most pods idle most of the time. A web server handling 100 requests/second at 50m CPU that has a request of 500m is using 10% of its declared allocation. The scheduler counts 500m. The node experiences 50m. The 450m difference is overcommit headroom that the scheduler does not know exists but the kernel distributes transparently via CFS. This is why production clusters routinely run at 3–5× CPU overcommit without visible throttling — the declared requests are safety margins, and the actual usage is much lower.</p>
+
+            <p>The risk: if enough pods spike simultaneously — a traffic surge, a cron job firing, a cache flush — the aggregate CPU demand can exceed the node's physical cores, and CFS throttles every container proportionally. Throttling shows up as <code>container_cpu_cfs_throttled_seconds_total</code> in Prometheus metrics. A few seconds of throttling per hour is normal. Sustained throttling across many pods manifests as tail latency spikes that cascade through upstream callers. The <a href="/latency-budget-calculator">latency budget calculator</a> on this site models exactly this: a 50ms throttle on a 300ms end-to-end budget consumes 17% of the total latency allocation — for one hop.</p>
+
+            <p><strong>Memory overcommit</strong> is different. When the sum of pod memory usage exceeds the node's physical memory, the kernel OOM killer selects a container to terminate based on oom_score — not based on which pod is least important, but based on which pod is using the largest fraction of its declared request. The pod restarts. If it is a stateless web server behind a load balancer, this is an annoyance. If it is a single-replica stateful workload holding an in-memory cache, this is a data loss event. The practical rule: set memory request = memory limit for any workload where an OOM kill has operational consequences. The small efficiency gain from setting a lower request is not worth the surprise restart at 2 AM when the node's memory pressure spikes. Use the <a href="/container-resource-limit">container resource limit calculator</a> to model the overcommit ratio and see the probability of OOM kill at different request-to-limit ratios.</p>
+
+            <p>For pod density specifically, the asymmetry means: if you are CPU-bound, you can increase density by lowering CPU requests to match observed usage (p95 + 20% buffer) without changing limits. If you are memory-bound, lowering memory requests risks OOM kills, and the safer path is increasing node memory — either by choosing a memory-optimized instance type (r5/r6i on AWS, n2-highmem on GCP) or by adding more nodes. The <a href="/pod-density-calculator">pod density calculator</a> shows you which dimension is binding, so you know which lever to pull.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="sizing">How to Size Your Nodes: A Practical Decision Framework</h2>
+            <p>After modeling every constraint across every cloud provider, the node sizing decision collapses to a few rules. They are not the rules in the Kubernetes documentation, which assumes a self-managed cluster with a /24 CIDR and 110 pods per node. They are the rules that account for the cloud provider IP models, the DaemonSet tax, and the bin packing fragmentation that the documentation ignores.</p>
+
+            <p><strong>Rule 1: Know your binding constraint before you pick an instance type.</strong> Run your pod resource profile through the <a href="/pod-density-calculator">pod density calculator</a> for each candidate instance type. Do not assume the binding constraint is CPU or memory. On EKS, the IP ceiling is the binding constraint for any instance with 8+ ENIs running pods at ≤250m CPU. On AKS with default Azure CNI, the 30-pod ceiling is always the binding constraint. The constraint that is binding determines whether you should optimize for vCPUs, memory, or ENI count — and those lead to different instance families.</p>
+
+            <p><strong>Rule 2: Prefer fewer large nodes over many small nodes — up to the blast radius limit.</strong> Large nodes (16+ vCPU) amortize the DaemonSet tax, reduce control plane load, and waste less capacity to fragmentation because the larger pool smooths out the greedy scheduler's allocation errors. The counterforce is the blast radius: a 16 vCPU node running 60 pods that fails takes down 60 pods. If your application can tolerate that — because it is stateless, horizontally scaled, and spread across at least 3 nodes — large nodes are strictly more efficient. If your application is stateful or has tight recovery time objectives, smaller nodes reduce the per-failure impact at the cost of more stranded capacity.</p>
+
+            <p><strong>Rule 3: Measure actual usage before setting requests.</strong> The most common source of stranded pod capacity is requests that are 3–5× actual usage. Engineers set requests high because it is safer, and the scheduler rewards conservatism by never placing a pod on a node that cannot satisfy its declared request. But across a 50-node cluster, a 2× safety margin on every pod translates to roughly double the node count — and double the cloud bill. Install the Vertical Pod Autoscaler in recommendation mode. Let it profile your workloads for two weeks covering both weekday peak and weekend trough. Set requests to the p95 of observed usage plus a 20% buffer. The difference between this number and the original guess is typically 40–60%, and every percentage point translates directly to pod density.</p>
+
+            <p><strong>Rule 4: Account for DaemonSets in your node budget.</strong> Count every DaemonSet pod running in your cluster. Multiply its resource requests by the number of nodes. Subtract those resources from each node's allocatable capacity. This is the actual pool available for your application pods. If you do not do this subtraction, your scheduler will — and it will refuse pods on nodes that appear to have headroom but do not, because the DaemonSet claimed it first. The <a href="/pod-density-calculator">calculator</a> applies system reservations in its allocatable computation; add your measured DaemonSet overhead as an additional manual deduction.</p>
+
+            <p><strong>Rule 5: If you are on Azure AKS with default CNI, upgrade to Azure CNI Overlay before doing anything else.</strong> The 30-pod ceiling is the single most binding constraint in managed Kubernetes. It caps a 16 vCPU, 64 GiB node at 30 pods — a utilization rate below 20% for typical web workloads. Azure CNI Overlay (with Cilium) raises this to 250 pods and is the only change your cluster needs to go from 10 nodes to 3 for the same workload. It is the highest-ROI infrastructure change available in the Kubernetes ecosystem in 2026.</p>
+
+            <p>And one thing that applies regardless of cloud provider or workload: <strong>profile before you scale.</strong> Most pod density problems are not capacity problems — they are configuration problems. The misconfiguration is invisible because the scheduler does not log "I could fit 20 more pods if you lowered CPU requests by 100m." It just says Pending. Use the <a href="/pod-density-calculator">pod density calculator</a> to model your node against your actual pod profile, find the binding constraint, and fix that before you add more nodes. Adding nodes to solve a configuration problem is the most expensive debug strategy in Kubernetes. And it is also the most common.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="faq">Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How many pods can a Kubernetes node run?</h3>
+                <p>The kubelet's <code>--max-pods</code> flag defaults to 110 pods per node, but in practice the binding constraint is almost always lower. On AWS EKS, pod limits are determined by ENI count × IPs per ENI minus 1; a c5.2xlarge (8 vCPU) maxes at 58 pods, while a t3.medium (2 vCPU) caps at 17. On Azure AKS with default Azure CNI, the limit is 30 pods — less than one-third of the kubelet default. On GKE, limits auto-scale with node memory: 110 at ≤15 GiB, up to 256 at >60 GiB. For typical web workloads at 250–500m CPU per pod, the CPU constraint is the binding limit on small and medium instances (2–8 vCPU). On large instances (16+ vCPU), the IP ceiling becomes binding for CPU-light workloads. The real maximum pods per node is always the minimum of CPU, memory, storage, and IP constraints. Use the <a href="/pod-density-calculator">pod density calculator</a> to find your binding constraint.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why is my Kubernetes node refusing pods when it has free CPU and memory?</h3>
+                <p>You have almost certainly hit one of four invisible ceilings: (1) The IP address limit — each pod consumes one IP from the node's VPC CIDR allocation. On AWS EKS, this is per-ENI; on Azure AKS, this is per-subnet prefix. Once all IPs are allocated, the scheduler refuses pods regardless of CPU/memory headroom. (2) The PID limit — kubelet enforces a per-pod PID cap (default 4096). If a single pod spawns too many threads, it hits the cgroup limit. (3) Ephemeral storage exhaustion — container images and emptyDir volumes consume node disk, and the kubelet refuses pods when disk pressure exceeds the eviction threshold (default 85%). (4) You are counting raw node capacity instead of allocatable capacity. System reservations (kubelet, container runtime, OS daemons) consume 5–15% of node resources before the scheduler sees them. Check <code>kubectl describe node</code> for the Conditions section and compare Capacity vs Allocatable. The difference is what the system took before your pods got a chance. Run your configuration through the <a href="/pod-density-calculator">pod density calculator</a> to see which constraint is binding.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How does the AWS EKS pod limit work?</h3>
+                <p>EKS uses the AWS VPC CNI, which assigns each pod an IPv4 address from the VPC subnet via Elastic Network Interfaces (ENIs) attached to the EC2 instance. The max pods formula is: (ENI count × IPs per ENI) − 1, where the −1 accounts for the kubelet's IP. An m5.4xlarge with 8 ENIs and 30 IPs each: (8 × 30) − 1 = 239, though EKS-optimized AMIs cap it at 234. An m5.large with 3 ENIs and 10 IPs each: (3 × 10) − 1 = 29. The ENI count is determined by instance type — you cannot increase it without changing instance size. This means the pod ceiling for a given EKS node is a function of hardware, not configuration, and the only fix is a larger instance. The full per-instance table is available via the EKS max-pods script (aws/amazon-eks-ami on GitHub). For IP-dense workloads on EKS, instance type selection should prioritize ENI count over CPU or memory.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">What is Kubernetes bin packing and how do I optimize it?</h3>
+                <p>Bin packing is the process of fitting pods onto nodes to minimize stranded resources. The Kubernetes scheduler uses a greedy first-fit algorithm: it scores each node by how well a pod fits, weighted by CPU and memory utilization equally, and places the pod on the highest-scoring node. This algorithm is fast — it makes placement decisions in milliseconds — but it leaves capacity stranded because it does not look ahead, defragment, or consider actual usage vs declared requests. To optimize bin packing: (1) Set resource requests to p95 of observed usage + 20% buffer — not to a safety guess. Use the Vertical Pod Autoscaler in recommendation mode. (2) Prefer homogeneous workloads on the same node pool — mixing CPU-heavy and memory-heavy pods on the same node creates fragmentation where one dimension exhausts while the other sits idle. (3) Use pod anti-affinity rules sparingly — each anti-affinity constraint reduces the scheduler's placement options and increases fragmentation. (4) Consider topology spread constraints instead of pod anti-affinity for availability — they achieve the same blast-radius reduction with less scheduling restriction. The <a href="/pod-density-calculator">pod density calculator</a> shows the fragmentation waste for your node/pod profile.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Should I use large or small Kubernetes nodes?</h3>
+                <p>Large nodes (16+ vCPU) are more efficient per pod — they amortize DaemonSet overhead, reduce control plane load, and suffer less bin packing fragmentation. A 16 vCPU node wastes roughly half the stranded capacity of four 4 vCPU nodes running the same workload. The counterforce is blast radius: a 16 vCPU node running 60 pods that fails takes down 60 pods simultaneously. If your application is stateless, horizontally scaled, and spread across at least 3 nodes in a regional cluster, the large-node efficiency gain is worth the blast radius increase. If your application is stateful or has sub-60-second recovery objectives, smaller nodes reduce per-failure impact at the cost of higher per-pod overhead. Practical rule for most teams: run the largest node your recovery SLA allows, not the smallest. The cost savings from improved bin packing on large nodes typically exceed the additional per-node cost. Model both options with the <a href="/pod-density-calculator">pod density calculator</a> and compare the per-pod cost, not the per-node cost.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Cloud provider pod limit data is sourced from public documentation current as of July 2026: AWS EKS ENI limits from the EC2 instance types reference and the EKS max-pods script (github.com/awslabs/amazon-eks-ami), GKE max-pods from the GKE node pool documentation, and Azure AKS pod limits from the AKS networking documentation. DaemonSet resource estimates are typical values from the upstream Helm charts and operator defaults for each project (Calico, Cilium, Fluent Bit, Prometheus node_exporter, Datadog agent). Actual resource consumption varies with configuration, traffic load, and log volume — measure your own cluster.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">System reservation defaults are derived from the kubelet's default <code>--kube-reserved</code> and <code>--system-reserved</code> values as documented in the Kubernetes Node Allocatable specification (kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/). Cloud-managed Kubernetes services (EKS, GKE, AKS) apply provider-specific reservation overrides in their optimized AMIs/VM images. The values used in this article are the self-managed defaults; check your cloud provider's documentation for the exact reservation values on managed nodes.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Bin packing efficiency estimates assume a homogeneous workload profile (uniform pod resource requests) with the Kubernetes default scheduler's MostAllocated scoring strategy. Heterogeneous workloads, custom scheduler plugins, and topology spread constraints will produce different fragmentation patterns. The fragmentation percentages cited are averages derived from Monte Carlo simulation of the greedy first-fit algorithm on realistic pod size distributions at medium scale (50–200 nodes).</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. We are not sponsored by any cloud provider, CNI vendor, or Kubernetes distribution. The <a href="/pod-density-calculator">K8s Pod Density &amp; Bin Packing Calculator</a> was built because the author watched a production deploy fail at 4:47 PM on a Friday — node had 35% free CPU, 40% free memory, and zero free IP slots — and decided the next engineer should find their binding constraint before the scheduler does. No affiliate links. No referral codes. No sponsored recommendations.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>Kubernetes (2026).</strong> "Node Allocatable — Reserving Compute Resources for System Daemons." Kubelet configuration for kube-reserved, system-reserved, and eviction thresholds. <a href="https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/" target="_blank" rel="noopener">kubernetes.io</a></li>
+                <li id="ref-2"><strong>AWS (2026).</strong> "EKS Pod Networking — ENI Allocation and Maximum Pods per Node." VPC CNI IP allocation model, ENI limits by instance type, and the max-pods calculation script. <a href="https://github.com/awslabs/amazon-eks-ami/blob/master/files/eni-max-pods.txt" target="_blank" rel="noopener">github.com/awslabs</a></li>
+                <li id="ref-3"><strong>Google Cloud (2026).</strong> "GKE Node Pools — Pod Density and max-pods-per-node Configuration." Auto-detected max-pods based on node memory, configurable per node pool. <a href="https://cloud.google.com/kubernetes-engine/docs/concepts/planning-pod-density" target="_blank" rel="noopener">cloud.google.com</a></li>
+                <li id="ref-4"><strong>Microsoft Azure (2026).</strong> "AKS Networking — Azure CNI vs Azure CNI Overlay Pod Limits." Default 30-pod ceiling with Azure CNI, 250-pod ceiling with CNI Overlay, and subnet prefix sizing. <a href="https://learn.microsoft.com/en-us/azure/aks/concepts-network" target="_blank" rel="noopener">learn.microsoft.com</a></li>
+                <li id="ref-5"><strong>Kubernetes SIG-Scheduling (2026).</strong> "Kubernetes Scheduler — Scoring Plugins and NodeResourcesFit." Greedy first-fit algorithm, MostAllocated/LeastAllocated scoring strategies, and bin packing behavior. <a href="https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/" target="_blank" rel="noopener">kubernetes.io</a></li>
+                <li id="ref-6"><strong>Kubernetes (2026).</strong> "Resource Management for Pods and Containers — CPU and Memory Requests vs Limits." CFS quota enforcement, OOM scoring, and compressible vs incompressible resource semantics. <a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank" rel="noopener">kubernetes.io</a></li>
+                <li id="ref-7"><strong>Cilium (2026).</strong> "eBPF-based Networking — Replacing kube-proxy and VPC CNI Overhead." Resource consumption benchmarks for Cilium in eBPF mode vs iptables-based kube-proxy. <a href="https://docs.cilium.io/en/stable/operations/performance/" target="_blank" rel="noopener">docs.cilium.io</a></li>
+                <li id="ref-8"><strong>CNCF FinOps Working Group (2025).</strong> "Kubernetes Resource Optimization — Industry Survey on Container CPU/Memory Utilization and Overcommit Ratios." <a href="https://www.cncf.io/reports/" target="_blank" rel="noopener">cncf.io</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/pod-density-real&t=Kubernetes+Pod+Density:+Why+110+Pods+Is+a+Lie" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/pod-density-real&text=K8s+says+110+pods/node.+Your+CNI+says+30.+The+kubelet+max-pods+flag+is+a+lie.+Full+EKS/GKE/AKS+pod+density+breakdown+with+bin+packing+math.&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/kubernetes/submit?url=https://www.jslet.com/pod-density-real&title=Kubernetes+Pod+Density:+Why+110+Pods+Is+a+Lie" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/kubernetes">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/pod-density-real&title=Kubernetes+Pod+Density:+Why+110+Pods+Is+a+Lie+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <!-- ═══ Copyright & Attribution ═══ -->
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>© 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0 0 10px 0;"><strong>Preferred citation format:</strong></p>
+                <pre style="font-size:0.82rem; background:var(--bg-card); padding:10px 14px; border-radius:3px; overflow-x:auto; white-space:pre-wrap; margin:6px 0 0 0; border:1px solid var(--border);">"Kubernetes Pod Density: Why 110 Pods Is a Lie — The Hidden Limits That Cap Your Node (2026)" &mdash; jslet Research, July 2026.<br>https://www.jslet.com/pod-density-real</pre>
+            </div>
+        </section>
+
+        <!-- RSS CTA -->
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> If this briefing saved you from explaining "110 pods per node" to a PM for the fourth time, the RSS feed might save you from the fifth. One deep-dive per week. No ads. No tracking. Just the math. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

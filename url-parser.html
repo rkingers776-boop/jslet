@@ -1,0 +1,435 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>URL &amp; Query String Parser —Decompose URLs, Decode Params Online —jslet</title>
+    <meta name="description" content="Free online URL parser. Decompose any URL into protocol, host, port, path, query params (editable table), and hash. Query string →JSON conversion. Encode/decode individual params. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/url-parser">
+    <meta property="og:title" content="URL &amp; Query String Parser —Decompose URLs Online">
+    <meta property="og:description" content="Free URL parser. Decompose URLs into protocol, host, path, query params. Query string →JSON. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/url-parser">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="URL &amp; Query String Parser —Decompose URLs Online">
+    <meta name="twitter:description" content="Free URL parser. Decompose URLs, edit query params. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "URL & Query String Parser",
+      "description": "Decompose any URL into components and edit query parameters interactively. Query string →JSON conversion, encode/decode params.",
+      "url": "https://www.jslet.com/url-parser",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <style>
+        .input-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+        .input-row input { padding: 12px 16px; border: 2px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; background: var(--bg-input); color: var(--text-body); flex: 1; min-width: 280px; }
+        .input-row input:focus { border-color: var(--accent); outline: none; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; transition: background 0.15s; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+        .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 20px; }
+        .result-card { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 18px; }
+        .result-card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 4px; }
+        .result-card .value { font-size: 1.05rem; font-weight: 700; color: var(--text-heading); font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; word-break: break-all; }
+        .result-card .value.empty { color: var(--text-muted); font-style: italic; font-weight: 400; }
+        .params-section { margin-top: 24px; }
+        .params-section h3 { font-size: 1rem; margin-bottom: 12px; }
+        .param-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .param-table th { background: var(--bg-input); text-align: left; padding: 8px 12px; font-weight: 700; color: var(--text-body); border-bottom: 2px solid var(--border); font-size: 0.8rem; text-transform: uppercase; }
+        .param-table td { padding: 6px 10px; border-bottom: 1px solid var(--border-light); }
+        .param-table td input { width: 95%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 0.82rem; background: #fff; color: var(--text-body); }
+        .param-table td input:focus { border-color: var(--accent); outline: none; }
+        .param-table .btn-small { padding: 4px 10px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; border: 1px solid var(--border); background: #fff; color: var(--text-body); }
+        .param-table .btn-small.danger { color: #dc2626; border-color: #dc2626; }
+        .query-output { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 18px; margin-top: 12px; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 0.85rem; color: var(--text-body); word-break: break-all; }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+        @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+        .panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 18px; }
+        .panel h4 { font-size: 0.9rem; margin: 0 0 10px; color: var(--text-heading); }
+        .panel textarea { width: 100%; min-height: 140px; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 0.82rem; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); resize: vertical; box-sizing: border-box; }
+    </style>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What does the URL parser decompose?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It breaks any URL into protocol, host, port, path, query parameters, and hash — with the query params shown in an editable table. You can add, edit, or remove parameters, convert the query string to JSON and back, and encode/decode individual values. Everything runs in your browser."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I convert a query string to JSON?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Paste a URL, and the parser splits the query string into key/value pairs in an editable table; the JSON view serializes them so you can copy the object for code or debugging. The reverse direction rebuilds the URL from your edited JSON — useful when refactoring API calls or debugging malformed links."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why should I parse URLs locally?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "URLs often embed tokens, session IDs, and private parameters. Parsing them in the browser keeps those values on your machine — no paste-into-a-web-service step. The tool is fully client-side with no upload, which is the safe way to dissect a suspicious or internal URL."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+    <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container">
+    <header>
+        <h1>URL <span>&amp; Query String</span> Parser</h1>
+        <p>Paste any URL to decompose it into components. Edit query parameters in a table. Convert between query strings, JSON, and reconstructed URLs. 100% client-side.</p>
+    </header>
+
+    <div class="input-row">
+        <input type="text" id="url-input" placeholder="Paste a URL... e.g. https://www.example.com:8080/path/to/page?q=hello&page=1&sort=desc#section-2" aria-label="URL to parse" oninput="parseURL()" autofocus>
+        <button class="btn btn-primary" onclick="parseURL()">🟢🔍 Parse</button>
+        <button class="btn btn-outline" onclick="clearAll()">🗑 Clear</button>
+    </div>
+
+    <div class="results-grid" id="results-grid"></div>
+
+    <div class="params-section" id="params-section" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <h3 style="margin:0;">🟢🔍 Query Parameters <span id="param-count"></span></h3>
+            <div style="display:flex;gap:8px;">
+                <button class="btn btn-outline" style="padding:6px 14px;font-size:0.78rem;" onclick="addParam()">+ Add Param</button>
+                <button class="btn btn-outline" style="padding:6px 14px;font-size:0.78rem;" onclick="rebuildFromParams()">🟢🔄 Rebuild URL</button>
+            </div>
+        </div>
+        <table class="param-table" style="margin-top:8px;">
+            <thead><tr><th>Key</th><th>Value (decoded)</th><th>Value (encoded)</th><th style="width:50px;"></th></tr></thead>
+            <tbody id="params-tbody"></tbody>
+        </table>
+        <div class="query-output" id="query-output" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="two-col">
+        <div class="panel">
+            <h4>🟢📦 Query String →JSON</h4>
+            <textarea id="qs-input" placeholder="key1=value1&amp;key2=value2&amp;flag" aria-label="Query string input" oninput="qsToJSON()"></textarea>
+            <textarea id="qs-json-output" placeholder='{"key1":"value1","key2":"value2","flag":""}' aria-label="JSON output from query string" readonly style="margin-top:8px;background:var(--bg-body);"></textarea>
+        </div>
+        <div class="panel">
+            <h4>⬻ ☁️ JSON →Query String</h4>
+            <textarea id="json-qs-input" placeholder='{"key1":"value1","key2":"value2","flag":""}' aria-label="JSON input for query string conversion" oninput="jsonToQS()"></textarea>
+            <textarea id="json-qs-output" placeholder="key1=value1&amp;key2=value2&amp;flag" aria-label="Query string output from JSON" readonly style="margin-top:8px;background:var(--bg-body);"></textarea>
+        </div>
+    </div>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🟢📖 How It Works</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p><strong>A URL (Uniform Resource Locator)</strong> has a defined structure per <a href="https://datatracker.ietf.org/doc/html/rfc3986" target="_blank" rel="noopener">RFC 3986</a>:</p>
+            <pre style="background:var(--bg-input);padding:12px;border-radius:var(--radius-sm);font-size:0.82rem;overflow-x:auto;">scheme://user:password@host:port/path?query#fragment</pre>
+            <ul>
+                <li><strong>Scheme</strong> —<code>https</code>, <code>http</code>, <code>ftp</code>, <code>ws</code>, <code>file</code>, etc.</li>
+                <li><strong>Host</strong> —domain name or IP address (e.g. <code>www.jslet.com</code>, <code>192.168.1.1</code>)</li>
+                <li><strong>Port</strong> —TCP port number (implicit from scheme if omitted: 443 for https, 80 for http)</li>
+                <li><strong>Path</strong> —resource path (e.g. <code>/json-formatter</code>)</li>
+                <li><strong>Query String</strong> —key-value pairs after <code>?</code>, delimited by <code>&amp;</code></li>
+                <li><strong>Fragment / Hash</strong> —anchor after <code>#</code>, never sent to the server</li>
+            </ul>
+            <p><strong>Common use cases:</strong> debugging API URLs, inspecting UTM tracking parameters, converting between percent-encoded and decoded query strings, preparing cURL requests, or generating JSON from query strings for programmatic use.</p>
+        </div>
+    </section>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<script src="nav.js"></script>
+<script>
+(function() {
+    'use strict';
+    var inp = document.getElementById('url-input');
+    var resultsGrid = document.getElementById('results-grid');
+    var paramsSection = document.getElementById('params-section');
+    var paramsTbody = document.getElementById('params-tbody');
+    var paramCount = document.getElementById('param-count');
+    var queryOutput = document.getElementById('query-output');
+
+    var parsedURL = null;
+    var params = []; // [{key, value, encoded}]
+
+    function parseURL() {
+        var raw = inp.value.trim();
+        if (!raw) { resultsGrid.innerHTML = ''; paramsSection.style.display = 'none'; return; }
+        try {
+            // Handle URLs missing scheme
+            var urlStr = raw;
+            if (!urlStr.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//)) {
+                urlStr = 'https://' + urlStr;
+            }
+            var url = new URL(urlStr);
+            parsedURL = url;
+
+            // Parse query params
+            params = [];
+            url.searchParams.forEach(function(val, key) {
+                params.push({ key: key, value: decodeURIComponent(val), encoded: val });
+            });
+
+            var cards = [
+                { label: 'Scheme / Protocol', value: url.protocol.replace(':', '') },
+                { label: 'Host', value: url.hostname },
+                { label: 'Port', value: url.port || (url.protocol === 'https:' ? '443 (default)' : url.protocol === 'http:' ? '80 (default)' : '') },
+                { label: 'Pathname', value: url.pathname || '/' },
+                { label: 'Search (raw)', value: url.search || '' },
+                { label: 'Hash / Fragment', value: url.hash || '' },
+                { label: 'Origin', value: url.origin },
+                { label: 'Username', value: url.username || '' },
+                { label: 'Password', value: url.password ? '••••••••' : '' },
+                { label: 'Href (full)', value: url.href }
+            ];
+
+            var html = '';
+            for (var i = 0; i < cards.length; i++) {
+                var val = cards[i].value;
+                var cls = val === '' || val === '••••••••' ? 'value empty' : 'value';
+                html += '<div class="result-card"><div class="label">' + cards[i].label + '</div><div class="' + cls + '">' + (val || '<em>none</em>') + '</div></div>';
+            }
+            resultsGrid.innerHTML = html;
+
+            renderParams();
+            paramsSection.style.display = 'block';
+        } catch(e) {
+            resultsGrid.innerHTML = '<div class="result-card" style="grid-column:1/-1;"><div class="label">⚠ ☁️ Parse Error</div><div class="value" style="color:#dc2626;">' + e.message + '</div><div class="sub">Try adding a scheme (https://) or check for invalid characters.</div></div>';
+            paramsSection.style.display = 'none';
+        }
+    }
+
+    function renderParams() {
+        paramCount.textContent = '(' + params.length + (params.length === 1 ? ' param' : ' params') + ')';
+        var html = '';
+        for (var i = 0; i < params.length; i++) {
+            html += '<tr>' +
+                '<td><input type="text" value="' + escapeHTML(params[i].key) + '" onchange="updateParam(' + i + ', \'key\', this.value)" placeholder="key" aria-label="Parameter key"></td>' +
+                '<td><input type="text" value="' + escapeHTML(params[i].value) + '" onchange="updateParam(' + i + ', \'value\', this.value)" placeholder="value" aria-label="Parameter value"></td>' +
+                '<td style="color:var(--text-muted);font-family:monospace;font-size:0.78rem;">' + escapeHTML(params[i].encoded) + '</td>' +
+                '<td><button class="btn-small danger" onclick="removeParam(' + i + ')">✕?</button></td>' +
+                '</tr>';
+        }
+        paramsTbody.innerHTML = html;
+        updateQueryDisplay();
+    }
+
+    function updateParam(idx, field, val) {
+        if (field === 'key') {
+            params[idx].key = val;
+        } else {
+            params[idx].value = val;
+            params[idx].encoded = encodeURIComponent(val);
+        }
+        updateQueryDisplay();
+    }
+
+    window.addParam = function() {
+        params.push({ key: '', value: '', encoded: '' });
+        renderParams();
+    };
+
+    window.removeParam = function(idx) {
+        params.splice(idx, 1);
+        renderParams();
+    };
+
+    function updateQueryDisplay() {
+        var parts = [];
+        for (var i = 0; i < params.length; i++) {
+            var encodedKey = encodeURIComponent(params[i].key);
+            var encodedVal = encodeURIComponent(params[i].value);
+            parts.push(encodedKey + '=' + encodedVal);
+        }
+        var qs = parts.join('&');
+        queryOutput.innerHTML = '<strong>?query string:</strong> ' + escapeHTML(qs ? '?' + qs : '');
+    }
+
+    window.rebuildFromParams = function() {
+        if (!parsedURL) return;
+        var parts = [];
+        for (var i = 0; i < params.length; i++) {
+            parts.push(encodeURIComponent(params[i].key) + '=' + encodeURIComponent(params[i].value));
+        }
+        var qs = parts.join('&');
+        parsedURL.search = qs ? '?' + qs : '';
+        inp.value = parsedURL.href;
+        parseURL();
+    };
+
+    // ──── Query String →JSON ────
+    window.qsToJSON = function() {
+        var qs = document.getElementById('qs-input').value.trim();
+        var out = document.getElementById('qs-json-output');
+        if (!qs) { out.value = ''; return; }
+        // Remove leading ?
+        if (qs[0] === '?') qs = qs.slice(1);
+        var obj = {};
+        var parts = qs.split('&');
+        for (var i = 0; i < parts.length; i++) {
+            if (!parts[i]) continue;
+            var eq = parts[i].indexOf('=');
+            var key, val;
+            if (eq === -1) { key = parts[i]; val = ''; }
+            else { key = parts[i].slice(0, eq); val = parts[i].slice(eq + 1); }
+            try { key = decodeURIComponent(key); } catch(e) {}
+            try { val = decodeURIComponent(val); } catch(e) {}
+            // Handle repeated keys →array
+            if (obj.hasOwnProperty(key)) {
+                if (Array.isArray(obj[key])) obj[key].push(val);
+                else obj[key] = [obj[key], val];
+            } else {
+                obj[key] = val;
+            }
+        }
+        out.value = JSON.stringify(obj, null, 2);
+    };
+
+    window.jsonToQS = function() {
+        var jsonStr = document.getElementById('json-qs-input').value.trim();
+        var out = document.getElementById('json-qs-output');
+        if (!jsonStr) { out.value = ''; return; }
+        try {
+            var obj = JSON.parse(jsonStr);
+            var parts = [];
+            for (var key in obj) {
+                if (!obj.hasOwnProperty(key)) continue;
+                var vals = Array.isArray(obj[key]) ? obj[key] : [obj[key]];
+                for (var i = 0; i < vals.length; i++) {
+                    parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(vals[i]));
+                }
+            }
+            out.value = parts.join('&');
+        } catch(e) {
+            out.value = 'Error: Invalid JSON —' + e.message;
+        }
+    };
+
+    function escapeHTML(str) {
+        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    window.clearAll = function() {
+        inp.value = '';
+        resultsGrid.innerHTML = '';
+        paramsSection.style.display = 'none';
+        params = [];
+        parsedURL = null;
+        document.getElementById('qs-input').value = '';
+        document.getElementById('qs-json-output').value = '';
+        document.getElementById('json-qs-input').value = '';
+        document.getElementById('json-qs-output').value = '';
+        inp.focus();
+    };
+
+    // Load sample
+    var sample = 'https://www.example.com:8080/path/to/page?q=hello+world&page=1&sort=desc&utm_source=twitter&utm_medium=social&lang=zh-CN#section-2';
+    inp.value = sample;
+    parseURL();
+})();
+</script>
+</body>
+</html>

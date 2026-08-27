@@ -1,0 +1,781 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Base64 Image Encoder —Convert Images to Base64 Data URLs Online —jslet</title>
+    <meta name="description" content="Convert images to Base64 data URLs instantly in your browser. Drag-and-drop PNG, JPG, SVG, WebP, GIF —get a ready-to-use data: URL. See size comparison, inflation ratio, and copy or download the result. 100% client-side, no upload.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/base64-image-encoder">
+    <meta property="og:title" content="Base64 Image Encoder —Convert Images to Base64 Data URLs Online —jslet">
+    <meta property="og:description" content="Convert images to Base64 data URLs instantly in your browser. Drag-and-drop PNG, JPG, SVG, WebP, GIF —100% client-side, no upload.">
+    <meta property="og:url" content="https://www.jslet.com/base64-image-encoder">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Base64 Image Encoder —Convert Images to Base64 Data URLs">
+    <meta name="twitter:description" content="Convert images to Base64 data URLs instantly. Drag-and-drop, copy, download. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Base64 Image Encoder",
+      "description": "Convert images to Base64 data URLs instantly in your browser. Drag-and-drop PNG, JPG, SVG, WebP, or GIF files and get a ready-to-use data: URL. Shows file size comparison, inflation ratio. Copy to clipboard or download as .txt. 100% client-side.",
+      "url": "https://www.jslet.com/base64-image-encoder",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+    <style>
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 48px 24px;
+            text-align: center;
+            background: var(--bg-input);
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+            margin-bottom: 20px;
+        }
+        .drop-zone:hover,
+        .drop-zone.drag-over {
+            border-color: var(--accent);
+            background: var(--accent-soft);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        .drop-zone-icon {
+            font-size: 2.5rem;
+            display: block;
+            margin-bottom: 12px;
+        }
+        .drop-zone-text {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-heading);
+            margin-bottom: 6px;
+        }
+        .drop-zone-hint {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+        .drop-zone input[type="file"] {
+            display: none;
+        }
+
+        .preview-section {
+            display: none;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .preview-section.visible {
+            display: block;
+        }
+        .preview-section h3 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+        .preview-image-wrap {
+            text-align: center;
+            margin-bottom: 20px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 16px;
+        }
+        .preview-image-wrap img {
+            max-width: 100%;
+            max-height: 320px;
+            object-fit: contain;
+            border-radius: var(--radius-sm);
+        }
+        .file-info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .file-info-tile {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 14px 16px;
+            text-align: center;
+        }
+        .file-info-tile .info-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--accent);
+            word-break: break-all;
+        }
+        .file-info-tile .info-label {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+        .file-info-tile .info-warn {
+            color: #e67e22;
+            font-weight: 700;
+        }
+
+        .output-section {
+            margin-bottom: 16px;
+        }
+        .output-section label {
+            display: block;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+        .output-textarea {
+            width: 100%;
+            min-height: 120px;
+            max-height: 300px;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 0.78rem;
+            color: var(--text-heading);
+            background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            resize: vertical;
+            word-break: break-all;
+            line-height: 1.5;
+        }
+        .output-textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-copy {
+            flex: 1;
+            min-width: 160px;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            padding: 11px 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        .btn-copy:hover {
+            background: var(--accent-hover);
+            box-shadow: 0 4px 14px rgba(234, 88, 12, 0.4);
+        }
+        .btn-download {
+            flex: 1;
+            min-width: 160px;
+            background: var(--bg-card);
+            color: var(--text-heading);
+            border: 1px solid var(--border);
+            padding: 11px 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .btn-download:hover {
+            border-color: var(--accent);
+            background: var(--accent-soft);
+        }
+        .btn-reset {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            padding: 11px 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: border-color 0.2s, color 0.2s;
+        }
+        .btn-reset:hover {
+            border-color: var(--error);
+            color: var(--error);
+        }
+
+        .usage-notes {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 28px 32px;
+            margin-bottom: 20px;
+        }
+        .usage-notes h3 {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text-heading);
+            margin-bottom: 14px;
+        }
+        .usage-notes h4 {
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: var(--text-heading);
+            margin-top: 16px;
+            margin-bottom: 6px;
+        }
+        .usage-notes ul {
+            list-style: disc;
+            padding-left: 20px;
+            margin-bottom: 12px;
+        }
+        .usage-notes li {
+            font-size: 0.88rem;
+            color: var(--text-body);
+            line-height: 1.7;
+            margin-bottom: 4px;
+        }
+        .usage-notes .do-label {
+            color: var(--success);
+            font-weight: 700;
+        }
+        .usage-notes .dont-label {
+            color: var(--error);
+            font-weight: 700;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #17171a;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            font-weight: 600;
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.3s;
+            pointer-events: none;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(-8px);
+        }
+    </style>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "When should I use Base64 images and when should I not?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Base64 is a good fit for small icons and logos (inline SVGs or tiny PNGs under 1 KB) to eliminate HTTP requests without meaningful bloat, for email signatures that block external images, and for self-contained HTML documents that must work offline. Avoid it for large photos or images used across many pages: Base64 adds about 33% size, removes browser caching, and bloats HTML parsing. This tool shows the exact inflation ratio for your image so the decision is data-driven."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much does Base64 inflate my image size?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Base64 encodes 3 binary bytes as 4 ASCII characters, so the encoded string is about 33% larger than the original file. The tool computes the exact numbers for you — original size, Base64 length, and the inflation percentage — before you paste anything into your HTML or CSS. You can also see the data URL prefix overhead, which matters when you embed many small images."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is my image uploaded to a server when I use this tool?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. The conversion runs entirely in your browser using the FileReader API — your image never leaves your machine. That makes it safe for internal screenshots, mockups, and proprietary assets that you would not want to upload to a third-party service. You drag and drop, get a ready-to-use data: URL, and copy or download the result locally."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+    <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+    <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">—</span> <a href="/encoding-tools">Encoding Tools</a> <span class="breadcrumb-sep">—</span> Base64 Image Encoder</nav>
+    <header>
+        <h1>Base64 <span>Image Encoder</span></h1>
+        <p>Convert images to Base64 data URLs instantly in your browser. No upload. No server. Just drag, drop, copy.</p>
+    </header>
+
+    <div style="max-width: 720px; margin: 0 0 28px;">
+        <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.6;">
+            Every image-to-Base64 service online asks you to upload your image to their server. That's a privacy risk —
+            especially for internal screenshots, mockups, or proprietary assets. This tool runs entirely in your browser
+            using the FileReader API. Your image never leaves your machine.
+        </p>
+    </div>
+
+    <!-- Drop Zone -->
+    <div class="drop-zone" id="dropZone">
+        <span class="drop-zone-icon">🖼</span>
+        <div class="drop-zone-text">Drag &amp; Drop an Image Here</div>
+        <div class="drop-zone-hint">or click to browse —PNG, JPG, GIF, SVG, WebP</div>
+        <input type="file" id="fileInput" aria-label="Select image file" accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp">
+    </div>
+
+    <!-- Preview & Results -->
+    <div class="preview-section" id="previewSection">
+        <h3>Image Preview</h3>
+        <div class="preview-image-wrap">
+            <img id="previewImage" src="" alt="Image preview">
+        </div>
+        <h3>File Info</h3>
+        <div class="file-info-grid" id="fileInfoGrid">
+            <div class="file-info-tile">
+                <div class="info-val" id="infoFilename">—</div>
+                <div class="info-label">Original File Name</div>
+            </div>
+            <div class="file-info-tile">
+                <div class="info-val" id="infoOriginalSize">—</div>
+                <div class="info-label">Original File Size</div>
+            </div>
+            <div class="file-info-tile">
+                <div class="info-val" id="infoBase64Length">—</div>
+                <div class="info-label">Base64 String Length</div>
+            </div>
+            <div class="file-info-tile">
+                <div class="info-val" id="infoInflation">—</div>
+                <div class="info-label">Size Increase (Inflation)</div>
+            </div>
+        </div>
+
+        <h3>Base64 Data URL Output</h3>
+        <div class="output-section">
+            <textarea class="output-textarea" id="outputTextarea" aria-label="Base64 output" readonly placeholder="Your Base64 data URL will appear here..."></textarea>
+        </div>
+        <div class="btn-row">
+            <button class="btn-copy" id="btnCopy">🟢📋 Copy Data URL</button>
+            <button class="btn-download" id="btnDownload">🟢💾 Download as .txt</button>
+            <button class="btn-reset" id="btnReset">✕?Clear</button>
+        </div>
+    </div>
+
+    <!-- Usage Notes -->
+    <div class="usage-notes">
+        <h3>🟢📖 Usage Notes: When (and When Not) to Use Base64 Images</h3>
+
+        <h4><span class="do-label">✕?DO use Base64 images for:</span></h4>
+        <ul>
+            <li><strong>Small icons and logos</strong> —Inline SVGs or tiny PNGs (&lt; 1 KB) as Base64 eliminate HTTP requests without meaningful payload bloat.</li>
+            <li><strong>Email signatures</strong> —Most email clients block external images by default. Base64-embedded images render immediately and avoid the "click to download images" prompt.</li>
+            <li><strong>CSS background images</strong> —For small, repeated decorative elements (gradients, patterns, icons), a data URL in your stylesheet means one less network round-trip.</li>
+            <li><strong>Self-contained HTML documents</strong> —When you need a single .html file that works offline (documentation, reports, dashboards), Base64 images keep everything in one file.</li>
+            <li><strong>Avoiding mixed-content warnings</strong> —On HTTPS pages, embedding images as Base64 avoids HTTP image references that trigger browser security warnings.</li>
+        </ul>
+
+        <h4><span class="dont-label">✕?Do NOT use Base64 images for:</span></h4>
+        <ul>
+            <li><strong>Large images or photographs</strong> —Base64 encoding increases file size by approximately 33%. A 1 MB photo becomes a 1.33 MB Base64 string. That bloats your HTML, slows parsing, and eliminates browser caching.</li>
+            <li><strong>Images used across multiple pages</strong> —A separate image file can be cached by the browser and reused. A Base64 string embedded in every page must be downloaded again on every page load.</li>
+            <li><strong>Images that change frequently</strong> —Updating a Base64-encoded image requires rebuilding the entire HTML or CSS file. External image files can be swapped independently.</li>
+            <li><strong>Anything where performance matters more than request count</strong> —The ~33% size increase, loss of browser caching, and increased HTML parse time often outweigh the benefit of saving one HTTP request —especially on HTTP/2 and HTTP/3 where multiplexing makes request count less relevant.</li>
+        </ul>
+    </div>
+
+    <!-- SEO section -->
+    <section class="seo-section">
+        <h2>About This Base64 Image Encoder</h2>
+        <p>
+            This free online tool converts your images into Base64-encoded data URLs that you can embed directly
+            into HTML, CSS, or JSON. The conversion happens entirely in your browser using the
+            <code>FileReader.readAsDataURL()</code> API —your image is never uploaded to any server.
+        </p>
+        <p>
+            A Base64 data URL looks like this: <code>data:image/png;base64,iVBORw0KGgo...</code> —it contains
+            the full image encoded as text, ready to use as an <code>&lt;img src="..."&gt;</code> attribute or
+            a CSS <code>background-image</code> value.
+        </p>
+        <h3>How It Works</h3>
+        <p>
+            Drag an image onto the drop zone (or click to browse), and the tool uses JavaScript's FileReader API
+            to read the binary file and convert it to a Base64 string. It prepends the correct MIME type prefix
+            (e.g., <code>data:image/png;base64,</code>) to form a complete data URL. You can then copy it to
+            your clipboard or download it as a .txt file.
+        </p>
+        <p>
+            The tool also shows how much the Base64 encoding inflates the original file size —typically around
+            33% —so you can decide whether the trade-off between extra bytes and saved HTTP requests is worth it
+            for your use case.
+        </p>
+        <h3>Related Tools</h3>
+        <p>
+            Try our <a href="/base64-encode-decode">Base64 Encode / Decode</a> tool for general text and binary
+            Base64 conversion. See also <a href="/url-encode-decode">URL Encode / Decode</a> if you need to
+            safely encode data for URL query strings.
+        </p>
+    </section>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function() {
+    'use strict';
+
+    var dropZone = document.getElementById('dropZone');
+    var fileInput = document.getElementById('fileInput');
+    var previewSection = document.getElementById('previewSection');
+    var previewImage = document.getElementById('previewImage');
+    var outputTextarea = document.getElementById('outputTextarea');
+    var btnCopy = document.getElementById('btnCopy');
+    var btnDownload = document.getElementById('btnDownload');
+    var btnReset = document.getElementById('btnReset');
+    var toast = document.getElementById('toast');
+
+    var infoFilename = document.getElementById('infoFilename');
+    var infoOriginalSize = document.getElementById('infoOriginalSize');
+    var infoBase64Length = document.getElementById('infoBase64Length');
+    var infoInflation = document.getElementById('infoInflation');
+
+    var currentDataUrl = '';
+    var currentFileName = '';
+    var currentOriginalSize = 0;
+    var toastTimer = null;
+
+    // ──── Toast helper ──────────────────────────────────────────────────────────────────────────────────────────────────
+    function showToast(message) {
+        if (toastTimer) {
+            clearTimeout(toastTimer);
+        }
+        toast.textContent = message;
+        toast.classList.add('show');
+        toastTimer = setTimeout(function() {
+            toast.classList.remove('show');
+            toastTimer = null;
+        }, 2500);
+    }
+
+    // ──── Format file size ──────────────────────────────────────────────────────────────────────────────────────────
+    function formatSize(bytes) {
+        if (bytes < 1024) {
+            return bytes + ' B';
+        }
+        if (bytes < 1024 * 1024) {
+            return (bytes / 1024).toFixed(2) + ' KB';
+        }
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    // ──── Process a File object ────────────────────────────────────────────────────────────────────────────────
+    function processFile(file) {
+        if (!file || !file.type.match(/^image\/(png|jpeg|gif|svg\+xml|webp)$/i)) {
+            showToast('Please select a valid image file (PNG, JPG, GIF, SVG, WebP).');
+            return;
+        }
+
+        currentFileName = file.name;
+        currentOriginalSize = file.size;
+
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            currentDataUrl = e.target.result;
+
+            // Update preview
+            previewImage.src = currentDataUrl;
+            previewImage.alt = 'Preview of ' + currentFileName;
+
+            // Update file info
+            infoFilename.textContent = currentFileName;
+            infoOriginalSize.textContent = formatSize(currentOriginalSize) + ' (' + currentOriginalSize.toLocaleString() + ' bytes)';
+
+            var base64Length = currentDataUrl.length;
+            infoBase64Length.textContent = base64Length.toLocaleString() + ' characters';
+
+            // Calculate inflation: (base64Length - originalBytes) / originalBytes * 100
+            // Note: Base64 string length is what's in the data URL, original size is the binary bytes
+            // The data URL includes the prefix like "data:image/png;base64," so we need to account for that
+            // But for the inflation ratio, we use the raw Base64 payload vs binary.
+            // A simpler approach: data URL length vs original bytes
+            var base64PayloadStart = currentDataUrl.indexOf('base64,');
+            var payloadLength = base64PayloadStart >= 0 ? currentDataUrl.length - (base64PayloadStart + 7) : base64Length;
+
+            var pctIncrease = ((payloadLength - currentOriginalSize) / currentOriginalSize * 100);
+            infoInflation.innerHTML = '<span class="info-warn">~' + pctIncrease.toFixed(1) + '%</span> larger';
+
+            // Update output textarea
+            outputTextarea.value = currentDataUrl;
+
+            // Show preview section
+            previewSection.classList.add('visible');
+        };
+
+        reader.onerror = function() {
+            showToast('Error reading file. Please try again.');
+        };
+
+        reader.readAsDataURL(file);
+    }
+
+    // ──── Reset ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    function resetAll() {
+        currentDataUrl = '';
+        currentFileName = '';
+        currentOriginalSize = 0;
+        previewImage.src = '';
+        previewImage.alt = 'Image preview';
+        outputTextarea.value = '';
+        infoFilename.textContent = '—';
+        infoOriginalSize.textContent = '—';
+        infoBase64Length.textContent = '—';
+        infoInflation.textContent = '—';
+        fileInput.value = '';
+        previewSection.classList.remove('visible');
+    }
+
+    // ──── Drag and Drop handlers ──────────────────────────────────────────────────────────────────────────────
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('drag-over');
+
+        var files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            processFile(files[0]);
+        }
+    });
+
+    // ──── Click to open file picker ────────────────────────────────────────────────────────────────────────
+    dropZone.addEventListener('click', function(e) {
+        if (e.target === fileInput) return;
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+
+    fileInput.addEventListener('change', function(e) {
+        var files = e.target.files;
+        if (files && files.length > 0) {
+            processFile(files[0]);
+        }
+    });
+
+    // ──── Copy Data URL ────────────────────────────────────────────────────────────────────────────────────────────────
+    btnCopy.addEventListener('click', function() {
+        if (!currentDataUrl) {
+            showToast('No image loaded. Please select an image first.');
+            return;
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(currentDataUrl).then(function() {
+                showToast('Data URL copied to clipboard!');
+            }).catch(function() {
+                // Fallback for older browsers or permission denied
+                fallbackCopy(currentDataUrl);
+            });
+        } else {
+            fallbackCopy(currentDataUrl);
+        }
+    });
+
+    function fallbackCopy(text) {
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.opacity = '0';
+        textarea.style.width = '1px';
+        textarea.style.height = '1px';
+        textarea.style.pointerEvents = 'none';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        try {
+            var successful = document.execCommand('copy');
+            if (successful) {
+                showToast('Data URL copied to clipboard!');
+            } else {
+                showToast('Copy failed. Please select and copy manually from the text area.');
+            }
+        } catch (err) {
+            showToast('Copy failed. Please select and copy manually from the text area.');
+        }
+        document.body.removeChild(textarea);
+    }
+
+    // ──── Download as .txt ──────────────────────────────────────────────────────────────────────────────────────────
+    btnDownload.addEventListener('click', function() {
+        if (!currentDataUrl) {
+            showToast('No image loaded. Please select an image first.');
+            return;
+        }
+        var blob = new Blob([currentDataUrl], { type: 'text/plain;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        // Derive download filename from original image name
+        var baseName = currentFileName.replace(/\.[^.]+$/, '');
+        a.download = baseName + '-base64.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('Downloaded as ' + a.download);
+    });
+
+    // ──── Reset button ──────────────────────────────────────────────────────────────────────────────────────────────────
+    btnReset.addEventListener('click', function() {
+        resetAll();
+        showToast('Cleared. Drop a new image to start over.');
+    });
+
+    // ──── Handle paste event on the page ────────────────────────────────────────────────────────────
+    document.addEventListener('paste', function(e) {
+        var items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            if (item.type.match(/^image\//)) {
+                e.preventDefault();
+                var file = item.getAsFile();
+                if (file) {
+                    processFile(file);
+                }
+                return;
+            }
+        }
+    });
+
+})();
+</script>
+
+<script src="nav.js"></script>
+</body>
+</html>
+

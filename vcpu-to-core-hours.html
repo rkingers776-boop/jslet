@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>vCPU Allocations to Compute Hours — jslet</title>
+    <meta name="description" content="vCPU → core-hour math. 16 vCPUs × 730 hours = 11,680 vCPU-hours/month. Reserved instance commitments are sold in vCPU-hours. Get the numbers right before signing a 3-year RIs.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="vCPU Allocations to Compute Hours — jslet">
+    <meta property="og:description" content="Convert deployed virtual CPU cores into scalable production running time metrics — vCPU-hours, vCPU-days, and vCPU-months for multi-cloud fleet sizing.">
+    <meta property="og:url" content="https://www.jslet.com/vcpu-to-core-hours">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="vCPU Allocations to Compute Hours — jslet">
+    <meta name="twitter:description" content="Convert deployed virtual CPU cores into scalable production running time metrics — vCPU-hours, vCPU-days, and vCPU-months.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/vcpu-to-core-hours">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "vCPU Allocations to Compute Hours",
+      "description": "Converts deployed virtual CPU cores into scalable production running time variables including vCPU-hours, vCPU-days, and vCPU-months for cloud fleet sizing.",
+      "url": "https://www.jslet.com/vcpu-to-core-hours",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I calculate vCPU-hours for a fleet?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "vCPUs × hours = vCPU-hours: 16 vCPUs × 730 hours = 11,680 vCPU-hours per month. Reserved Instance commitments are sold in vCPU-hours, so this number is the basis of RI planning. The calculator converts your fleet profile into aggregate compute units across providers."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why are vCPU-hours the universal cloud compute unit?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Compute commitments, quota reviews, and cost normalization all use vCPU-hours regardless of provider — it is the common denominator for comparing fleets across AWS, GCP, and Azure. The calculator produces the aggregate figure so RI sign-off and capacity reviews use the same number."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I size a fleet for capacity planning?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Multiply instance count × vCPUs × expected utilization hours, then apply the calculator's reference for typical workloads. Getting vCPU-hours right before signing a 3-year RI is what prevents both over-commitment waste and under-provisioning surprises."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>⏱️ vCPU <span>Allocations</span> to Compute Hours</h1>
+            <p>vCPU → core-hour math with reserved instance commitment implications. 16 vCPUs × 730 hours × 10 instances = 116,800 vCPU-hours/month. AWS RIs and Savings Plans are sold in vCPU-hour commitments. Mismatch your estimate by 20% and you're buying on-demand at full rate for the gap. Model your fleet before signing.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Fleet Profile</h3>
+                <p class="card-desc">Set vCPUs/instance, instance count, and runtime hours. The engine computes vCPU-hours, vCPU-days, vCPU-months. Compare against common RI commitment tiers to spot the gap.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="vcpus">Instance vCPUs</label>
+                        <input type="number" class="unit-input" id="vcpus" value="16" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="instances">Number of Instances</label>
+                        <input type="number" class="unit-input" id="instances" value="10" step="any" min="1">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="hours">Runtime Hours</label>
+                        <input type="number" class="unit-input" id="hours" value="24" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="unit">Compute Unit</label>
+                        <select class="unit-input" id="unit" disabled style="opacity:0.6;">
+                            <option value="vcpu-hours" selected>vCPU-Hours</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Calculation</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Aggregate Compute Units</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-vcpu-hours">—</div><div class="metric-label">vCPU-Hours</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-vcpu-days">—</div><div class="metric-label">vCPU-Days</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-vcpu-months">—</div><div class="metric-label">vCPU-Months</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>vCPU-Hours: The Universal Cloud Compute Unit</h2>
+            <p>Every major cloud provider — AWS, Google Cloud, and Microsoft Azure — prices compute capacity using <strong>vCPU-hours</strong> as the fundamental billing unit. A <strong>vCPU</strong> (virtual CPU) represents a single hardware hyperthread exposed to a virtual machine instance. When you run an instance with 16 vCPUs for one hour, you consume 16 vCPU-hours of compute. This metric normalizes billing across instance families, regions, and operating systems, making it the lingua franca of cloud cost estimation.</p>
+
+            <h3>How This Calculator Works</h3>
+            <p>The calculator uses a straightforward multiplicative model grounded in how cloud providers meter compute usage:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Formula</th><th>Definition</th><th>Example (16 vCPUs × 10 instances × 24 hr)</th></tr></thead>
+                <tbody>
+                    <tr><td><code>vCPU-Hours = vCPUs × Instances × Hours</code></td><td>Total virtual CPU runtime across the fleet</td><td>16 × 10 × 24 = 3,840 vCPU-Hours</td></tr>
+                    <tr><td><code>vCPU-Days = vCPU-Hours ÷ 24</code></td><td>Equivalent full-day compute allocation</td><td>3,840 ÷ 24 = 160 vCPU-Days</td></tr>
+                    <tr><td><code>vCPU-Months = vCPU-Hours ÷ 720</code></td><td>Equivalent 30-day month (720-hour) compute allocation</td><td>3,840 ÷ 720 = 5.33 vCPU-Months</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>Fleet Sizing Across Cloud Providers</h3>
+            <p>Each cloud provider exposes vCPU counts differently across its instance families. AWS EC2 instances range from 1 vCPU (t4g.nano) to 448 vCPUs (u-24tb1.112xlarge). GCP maps vCPUs to its committed use discount tiers, where sustained-use discounts automatically apply after a portion of the month. Azure expresses vCPU count in its <code>vmSize</code> property and meters per-minute granularity. By computing total vCPU-hours, you can normalize cost comparisons across providers, regions, and reservation models — a critical step when negotiating enterprise agreements or planning multi-cloud migrations.</p>
+
+            <h3>Why vCPU-Hours Matter for Capacity Planning</h3>
+            <p>vCPU-hours are not just a billing abstraction — they are a capacity planning tool. When you know your workload requires 50,000 vCPU-hours per month, you can reverse-engineer instance combinations: one 64-vCPU instance running 24/7 provides 46,080 vCPU-hours/month (64×24×30), leaving a gap of ~4,000 vCPU-hours that might be filled by spot instances or autoscaling bursts. Without this conversion, teams tend to over-provision by rounding up to the next instance size, wasting 20–40% of their compute budget.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var vc = v('vcpus'), ins = v('instances'), h = v('hours');
+        var ch = vc * ins * h;
+
+        document.getElementById('val-vcpu-hours').textContent = ch.toLocaleString();
+        document.getElementById('val-vcpu-days').textContent = (ch / 24).toLocaleString(undefined, { maximumFractionDigits: 2 });
+        document.getElementById('val-vcpu-months').textContent = (ch / 720).toFixed(2);
+
+        document.getElementById('results-params').innerText =
+            vc + ' vCPUs/instance × ' + ins + ' instances × ' + h + ' hours = ' + ch.toLocaleString() + ' vCPU-hours';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', compute);
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

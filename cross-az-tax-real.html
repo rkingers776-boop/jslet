@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The AZ Tax: Why Your East-West Traffic Bill Is $5K/Month and Nobody Noticed (2026) — jslet</title>
+    <meta name="description" content="Cross-AZ traffic costs $0.01/GB in each direction — $0.02/GB round trip — and AWS never shows it as a line item on the bill. A 10K rps three-tier app with 10 KB moving in each direction burns ~$5,013/month in east-west traffic alone. We mapped every free/paid boundary, priced four real architectures, and quantified what AZ-affinity routing saves. Audit checklist included.">
+    <meta property="og:title" content="The AZ Tax: Why Your East-West Traffic Bill Is $5K/Month and Nobody Noticed (2026)">
+    <meta property="og:description" content="Cross-AZ data transfer: $0.01/GB each way, never itemized on the bill, 2/3 of internal traffic in a 3-AZ setup pays it. Four architectures priced: $5,013/mo (3-tier), $6,266/mo (microservices), $501/mo (API), $300/mo (replicas).">
+    <meta property="og:url" content="https://www.jslet.com/cross-az-tax-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-08-28T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-08-28T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The AZ Tax: Why Your East-West Traffic Bill Is $5K/Month and Nobody Noticed (2026)">
+    <meta name="twitter:description" content="Cross-AZ traffic: $0.01/GB each direction, hidden in EC2-Other on the bill. 3-tier at 10K rps pays $5,013/mo. AZ-affinity routing can cut 95% off the east-west line. Full boundary map + audit steps.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/cross-az-tax-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The AZ Tax: Why Your East-West Traffic Bill Is $5K/Month and Nobody Noticed (2026)",
+      "description": "AWS charges $0.01/GB for data transfer between Availability Zones in the same region, in both directions — but the charge never appears as a named line item on the bill. It is folded into EC2-Other and ELB usage types, which is why most teams discover it by accident. A 10K rps three-tier application with 10 KB moving in each direction generates roughly 250 TB/month of cross-AZ traffic and pays about $5,013/month for the privilege of being highly available. In a simplified uniform-destination model of a 3-AZ deployment, roughly two-thirds of internal traffic crosses an AZ boundary (the real share depends on instance placement, target selection, and connection reuse). This briefing maps every free and paid boundary (same-AZ private is free, same-AZ public IP is not, RDS Multi-AZ sync replication is free, cross-region read replicas are not), prices four real workload profiles, and shows when AZ-affinity routing is worth the engineering effort — and when it is not.",
+      "url": "https://www.jslet.com/cross-az-tax-real",
+      "datePublished": "2026-08-28T00:00:00+00:00",
+      "dateModified": "2026-08-28T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why does AWS charge for traffic that never leaves my VPC?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Availability Zones are physically separate data centers connected by dedicated low-latency links, and AWS prices the bandwidth between them at $0.01/GB in each direction ($0.02/GB round trip). The charge applies the moment traffic crosses an AZ boundary, regardless of IP type — private IP, public IP, and Elastic IP are all billed the same once the packet leaves the source AZ. Traffic within a single AZ over private IPs is free. The practical consequence is that multi-AZ architecture, which AWS recommends for availability, carries a transfer cost that is invisible in the headline egress rates most teams budget against."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is RDS Multi-AZ replication free?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes — synchronous replication between a Multi-AZ RDS primary and standby in the same region is free. AWS does not bill for that replication stream. The same is NOT true for cross-region read replicas: replicating to a read replica in another region bills at standard inter-region data transfer rates (roughly $0.02/GB between US regions, more for intercontinental pairs). If your standby database is in a different AZ but the same region, the replication traffic is free; if it is in a different region, you pay per GB. A 500 GB database replicated daily to a cross-region standby at $0.02/GB generates roughly $300/month."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does disabling cross-zone load balancing actually save money?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, when the workload is stateless and capacity exists in every AZ. The mechanics differ by balancer: ALB enables cross-zone balancing by default (turning it off is a console toggle), while NLB disables it by default — enabling it is what triggers EC2 data-transfer charges for the cross-AZ fan-out. Either way, every byte fanned out to targets in other AZs is billed at $0.01/GB in each direction. Disabling cross-zone balancing keeps client traffic inside the originating AZ and removes that leg of the charge entirely. The trade-off is real: with cross-zone disabled, an AZ that loses all its targets stops serving that traffic until the load balancer fails over, so you need per-AZ autoscaling and capacity headroom. For a chatty microservice mesh where a single request fans out across three AZs, the savings are typically the largest single item in the east-west cost line."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I find cross-AZ charges in my AWS bill?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "You cannot read them off the bill directly — cross-AZ traffic is not itemized. AWS folds it into usage types like EC2-Other and ELB. The reliable audit path is VPC Flow Logs: enable them on every VPC (to S3 or CloudWatch), then aggregate bytes by (source AZ, destination AZ) pair and sum traffic where the AZs differ. Cost Explorer's Data Transfer report gives you total data transfer spend by service, which is a useful upper bound but cannot separate intra-AZ from cross-AZ. In practice: flow logs first to see the volume, then model the resulting GB/month in a cross-AZ cost calculator to get the dollar figure."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does same-AZ traffic over a public IP cost money?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because AWS bills by routing path, not by distance. Two instances in the same AZ talking over private IPs are free. The same two instances talking over a public or Elastic IP get charged $0.01/GB in each direction, even though the packets may traverse identical physical cabling. The trigger is which endpoint address the client used. This is a common misconfiguration: applications that reference RDS, ElastiCache, or peer EC2 instances by public endpoint out of habit, or because security groups were built around public addressing, silently pay a transfer tax that a DNS/config change to private hostnames eliminates for free."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 135 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+        <div class="container" id="main-content">
+        <header>
+            <h1>The <span>AZ Tax</span></h1>
+            <p>Why Your East-West Traffic Bill Is $5K/Month and Nobody Noticed</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-08-28 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 12 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <section class="seo-section">
+            <h2>Executive Summary</h2>
+            <p>Five thousand and thirteen dollars appeared on the March AWS bill and nobody could explain it. Instances were unchanged. Egress to the internet had barely moved. Cost Explorer showed no spike under "Data Transfer" that matched the number. The finance team asked for a breakdown, the infra team dug for a week, and the answer was hiding in plain sight: a 10,000 requests-per-second three-tier app with 10 KB moving in each direction (a 10 KB request and a 10 KB response), ALB enabled across three AZs, generating roughly 250 TB of <em>internal</em> traffic every month, at $0.01 per GB per direction.</p>
+
+            <p>Cross-AZ transfer is the only AWS charge that punishes you for following best practice. Multi-AZ deployment is the documented, default-recommended architecture for availability. And that architecture, at production scale, quietly bills you $0.02 for every GB that round-trips between zones. It never appears on the invoice as "cross-AZ." It is folded into <strong>EC2-Other</strong> and ELB usage types, which is why teams discover it months late, usually by accident, usually after the cost spike gets questioned.</p>
+
+            <p>This briefing does three things. It maps the exact boundary between free and paid east-west traffic — including the traps (same-AZ traffic over a public IP is <em>not</em> free). It prices four real architectures with 2026 rates, from a 3-tier app at <strong>$5,013/month</strong> to a chatty microservice mesh at <strong>$6,266/month</strong>. And it gives you the decision logic for AZ-affinity routing: where the fix is nearly free, where it is a genuine architectural trade, and where you should stop optimizing and just pay the tax. If you run multi-AZ anything on AWS, run the numbers for your own workload in the <a href="/aws-cross-az-data-transfer-cost">Cross-AZ Data Transfer Cost Calculator</a> before you read further — the result is usually uncomfortable.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Why Cross-AZ Charges Don't Show Up As a Line Item</h2>
+            <p>Start with the billing reality, because it explains everything else. AWS publishes the cross-AZ rate in the VPC pricing page and the EC2 data transfer docs. It is $0.01/GB leaving the source AZ and $0.01/GB entering the destination AZ ($0.02/GB round trip). But nowhere on your invoice does a line item say "cross-AZ." The bytes are attributed to the service that moved them: <strong>EC2-Other</strong> for instance-to-instance traffic, ELB usage types for load balancer cross-zone fan-out, and so on. AWS CUR does expose a regional data-transfer metric (<em>Region-DataTransfer-Regional-Bytes</em>) and Cost Explorer can group by Availability Zone, so the spend is measurable — but billing data alone will not tell you which application flows caused it. That requires network-level analysis.</p>
+
+            <p>The practical split is: <strong>billing data tells you how much you paid, VPC Flow Logs tell you which flows caused it.</strong> Enable Flow Logs (the logs carry an AZ identifier for each ENI), aggregate bytes by source-AZ / destination-AZ pair, and sum the flows where the zones differ. Teams that have not done this — which is most teams — simply do not know the number. You cannot optimize a cost you cannot see, and the reason cross-AZ spend is so consistently overlooked is that the accounting makes it invisible.</p>
+
+            <p>Compounding the invisibility is the unit economics. One dollar per 100 GB reads as harmless. A microservice that calls its neighbor in another AZ a few thousand times a second generates real money, but no single request feels expensive. The tax is diffuse: a cent here, a cent there, across every service boundary in every zone pair. Until the month-end total lands like the case above. It is the same psychological pattern as egress: nobody budgets for it, everybody pays it.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The $0.01 + $0.01 Rule: The Free/Paid Boundary Map</h2>
+            <p>The pricing rule is simple. The <em>implementation</em> of it has four traps. Here is the complete boundary map for AWS data transfer inside a region, based on 2026 published rates:</p>
+
+            <figure style="margin:20px 0; text-align:center;">
+                <svg viewBox="0 0 680 300" role="img" aria-label="Cross-AZ cost boundary diagram: traffic between AZ-A and AZ-B within one region is billed $0.01/GB in each direction; same-AZ private traffic and RDS Multi-AZ sync replication are free; S3 to EC2 in the same region is free." style="width:100%; max-width:640px; height:auto; background:#fff; border:1px solid #e0e0e0; border-radius:12px;">
+                    <rect x="6" y="6" width="668" height="288" rx="14" fill="#f8f8f8" stroke="#d0d0d0" stroke-width="1.5"/>
+                    <text x="340" y="30" text-anchor="middle" font-size="13" font-weight="bold" fill="#333" font-family="Arial, sans-serif">Region (e.g. us-east-1)</text>
+                    <!-- AZ-A -->
+                    <rect x="30" y="48" width="280" height="180" rx="10" fill="#fff" stroke="#E60023" stroke-width="1.8"/>
+                    <text x="170" y="72" text-anchor="middle" font-size="12" font-weight="bold" fill="#E60023" font-family="Arial, sans-serif">AZ-A</text>
+                    <rect x="55" y="90" width="90" height="34" rx="6" fill="#fdecee" stroke="#E60023" stroke-width="1.2"/>
+                    <text x="100" y="112" text-anchor="middle" font-size="10" fill="#333" font-family="Arial, sans-serif">ALB node</text>
+                    <rect x="55" y="140" width="90" height="34" rx="6" fill="#fdecee" stroke="#E60023" stroke-width="1.2"/>
+                    <text x="100" y="162" text-anchor="middle" font-size="10" fill="#333" font-family="Arial, sans-serif">EC2 target</text>
+                    <rect x="185" y="90" width="100" height="34" rx="6" fill="#fdecee" stroke="#E60023" stroke-width="1.2"/>
+                    <text x="235" y="112" text-anchor="middle" font-size="10" fill="#333" font-family="Arial, sans-serif">RDS standby</text>
+                    <rect x="185" y="140" width="100" height="34" rx="6" fill="#fdecee" stroke="#E60023" stroke-width="1.2"/>
+                    <text x="235" y="162" text-anchor="middle" font-size="10" fill="#333" font-family="Arial, sans-serif">EC2 target</text>
+                    <!-- AZ-B -->
+                    <rect x="370" y="48" width="280" height="180" rx="10" fill="#fff" stroke="#E60023" stroke-width="1.8"/>
+                    <text x="510" y="72" text-anchor="middle" font-size="12" font-weight="bold" fill="#E60023" font-family="Arial, sans-serif">AZ-B</text>
+                    <rect x="395" y="90" width="90" height="34" rx="6" fill="#fdecee" stroke="#E60023" stroke-width="1.2"/>
+                    <text x="440" y="112" text-anchor="middle" font-size="10" fill="#333" font-family="Arial, sans-serif">ALB node</text>
+                    <rect x="395" y="140" width="90" height="34" rx="6" fill="#fdecee" stroke="#E60023" stroke-width="1.2"/>
+                    <text x="440" y="162" text-anchor="middle" font-size="10" fill="#333" font-family="Arial, sans-serif">EC2 target</text>
+                    <rect x="525" y="90" width="100" height="34" rx="6" fill="#fdecee" stroke="#E60023" stroke-width="1.2"/>
+                    <text x="575" y="112" text-anchor="middle" font-size="10" fill="#333" font-family="Arial, sans-serif">RDS primary</text>
+                    <rect x="525" y="140" width="100" height="34" rx="6" fill="#fdecee" stroke="#E60023" stroke-width="1.2"/>
+                    <text x="575" y="162" text-anchor="middle" font-size="10" fill="#333" font-family="Arial, sans-serif">EC2 target</text>
+                    <!-- Cross-AZ arrows -->
+                    <line x1="310" y1="107" x2="370" y2="107" stroke="#E60023" stroke-width="2" marker-end="url(#arrR)"/>
+                    <line x1="370" y1="130" x2="310" y2="130" stroke="#E60023" stroke-width="2" marker-end="url(#arrL)"/>
+                    <defs>
+                        <marker id="arrR" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#E60023"/></marker>
+                        <marker id="arrL" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#E60023"/></marker>
+                    </defs>
+                    <text x="340" y="102" text-anchor="middle" font-size="11" font-weight="bold" fill="#E60023" font-family="Arial, sans-serif">$0.01/GB</text>
+                    <text x="340" y="145" text-anchor="middle" font-size="11" font-weight="bold" fill="#E60023" font-family="Arial, sans-serif">$0.01/GB</text>
+                    <!-- Legend -->
+                    <rect x="30" y="240" width="12" height="12" rx="2" fill="#059669"/>
+                    <text x="50" y="251" font-size="11" fill="#333" font-family="Arial, sans-serif">Free: same-AZ private IP · RDS Multi-AZ sync · S3→EC2 same region</text>
+                    <rect x="30" y="262" width="12" height="12" rx="2" fill="#E60023"/>
+                    <text x="50" y="273" font-size="11" fill="#333" font-family="Arial, sans-serif">Paid: cross-AZ (any IP) · same-AZ public IP · cross-region replication</text>
+                </svg>
+                <figcaption style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">Cross-AZ cost boundary: every round-trip between zones bills $0.01/GB each way. RDS Multi-AZ sync replication (primary↔standby) stays free.</figcaption>
+            </figure>
+
+            <table style="width:100%; border-collapse:collapse; font-size:0.88rem; margin:16px 0;">
+                <thead>
+                    <tr style="background:var(--bg-input);">
+                        <th style="padding:8px 10px; text-align:left; border-bottom:2px solid var(--border);">Traffic path</th>
+                        <th style="padding:8px 10px; text-align:left; border-bottom:2px solid var(--border);">Billed?</th>
+                        <th style="padding:8px 10px; text-align:left; border-bottom:2px solid var(--border);">Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Same AZ, private IP</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);"><strong>Free</strong></td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">$0</td></tr>
+                    <tr><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Same AZ, public / Elastic IP</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Paid (the trap)</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">$0.01/GB each direction</td></tr>
+                    <tr><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Cross-AZ, any IP type</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Paid</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">$0.01/GB each direction ($0.02 round trip)</td></tr>
+                    <tr><td style="padding:6px 10px; border-bottom:1px solid var(--border);">RDS Multi-AZ sync replication (same region)</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);"><strong>Free</strong></td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">$0</td></tr>
+                    <tr><td style="padding:6px 10px; border-bottom:1px solid var(--border);">S3 to EC2, same region</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);"><strong>Free</strong></td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">$0</td></tr>
+                    <tr><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Cross-region replication</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Paid</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">~$0.02/GB (US-US); $0.02–$0.09/GB intercontinental</td></tr>
+                    <tr><td style="padding:6px 10px;">VPC peering, cross-AZ</td><td style="padding:6px 10px;">Paid, no exemption</td><td style="padding:6px 10px;">$0.01/GB each direction</td></tr>
+                </tbody>
+            </table>
+
+            <p>Three traps in that table cause most of the surprise charges. First, <strong>same-AZ traffic over a public or Elastic IP is billed</strong> even though the instances sit in the same zone. AWS charges by routing path, not by distance, and teams that reference RDS or ElastiCache by public endpoint out of habit pay a tax a private-DNS change eliminates for free. Second, <strong>load balancer cross-zone balancing</strong> fans requests out to targets in other AZs, billing every byte of that fan-out. Third, <strong>Kubernetes routing does not respect AZ boundaries</strong>: in EKS, a pod in AZ-A can call a pod in AZ-C with no awareness that it is crossing a billing boundary; the traffic shows up in flow logs, never in the application.</p>
+
+            <p>Step back and the pattern is clear: AWS does not price east-west traffic by distance, and it does not price it by generosity. It prices it by <em>product design</em> — the free boundaries (same-AZ private, RDS sync replication, S3 to EC2) are exactly the ones AWS wants you to use, and the paid boundaries (cross-AZ, public IP, cross-region) are the ones it wants you to architect around. Treat the pricing table as a design document, not a tariff list, and most of the surprise charges stop being surprising.</p>
+
+            <p>The one genuinely free exception worth celebrating: RDS Multi-AZ synchronous replication within a region is not billed. AWS does not charge for the primary-to-standby replication stream in the same region. The moment you add a <em>cross-region</em> read replica, that stream is billed at inter-region rates. Same region, same service — one free, one not. The boundary map matters at the service level, not just the network level.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Four Architectures, Four Real Bills</h2>
+            <p>Rates are abstract; bills are not. We priced four architectures that cover the realistic range of production east-west traffic, using $0.01/GB per direction, 730 hours per month, and binary GB (1024³). These are the same scenarios built into the <a href="/aws-cross-az-data-transfer-cost">Cross-AZ Data Transfer Cost Calculator</a>, so you can reproduce every number and swap in your own traffic.</p>
+
+            <h3>1. The 3-Tier App: 10K rps × 10 KB → $5,013/month</h3>
+            <p>A three-tier application (ALB enabled across three AZs, with EC2 targets distributed across those zones) doing 10,000 requests per second with 10 KB moving in each direction (a 10 KB request and a 10 KB response). That is 100 MB/s of cross-AZ traffic, or roughly 250 TB per month. At $0.01/GB each way: <strong>$5,013/month</strong>. Independent estimates using the same workload land at $5,260 — the small gap is the hour-count convention (730 vs 744 hours/month), not a rate disagreement. This is a mainstream production profile, not an edge case.</p>
+
+            <h3>2. Chatty Microservices: 5K rps × 25 KB → $6,266/month</h3>
+            <p>Microservice meshes are the worst case, because one user request fans out into several internal hops, and each hop that crosses an AZ boundary bills. At 5,000 requests per second with 25 KB per hop in each direction (the chatty pattern: many small JSON exchanges, each hop carrying 25 KB out and 25 KB back), the mesh generates ~313 TB/month of east-west traffic: <strong>$6,266/month</strong>. And this is before the NAT Gateway stacking problem below; private-subnet microservices often add another layer on top of this number.</p>
+
+            <h3>3. Public API: 1K rps × 10 KB → $501/month</h3>
+            <p>A single regional API at 1,000 rps with 10 KB in each direction (a modest, well-utilized service) generates ~25 TB/month of cross-AZ traffic: <strong>$501/month</strong>. Small enough to ignore on its own, large enough to fund a senior engineer. This is the profile where most teams first notice the tax: it is not catastrophic, it is just annoying, and the fix (AZ-affinity) is cheap because the workload is stateless.</p>
+
+            <h3>4. Database Replicas: 500 GB/day → $300/month</h3>
+            <p>Two different database patterns, two different bills. <strong>Cross-region read replicas:</strong> 500 GB/day of replication traffic, one way, at ~$0.02/GB (US-US inter-region rate) = 15 TB/month = <strong>$300/month</strong>. <strong>EC2-to-RDS across AZs in the same region:</strong> the charge is a standard EC2 regional transfer — $0.01/GB in and $0.01/GB out on the EC2 side, and RDS does not add a second regional transfer on top. Model it as 500 GB/day each direction at $0.01/GB = <strong>$300/month</strong> as well, but the unit economics differ and it can be removed entirely by co-locating the app and database in the same AZ. Remember the boundary map: Multi-AZ <em>synchronous</em> replication within the region stays free; cross-region read replicas are not; and application queries that hit a replica in another AZ are not either. For analytics workloads that read replicas heavily, the query path can dominate the replication path.</p>
+
+            <p>Taken together as illustrative workload profiles, these figures show how a mid-size AWS estate can reach five figures per month in regional data-transfer charges — none of it labeled, all of it folded into EC2-Other and ELB lines. If your team has never audited cross-AZ traffic, the assumption that "internal traffic is free" may be costing you a line item you have never seen.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Stacking Problem: Cross-AZ Is the Base Layer, Not the Total</h2>
+            <p>The four bills above assume pure private-IP cross-AZ traffic. Real architectures rarely stop there, because every other AWS transfer charge stacks on top of the same bytes. The most common compound:</p>
+
+            <table style="width:100%; border-collapse:collapse; font-size:0.88rem; margin:16px 0;">
+                <thead>
+                    <tr style="background:var(--bg-input);">
+                        <th style="padding:8px 10px; text-align:left; border-bottom:2px solid var(--border);">Stack</th>
+                        <th style="padding:8px 10px; text-align:left; border-bottom:2px solid var(--border);">Effective rate</th>
+                        <th style="padding:8px 10px; text-align:left; border-bottom:2px solid var(--border);">Why</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Cross-AZ only (private IP)</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">$0.01/GB each way</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Base rate</td></tr>
+                    <tr><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Cross-AZ + NAT Gateway</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">$0.055/GB one way</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">$0.01 cross-AZ + $0.045 NAT processing</td></tr>
+                    <tr><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Cross-AZ + NLB cross-zone</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">$0.02/GB round trip + LB processing</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Cross-zone fan-out on top of the base</td></tr>
+                    <tr><td style="padding:6px 10px;">Cross-AZ + VPC peering</td><td style="padding:6px 10px;">$0.01/GB each way</td><td style="padding:6px 10px;">Peering does not exempt cross-AZ traffic</td></tr>
+                </tbody>
+            </table>
+
+            <p>The NAT Gateway case deserves emphasis because it is the most avoidable. A Lambda or container in a private subnet calling out through a NAT gateway in a <em>different</em> AZ pays $0.01/GB cross-AZ plus $0.045/GB NAT processing — $0.055/GB in one direction alone. Documented incidents show teams racking up $1,000/month of charges on traffic that never left AWS: internal S3 calls routed through NAT because no VPC endpoint existed. The fix (a free Gateway Endpoint for S3/DynamoDB, or one NAT per AZ so traffic never crosses) is a routing-table change, not a redesign.</p>
+
+            <p>The pattern to internalize: <strong>cross-AZ is the base layer of the east-west tax, and every routing decision on top of it multiplies the bill.</strong> An architecture that looks free on paper (private subnets, NAT egress, multi-AZ for resilience) is frequently the most expensive version of itself.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The AZ-Affinity Fix: Where It's Nearly Free, and Where It's a Real Trade</h2>
+            <p>AZ-affinity means routing consumers to dependencies that live in the same Availability Zone, so traffic never crosses the billing boundary. The idea is simple; the engineering cost varies wildly by workload. The honest decision logic, in order of increasing effort:</p>
+
+            <p><strong>Level 1: Configuration changes, near-zero effort.</strong> For ALB, cross-zone load balancing is enabled by default — disabling it is a console toggle, and the savings are immediate for stateless workloads with capacity in every AZ. For NLB, cross-zone behavior differs (it is disabled by default, and enabling it triggers EC2 data-transfer charges for the cross-AZ fan-out), so the cost decision runs in the opposite direction: leave it off unless you need the failover behavior, and price the transfer before turning it on. Deploy one NAT gateway per AZ so private-subnet traffic never crosses zones to reach egress. Switch same-AZ references from public/Elastic IPs to private hostnames. These are routing-table and console changes that eliminate the tax leg entirely without touching application code. For most web tiers, this is the entire fix.</p>
+
+            <p><strong>Level 2: Service discovery and caching, real but bounded effort.</strong> For microservice meshes, make service discovery AZ-aware: prefer a healthy instance in the same AZ before failing over to another zone. Add an AZ-local cache layer for read-heavy fan-out. The payoff can be dramatic: according to the cited case study, a 43 TB/day read-heavy workload cut inter-AZ transfer by 95% (~$12,000/month) with AZ-affinity caching, and latency dropped 49% as a side effect because the data was closer. Caching is the rare fix that reduces both the bill and the p99.</p>
+
+            <p><strong>Level 3: When you should stop.</strong> AZ-affinity has genuine limits. Stateful workloads with strong consistency requirements (primary database in one AZ, failover in another) cannot be affinity-routed; the replica must stay cross-AZ, and the synchronous replication is free anyway, so there is nothing to save. If a single AZ cannot hold your peak capacity, affinity routing means idle capacity in other zones while one zone runs hot, and the savings may not justify the utilization loss. And per-AZ autoscaling adds operational surface: you are now managing N autoscaling groups instead of one. The rule of thumb: <strong>if the workload is stateless or read-mostly, affinity is nearly free; if it is stateful or hot-sharded, the tax is the price of resilience — budget for it rather than chasing marginal savings that cost more in engineering time than they return.</strong></p>
+
+            <p>Before choosing a level, quantify the prize. Model your request volume and payload sizes in the <a href="/aws-cross-az-data-transfer-cost">Cross-AZ calculator</a> and compare against the engineering cost of the change. The tool also pairs with the <a href="/alb-nlb-cost-calculator">ALB vs NLB cost engine</a>, since cross-zone balancing decisions and load balancer choice interact directly with the east-west line, and with <a href="/terabytes-egress-to-aws-cost">egress cost modeling</a> if you need the full data-transfer picture.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>How To Audit Cross-AZ Costs This Quarter</h2>
+            <p>None of this requires a FinOps platform. A focused afternoon covers it:</p>
+
+            <p><strong>1. Enable VPC Flow Logs if you haven't.</strong> They are the only data source that can see AZ boundaries. Send them to S3 (cheap) or CloudWatch, then aggregate bytes by source-AZ and destination-AZ pair. Any significant volume where the zones differ is your cross-AZ tax. If flow logs are already on, this query takes minutes.</p>
+
+            <p><strong>2. Check the bill for the hidden lines.</strong> In Cost Explorer, filter Data Transfer by usage type and look for <strong>EC2-Other</strong> and ELB data-processing lines that are not explained by egress. These are the buckets where cross-AZ spend hides. The gap between your known egress volume and the EC2-Other transfer total is your east-west tax.</p>
+
+            <p><strong>3. Hunt same-AZ public-IP references.</strong> Grep your DNS config and service discovery for public hostnames or Elastic IPs used to reach RDS, ElastiCache, or peer EC2 instances. Every one of those is a free boundary you are paying to cross. Private-DNS resolution or VPC endpoints remove the charge.</p>
+
+            <p><strong>4. Review load balancer cross-zone settings.</strong> If cross-zone balancing is enabled on stateless workloads, test disabling it in a staging account and measure both the transfer delta and the failure behavior. Per-AZ ASGs are the prerequisite; make sure they exist first.</p>
+
+            <p><strong>5. Count your NAT gateways.</strong> One NAT per region with instances in multiple AZs means cross-AZ traffic to reach egress, paid twice. One NAT per AZ removes the cross-AZ leg. The hourly cost of the extra gateways is usually far below the transfer it eliminates.</p>
+
+            <p>Run the numbers before and after in the <a href="/aws-cross-az-data-transfer-cost">Cross-AZ Data Transfer Cost Calculator</a> so the audit produces a dollar figure your team can act on; and if you are already deep in load balancer or NAT costs, the <a href="/alb-nlb-cost-real">LCU Trap</a> and <a href="/nat-gateway-cost-real">NAT Gateway Trap</a> briefings cover the adjacent line items.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why does AWS charge for traffic that never leaves my VPC?</h3>
+                <p>Because Availability Zones are physically separate data centers connected by dedicated links, and AWS prices bandwidth across those links at $0.01/GB per direction. The charge applies the moment traffic crosses an AZ boundary, for any IP type. Within a single AZ, private-IP traffic is free. Multi-AZ architecture (the recommended pattern for availability) therefore carries a transfer cost that never shows up in headline egress rates.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Is RDS Multi-AZ replication free?</h3>
+                <p>Yes for the same region. Synchronous replication between a Multi-AZ primary and standby is not billed. Cross-region read replicas are billed at inter-region rates (~$0.02/GB between US regions, more intercontinental). A 500 GB database replicated daily cross-region costs roughly $300/month in transfer alone.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Does disabling cross-zone load balancing actually save money?</h3>
+                <p>Yes for stateless workloads with per-AZ capacity. The mechanics differ by balancer: ALB enables cross-zone balancing by default, so turning it off is a console toggle; NLB disables it by default, and enabling it is what triggers EC2 data-transfer charges for the cross-AZ fan-out. Either way, cross-zone balancing bills every byte fanned out to targets in other AZs at $0.01/GB per direction. Disabling it keeps client traffic inside the originating AZ. The trade: if an AZ loses all its targets, traffic to that AZ stops until failover, so per-AZ autoscaling and headroom are required. For chatty microservices this is usually the single biggest east-west saving available.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How do I find cross-AZ charges in my AWS bill?</h3>
+                <p>There is no clean human-readable "Cross-AZ" line item — the charges fold into EC2-Other and ELB usage types. AWS CUR exposes regional data-transfer metrics and Cost Explorer can group by Availability Zone, but to attribute the spend to specific application flows you need VPC Flow Logs: aggregate bytes by source-AZ / destination-AZ pair and sum the cross-zone flows. Flow logs first for causality, billing for the total, then a cost calculator for dollars.</p>
+            </div>
+
+            <div class="faq-item">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why does same-AZ traffic over a public IP cost money?</h3>
+                <p>Because AWS bills by routing path, not distance. Two instances in the same AZ over private IPs are free; over public or Elastic IPs they are billed $0.01/GB each direction even though the physical path may be identical. Applications that reference RDS, ElastiCache, or peers by public endpoint, often because security groups were built that way, pay a tax that switching to private hostnames removes for free.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p>Rates are AWS published pricing as of August 2026, with US East (N. Virginia) as the pricing region unless otherwise stated: $0.01/GB per direction for cross-AZ transfer within a region (VPC pricing page), $0.045/GB NAT Gateway data processing, tiered egress from $0.09/GB, ~$0.02/GB inter-region (US-US) for read replicas. All cost figures in this briefing use 730 hours per month and binary gigabytes (1024³). The $5,013 figure for the 10K rps workload is computed by the <a href="/aws-cross-az-data-transfer-cost">jslet Cross-AZ Data Transfer Cost Calculator</a>; the $5,260 figure cited for comparison uses 744 hours per month; the opening story uses the 730-hour figure. Pricing changes; verify current rates before budgeting. Workload profiles are illustrative composites, not a specific customer account.</p>
+        </section>
+
+        <section class="seo-section" style="border-top: 2px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>AWS (2026).</strong> "Amazon EC2 Data Transfer Pricing." Cross-AZ rate $0.01/GB each direction; tiered egress. <a href="https://aws.amazon.com/ec2/pricing/on-demand/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-2"><strong>AWS (2026).</strong> "Amazon VPC Pricing." Data transfer within a region, NAT Gateway processing fees. <a href="https://aws.amazon.com/vpc/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-3"><strong>AWS (2026).</strong> "S3 Storage Classes." Same-region S3-to-EC2 transfer free; cross-region replication billing. <a href="https://aws.amazon.com/s3/storage-classes/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-3b"><strong>AWS (2026).</strong> "Amazon VPC Flow Logs." Logs carry the AZ identifier of each ENI, enabling per-zone traffic attribution. <a href="https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-3c"><strong>AWS (2026).</strong> "AWS Cost and Usage Report." Regional data-transfer metrics (Region-DataTransfer-Regional-Bytes) for identifying same-region AZ transfer spend. <a href="https://docs.aws.amazon.com/cur/latest/userguide/what-is-cur.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-4"><strong>usage.ai (2026).</strong> "AWS Data Transfer Costs: The Complete 2026 Guide." Independent estimate of the 10K rps × 10 KB-per-direction workload at ~$5,260/month; cross-zone load balancing disable guidance. <a href="https://www.usage.ai/blogs/aws/networking-cost/data-transfer-costs/" target="_blank" rel="noopener">usage.ai</a></li>
+                <li id="ref-5"><strong>itmagic.pro (2026).</strong> "AWS Inter-AZ Data Transfer Costs: 2026 Architect's Guide." 43 TB/day case study: AZ-affinity caching cut inter-AZ fees ~95% (~$12,000/month) with latency down 49%; NAT per-AZ guidance. <a href="https://itmagic.pro/blog/aws-inter-az-data-transfer-costs-2026-architects-guide" target="_blank" rel="noopener">itmagic.pro</a></li>
+                <li id="ref-6"><strong>egresscost.com (2026).</strong> "The Hidden Cloud Egress Costs Nobody Flags." 3-AZ traffic-share modeling (uniform-destination assumption); VPC endpoint break-even analysis. <a href="https://egresscost.com/hidden-costs" target="_blank" rel="noopener">egresscost.com</a></li>
+                <li id="ref-7"><strong>costpulse.cloud (2026).</strong> "AWS Data Transfer Costs: The Billing Surprise Nobody Warns You About." Documented Geocodio case: $1,000/month of internal S3 traffic routed through NAT; Flexera 29% cloud waste figure. <a href="https://costpulse.cloud/insights/aws-data-transfer-costs" target="_blank" rel="noopener">costpulse.cloud</a></li>
+                <li id="ref-8"><strong>jslet (2026).</strong> Related briefings: <a href="/alb-nlb-cost-real">The LCU Trap</a> · <a href="/nat-gateway-cost-real">The NAT Gateway Trap</a> · <a href="/aws-egress-vs-digitalocean">AWS Egress vs DigitalOcean</a> · tools: <a href="/aws-cross-az-data-transfer-cost">Cross-AZ Cost Calculator</a> · <a href="/alb-nlb-cost-calculator">ALB/NLB Cost Engine</a> · <a href="/concurrent-users-to-bandwidth">Users-to-Bandwidth</a> · <a href="/terabytes-egress-to-aws-cost">Egress Cost</a></li>
+            </ol>
+        </section>
+
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0;"><strong>Preferred Attribution Format:</strong> <code style="font-size:0.82rem; background:var(--bg-card); padding:2px 8px; border-radius:4px;">"The AZ Tax: Why Your East-West Traffic Bill Is $5K/Month and Nobody Noticed" by jslet Research, 2026 — <a href="https://www.jslet.com/cross-az-tax-real">https://www.jslet.com/cross-az-tax-real</a></code></p>
+            </div>
+        </section>
+<footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 135 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

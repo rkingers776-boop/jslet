@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Managed Database Cost Calculator — RDS vs Aurora vs Cloud SQL vs Azure DB (2026) — jslet</title>
+    <meta name="description" content="Compare monthly cost of managed PostgreSQL/MySQL across AWS RDS, Aurora, Google Cloud SQL, and Azure Database. Model compute, storage, provisioned IOPS, Multi-AZ HA, read replicas, backup retention, and committed-use discounts. Real 2026 list prices, side by side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Managed Database Cost Calculator — RDS vs Aurora vs Cloud SQL vs Azure">
+    <meta property="og:description" content="The managed-DB bill isn't one number. Compute, storage, IOPS, Multi-AZ standby, read replicas, backup retention — each provider prices them differently. Model all four side by side.">
+    <meta property="og:url" content="https://www.jslet.com/rds-instance-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Managed Database Cost Calculator — RDS vs Aurora vs Cloud SQL vs Azure">
+    <meta name="twitter:description" content="Compute, storage, IOPS, Multi-AZ, replicas, backup — model AWS RDS, Aurora, Cloud SQL, and Azure DB in one view. Real 2026 list prices.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/rds-instance-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input, input.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none;
+        }
+        select.unit-input:focus, input.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-val.warn { color: #e67e22; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+        .cost-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin-top: 14px; }
+        .cost-table th { background: var(--bg-input); text-align: left; padding: 10px 14px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .cost-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+        .cost-table .num { text-align: right; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-weight: 700; }
+        .cost-table .cost-highlight { color: var(--accent); }
+        .cost-table tr.best-row { background: #ecfdf522; }
+        .cost-table tr.best-row td { border-bottom: 2px solid var(--success); font-weight: 700; }
+        [data-theme="dark"] .cost-table tr.best-row { background: #022c2233; }
+        .cost-table tr.best-row td:first-child::before { content: "★ "; color: var(--success); }
+
+        .cost-bar-wrap { display: flex; gap: 4px; align-items: flex-end; height: 170px; margin: 16px 0 8px 0; }
+        .cost-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .cost-bar-fill { width: 100%; border-radius: 4px 4px 0 0; transition: height 0.5s ease; display: flex; align-items: flex-start; justify-content: center; font-size: 0.7rem; font-weight: 700; color: #fff; padding-top: 6px; min-height: 22px; }
+        .cost-bar-label { font-size: 0.65rem; color: var(--text-muted); text-align: center; line-height: 1.2; }
+        .cost-bar-value { font-size: 0.72rem; font-weight: 700; color: var(--text-heading); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+
+        .ref-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .ref-table th { background: var(--bg-input); text-align: left; padding: 8px 12px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .ref-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .ref-table .num { text-align: right; font-weight: 700; color: var(--accent); }
+
+        .callout-box { background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: var(--radius-sm); padding: 16px 20px; margin: 14px 0; font-size: 0.88rem; color: var(--text-body); line-height: 1.7; }
+        .callout-box strong { color: var(--text-heading); }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Managed Database Cost Calculator",
+      "description": "Compare monthly cost of managed PostgreSQL/MySQL across AWS RDS, Aurora, Google Cloud SQL, and Azure Database, including compute, storage, provisioned IOPS, Multi-AZ HA, read replicas, backup retention, and committed-use discounts.",
+      "url": "https://www.jslet.com/rds-instance-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I compare managed database costs across providers?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The calculator models compute, storage, provisioned IOPS, Multi-AZ HA, read replicas, backup retention, and committed-use discounts for RDS, Aurora, Cloud SQL, and Azure Database — with real 2026 list prices side by side. That is the full bill, not the headline instance price, which is where the surprises live."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the Multi-AZ doubling trap?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Enabling Multi-AZ HA roughly doubles the compute cost — you pay for a standby instance you do not directly use. It is the right choice for production availability, but many teams enable it by default on dev instances and pay double everywhere. The calculator shows the HA toggle's cost impact so the trade-off is explicit."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why is backup retention an RDS-only surprise?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "RDS bills backup storage beyond the free snapshot allowance, and long retention or frequent snapshots accumulate into a real line item that Aurora and Cloud SQL handle differently. The calculator includes backup retention in the monthly projection, so the \"managed DB is expensive\" comparison includes the charges people forget."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>Managed Database <span>Cost Calculator</span></h1>
+            <p>The managed-DB bill is not one number. Four providers, four different ways to bill the <em>same</em> PostgreSQL instance. AWS RDS doubles your compute the moment you check "Multi-AZ." Aurora throws in the standby for free but bills storage by the GB plus every million I/O. Cloud SQL and Azure DB sit somewhere in between — and all of them quietly charge for backup retention once you exceed one copy. This calculator models AWS RDS, Amazon Aurora, Google Cloud SQL, and Azure Database for MySQL/PostgreSQL side by side: compute, storage, provisioned IOPS, Multi-AZ HA, read replicas, backup retention, and committed-use discounts. No sales fluff — 2026 list prices.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Database Configuration</h3>
+                <p class="card-desc">Pick an engine, instance size, deployment topology, and storage profile. The engine models all four providers against the identical workload so the comparison is apples-to-apples. Prices are on-demand list rates in each provider's primary US region unless a region is selected.</p>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="engine">Engine</label>
+                        <select class="unit-input" id="engine">
+                            <option value="postgres" selected>PostgreSQL</option>
+                            <option value="mysql">MySQL</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="tier">Instance Size (vCPU · RAM)</label>
+                        <select class="unit-input" id="tier">
+                            <option value="s">2 vCPU · 8 GB</option>
+                            <option value="m" selected>4 vCPU · 16 GB</option>
+                            <option value="l">8 vCPU · 32 GB</option>
+                            <option value="xl">16 vCPU · 64 GB</option>
+                            <option value="2xl">32 vCPU · 128 GB</option>
+                            <option value="4xl">64 vCPU · 256 GB</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="topology">Deployment Topology</label>
+                        <select class="unit-input" id="topology">
+                            <option value="single">Single-AZ (no HA)</option>
+                            <option value="multi" selected>Multi-AZ / Regional HA</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="replicas">Read Replicas</label>
+                        <select class="unit-input" id="replicas">
+                            <option value="0">0 (none)</option>
+                            <option value="1" selected>1 replica</option>
+                            <option value="2">2 replicas</option>
+                            <option value="3">3 replicas</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="commitment">Commitment Term</label>
+                        <select class="unit-input" id="commitment">
+                            <option value="ondemand" selected>On-Demand</option>
+                            <option value="r1">1-yr Commit (No Upfront)</option>
+                            <option value="r3">3-yr Commit (No Upfront)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="storage-gb">Provisioned Storage (GB)</label>
+                        <input type="number" class="unit-input" id="storage-gb" value="200" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="storage-class">Storage Class</label>
+                        <select class="unit-input" id="storage-class">
+                            <option value="gp" selected>General Purpose SSD (gp3 / PD-SSD / Premium SSD)</option>
+                            <option value="io1">Provisioned IOPS (io1/io2) — RDS only</option>
+                            <option value="aurora">Aurora storage + I/O (Aurora only)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="iops">Provisioned IOPS (only if io1 selected)</label>
+                        <input type="number" class="unit-input" id="iops" value="12000" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="backup-days">Backup Retention (days)</label>
+                        <select class="unit-input" id="backup-days">
+                            <option value="1">1 day</option>
+                            <option value="7" selected>7 days</option>
+                            <option value="14">14 days</option>
+                            <option value="30">30 days</option>
+                            <option value="35">35 days (RDS max)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="egress-gb">Monthly Egress to Internet (GB, optional)</label>
+                        <input type="number" class="unit-input" id="egress-gb" value="0" step="any" min="0">
+                    </div>
+                </div>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="preset-select">Scenario Preset</label>
+                        <select class="unit-input" id="preset-select">
+                            <option value="custom">Custom Configuration</option>
+                            <option value="dev">Dev/Sandbox (2 vCPU · 50 GB · single · 0 replica)</option>
+                            <option value="staging">Staging (4 vCPU · 100 GB · single · 0 replica)</option>
+                            <option value="prod">Production (8 vCPU · 500 GB · Multi-AZ · 1 replica)</option>
+                            <option value="scale">Scale SaaS (16 vCPU · 2 TB · Multi-AZ · 2 replicas)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="region-select">AWS Region (affects RDS &amp; Aurora only)</label>
+                        <select class="unit-input" id="region-select">
+                            <option value="us-east-1" selected>us-east-1 (N. Virginia)</option>
+                            <option value="us-west-2">us-west-2 (Oregon)</option>
+                            <option value="eu-west-1">eu-west-1 (Ireland)</option>
+                            <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
+                            <option value="ap-northeast-1">ap-northeast-1 (Tokyo)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn-calc">Run Managed DB Cost Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Monthly Managed Database Cost — 4 Providers Side by Side</h3>
+                <p class="card-desc" id="results-params"></p>
+
+                <div class="metric-grid" id="volume-metrics"></div>
+
+                <h4 style="margin-top: 20px; margin-bottom: 4px;">💰 Total Monthly Cost by Provider</h4>
+                <div class="cost-bar-wrap" id="cost-bar-chart"></div>
+
+                <div class="table-scroll">
+                <table class="cost-table" id="cost-table">
+                    <thead>
+                        <tr><th>Provider</th><th class="num">Compute/mo</th><th class="num">Storage/mo</th><th class="num">IOPS/mo</th><th class="num">Backup/mo</th><th class="num">Egress/mo</th><th class="num">Total/mo</th><th class="num">Annual</th></tr>
+                    </thead>
+                    <tbody id="cost-tbody"></tbody>
+                </table>
+                </div>
+                <p style="margin-top:10px; font-size:0.76rem; color:var(--text-muted);" id="results-note"></p>
+            </div>
+
+            <!-- REFERENCE CARD -->
+            <div class="calculator-card">
+                <h3>📋 Managed DB Pricing Reference (2026 list prices)</h3>
+                <p class="card-desc">On-demand hourly compute for the instance tiers used. GCP = us-central1, Azure = East US, AWS = selected region (us-east-1 baseline). Storage is per-GB-month. IOPS is RDS io1 only. Multi-AZ behavior and backup billing differ per provider — see notes.</p>
+                <div class="table-scroll">
+                <table class="ref-table">
+                    <thead><tr><th>Tier</th><th class="num">RDS $/hr</th><th class="num">Aurora $/hr</th><th class="num">Cloud SQL $/hr</th><th class="num">Azure DB $/hr</th></tr></thead>
+                    <tbody>
+                        <tr><td>2 vCPU · 8 GB</td><td class="num">$0.171</td><td class="num">$0.160</td><td class="num">$0.186</td><td class="num">$0.165</td></tr>
+                        <tr><td>4 vCPU · 16 GB</td><td class="num">$0.342</td><td class="num">$0.320</td><td class="num">$0.372</td><td class="num">$0.330</td></tr>
+                        <tr><td>8 vCPU · 32 GB</td><td class="num">$0.684</td><td class="num">$0.640</td><td class="num">$0.744</td><td class="num">$0.660</td></tr>
+                        <tr><td>16 vCPU · 64 GB</td><td class="num">$1.368</td><td class="num">$1.280</td><td class="num">$1.488</td><td class="num">$1.320</td></tr>
+                        <tr><td>32 vCPU · 128 GB</td><td class="num">$2.736</td><td class="num">$2.560</td><td class="num">$2.976</td><td class="num">$2.640</td></tr>
+                        <tr><td>64 vCPU · 256 GB</td><td class="num">$5.472</td><td class="num">$5.120</td><td class="num">$5.952</td><td class="num">$5.280</td></tr>
+                    </tbody>
+                </table>
+                </div>
+                <p style="margin-top:10px; font-size:0.78rem; color:var(--text-muted);">Storage: RDS gp3 $0.138/GB-mo · Aurora $0.10/GB-mo (+$0.20 per 1M I/O) · Cloud SQL SSD $0.17/GB-mo · Azure Premium SSD $0.115/GB-mo. RDS io1 $0.20/GB-mo + $0.065 per provisioned IOPS-mo. Backup: RDS charges $0.095/GB-mo for retained backups beyond the first DB-size copy (modeled at 10% daily change); Aurora/Cloud SQL/Azure include backup free up to 100% of storage. Multi-AZ: RDS/GCP/Azure bill a standby instance (compute ×2); Aurora's standby is included. Source: provider pricing pages, July 2026. Verify against your region.</p>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>The Bill Nobody Reconciles Until the Finance Ticket Lands</h2>
+            <p>Managed databases are the quietest line item in the cloud bill — until the same PostgreSQL instance that costs $380/month on one provider costs $610 on another for identical throughput. The spread isn't margin noise. It's four structurally different pricing models that each hide a different tax. This calculator surfaces all four at once so you can see exactly where the money diverges.</p>
+
+            <h3>1. Compute — and the Multi-AZ Doubling Trap</h3>
+            <p>On AWS RDS, checking "Multi-AZ" does not buy you redundancy for free. It spins up a synchronous standby in a second AZ and <strong>bills it as a full second instance</strong>. Your 4 vCPU instance at $0.342/hr becomes $0.684/hr the instant you tick the box — $500/month in compute alone, before storage. Google Cloud SQL regional HA and Azure zone-redundant HA do the same: you pay for the standby. <strong>Amazon Aurora is the exception</strong> — its standby shares the same distributed storage volume, so Multi-AZ adds zero compute. For a single HA instance, that single difference is often a $200–400/month swing between Aurora and RDS at the same size.</p>
+
+            <div class="callout-box">
+                <strong>⚡ The Insight:</strong> If you're running one HA PostgreSQL instance and not using Aurora, you are paying a "standby tax" that Aurora customers don't. At 8 vCPU Multi-AZ, RDS compute is ~$998/mo vs Aurora ~$922/mo — and that gap widens as you add the storage and I/O differences below. Aurora's pitch isn't just "better availability" — it's "we don't double-bill your standby."
+            </div>
+
+            <h3>2. Storage — gp3 vs io1 vs Aurora's GB + I/O</h3>
+            <p>General Purpose SSD is cheap everywhere: RDS gp3 at $0.138/GB-month, Cloud SQL SSD at $0.17, Azure Premium SSD at $0.115. At 500 GB that's $69–85/month — negligible next to compute. The trap is <strong>provisioned IOPS on RDS io1</strong>: $0.20/GB-month <em>plus</em> $0.065 per provisioned IOPS-month. Provision 12,000 IOPS on a 200 GB volume and the IOPS line ($780/month) dwarfs the storage line ($40/month) by 19×. Aurora bills storage at $0.10/GB-month but then layers <strong>$0.20 per million I/O requests</strong> — invisible until you have a write-heavy workload. A million-row bulk insert can quietly cost more in I/O than the instance does in compute.</p>
+
+            <h3>3. Backup Retention — The RDS-Only Surprise</h3>
+            <p>Here's the asymmetry nobody warns you about: <strong>RDS is the only one of the four that bills retained backups.</strong> AWS gives you backup storage free up to 100% of your database size — i.e., exactly one copy. Push retention to 7 days and, assuming ~10% daily change, you're now paying for ~0.6 extra DB-sizes of backup at $0.095/GB-month. On a 500 GB database that's ~$28/month; on a 2 TB database at 30-day retention it's north of $500/month — a line item that simply does not exist on Aurora, Cloud SQL, or Azure DB, all of which include automated backups up to 100% of storage for free. If backup cost shows up as your third-largest component, that's an RDS tell.</p>
+
+            <h3>4. Read Replicas — Storage Shared or Not</h3>
+            <p>Read replicas are where the four diverge again. A Cloud SQL or Azure read replica is a whole second instance: you pay compute <em>and</em> storage again. An RDS read replica is the same. <strong>Aurora replicas share the cluster storage volume</strong> — you pay only for the replica's compute, never a second copy of the data. At 3 read replicas on a 1 TB database, that storage-sharing difference alone is ~$330/month (3 × 1 TB × $0.115) that Aurora doesn't charge. For read-heavy scale-out architectures, Aurora's storage model compounds in your favor.</p>
+
+            <h3>5. Committed-Use Discounts — The Real Lever</h3>
+            <p>All four providers reward commitment. RDS and Aurora 1-year No-Upfront reservations land around 35% off compute; 3-year around 60%. Cloud SQL committed-use discounts (1-yr ~45%, 3-yr ~64%) and Azure reserved instances (1-yr ~42%, 3-yr ~61%) are in the same ballpark. The catch: reservations apply to <strong>compute only</strong> — storage, IOPS, and backup are always on-demand. So a 3-year RDS commitment on an io1-heavy, backup-heavy workload saves less than it looks, because the discounted compute is a smaller fraction of the total bill. This calculator applies the discount to compute and leaves the rest at list, which is exactly how the providers bill it.</p>
+
+            <h3>Who Should Care Most</h3>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Profile</th><th>Typical Monthly Bill</th><th>What This Calculator Reveals</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Startup, single AZ, 1 instance</strong></td><td class="num">$120–300/mo</td><td>Compute dominates. RDS vs Cloud SQL vs Azure are within ~10% — pick on ecosystem, not price. Aurora's standby-free Multi-AZ only matters once you add HA.</td></tr>
+                    <tr><td><strong>Production, Multi-AZ, 1 replica</strong></td><td class="num">$600–1,400/mo</td><td>Aurora pulls ahead on HA (no standby tax) and replica storage sharing. RDS backup retention + io1 IOPS are the sneaky lines. Cloud SQL/Azure sit between.</td></tr>
+                    <tr><td><strong>Read-heavy SaaS, 2–3 replicas</strong></td><td class="num">$1,500–4,000/mo</td><td>Aurora's shared-storage replicas save $300–700/mo vs RDS/Cloud SQL/Azure, which each bill replica storage. The gap widens with storage size and replica count.</td></tr>
+                    <tr><td><strong>Write-heavy, io1 + long retention</strong></td><td class="num">$2,000–8,000/mo</td><td>RDS io1 IOPS + backup retention can rival compute. Aurora's per-I/O model may be cheaper or pricier depending on write volume — model it, don't guess.</td></tr>
+                </tbody>
+            </table>
+            </div>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/rds-cost-real">📰 Managed DB Cost Illusion (Full Briefing) →</a>
+                <a href="/db-instance-sizing">DB Instance Sizing →</a>
+                <a href="/database-connection-pool-calculator">Connection Pool Sizing →</a>
+                <a href="/backup-cost">Backup Cost Estimator →</a>
+                <a href="/nat-gateway-cost-calculator">NAT Gateway Cost →</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost →</a>
+                <a href="/lambda-execution-ms-to-cost">Lambda Cost →</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Constants ──
+    var HOURS_PER_MONTH = 730;
+    var REGION_MULT = {
+        'us-east-1': 1.00, 'us-west-2': 1.00, 'eu-west-1': 1.07,
+        'ap-southeast-1': 1.16, 'ap-northeast-1': 1.22
+    };
+
+    // On-demand hourly compute per tier (baseline us-east-1)
+    var TIERS = {
+        's':   { label: '2 vCPU · 8 GB',    rds: 0.171, aurora: 0.160, gcp: 0.186, azure: 0.165 },
+        'm':   { label: '4 vCPU · 16 GB',   rds: 0.342, aurora: 0.320, gcp: 0.372, azure: 0.330 },
+        'l':   { label: '8 vCPU · 32 GB',   rds: 0.684, aurora: 0.640, gcp: 0.744, azure: 0.660 },
+        'xl':  { label: '16 vCPU · 64 GB',  rds: 1.368, aurora: 1.280, gcp: 1.488, azure: 1.320 },
+        '2xl': { label: '32 vCPU · 128 GB', rds: 2.736, aurora: 2.560, gcp: 2.976, azure: 2.640 },
+        '4xl': { label: '64 vCPU · 256 GB', rds: 5.472, aurora: 5.120, gcp: 5.952, azure: 5.280 }
+    };
+
+    // Storage $/GB-month by class and provider
+    var STORAGE = {
+        'gp':     { rds: 0.138, aurora: 0.10, gcp: 0.170, azure: 0.115 },
+        'io1':    { rds: 0.200, aurora: 0.10, gcp: 0.170, azure: 0.115 },
+        'aurora': { rds: 0.10,  aurora: 0.10, gcp: 0.170, azure: 0.115 }
+    };
+    var RDS_IO1_IOPS_PER_GBMO = 0.065;   // $/provisioned IOPS-month (RDS io1 only)
+    var RDS_BACKUP_PER_GBMO = 0.095;     // $/GB-month for backups beyond 1st copy
+    var BACKUP_DAILY_CHANGE = 0.10;      // assume 10% daily change for retained backups
+
+    // Egress $/GB to internet
+    var EGRESS = { rds: 0.09, aurora: 0.09, gcp: 0.12, azure: 0.087 };
+
+    // Multi-AZ standby multiplier (compute instances): 2 = pay standby, 1 = standby free
+    var MULTIAZ_INSTANCES = { rds: 2, aurora: 1, gcp: 2, azure: 2 };
+    // Replica storage: Aurora shares cluster storage (1 copy), others bill each replica
+    var REPLICA_STORAGE_COPIES = { rds: 1, aurora: 0, gcp: 1, azure: 1 };
+
+    // Committed-use discount on compute (fraction of on-demand retained)
+    var COMMIT_DISCOUNT = {
+        'ondemand': { rds: 1.00, aurora: 1.00, gcp: 1.00, azure: 1.00 },
+        'r1':       { rds: 0.65, aurora: 0.62, gcp: 0.55, azure: 0.58 },
+        'r3':       { rds: 0.39, aurora: 0.36, gcp: 0.36, azure: 0.39 }
+    };
+
+    var PROVIDERS = [
+        { key: 'rds',    name: 'AWS RDS' },
+        { key: 'aurora', name: 'Amazon Aurora' },
+        { key: 'gcp',    name: 'Cloud SQL' },
+        { key: 'azure',  name: 'Azure DB' }
+    ];
+
+    var PRESETS = {
+        'dev':     { tier: 's',  topology: 'single', replicas: 0, storage: 50,  cls: 'gp', iops: 3000,  backup: 1,  egress: 0 },
+        'staging': { tier: 'm',  topology: 'single', replicas: 0, storage: 100, cls: 'gp', iops: 3000,  backup: 7,  egress: 50 },
+        'prod':    { tier: 'l',  topology: 'multi',  replicas: 1, storage: 500, cls: 'gp', iops: 12000, backup: 7,  egress: 200 },
+        'scale':   { tier: 'xl', topology: 'multi',  replicas: 2, storage: 2000,cls: 'gp', iops: 16000, backup: 14, egress: 1000 }
+    };
+
+    function fmtCurrency(n) {
+        if (Math.abs(n) < 0.005) return '$0.00';
+        return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function fmtNum(n, d) { if (d === undefined) d = 1; return n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d }); }
+
+    function compute() {
+        var tierKey   = document.getElementById('tier').value;
+        var topology  = document.getElementById('topology').value;
+        var replicas  = parseInt(document.getElementById('replicas').value) || 0;
+        var commitKey = document.getElementById('commitment').value;
+        var storageGB = parseFloat(document.getElementById('storage-gb').value) || 0;
+        var cls       = document.getElementById('storage-class').value;
+        var iops      = parseFloat(document.getElementById('iops').value) || 0;
+        var backupDays= parseInt(document.getElementById('backup-days').value) || 1;
+        var egressGB  = parseFloat(document.getElementById('egress-gb').value) || 0;
+        var regionKey = document.getElementById('region-select').value;
+
+        var tier = TIERS[tierKey] || TIERS['m'];
+        var regionMult = REGION_MULT[regionKey] || 1.00;
+        var discount = COMMIT_DISCOUNT[commitKey] || COMMIT_DISCOUNT['ondemand'];
+        var multiAZ = (topology === 'multi');
+
+        var minTotal = Infinity;
+        var rows = PROVIDERS.map(function(p) {
+            // Region multiplier applies to AWS only (reference note: GCP=us-central1, Azure=East US are fixed baselines)
+            var rm = (p.key === 'rds' || p.key === 'aurora') ? regionMult : 1.00;
+            var baseHourly = tier[p.key] * rm;
+            var effHourly  = baseHourly * discount[p.key];
+
+            // instances: 1 primary + standby (if multiAZ) + replicas
+            var standby = (multiAZ ? (MULTIAZ_INSTANCES[p.key] - 1) : 0);
+            var instances = 1 + standby + replicas;
+            var computeMonthly = effHourly * HOURS_PER_MONTH * instances;
+
+            // storage copies: primary + replicas (Aurora shares = 0 extra)
+            var storageCopies = 1 + replicas * REPLICA_STORAGE_COPIES[p.key];
+            var storagePrice = STORAGE[cls][p.key];
+            var storageMonthly = storageGB * storagePrice * storageCopies;
+
+            // IOPS: RDS io1 only
+            var iopsMonthly = 0;
+            if (p.key === 'rds' && cls === 'io1' && iops > 0) {
+                iopsMonthly = iops * RDS_IO1_IOPS_PER_GBMO;
+            }
+
+            // Backup: RDS only, beyond 1st copy
+            var backupMonthly = 0;
+            if (p.key === 'rds' && backupDays > 1) {
+                backupMonthly = storageGB * (backupDays - 1) * BACKUP_DAILY_CHANGE * RDS_BACKUP_PER_GBMO;
+            }
+
+            var egressMonthly = egressGB * EGRESS[p.key];
+            var total = computeMonthly + storageMonthly + iopsMonthly + backupMonthly + egressMonthly;
+            if (total < minTotal) minTotal = total;
+
+            return {
+                name: p.name, key: p.key,
+                compute: computeMonthly, storage: storageMonthly, iops: iopsMonthly,
+                backup: backupMonthly, egress: egressMonthly, total: total,
+                instances: instances
+            };
+        });
+
+        // show card
+        document.getElementById('results-card').style.display = 'block';
+
+        var topoLabel = multiAZ ? 'Multi-AZ / Regional HA' : 'Single-AZ';
+        document.getElementById('results-params').innerHTML =
+            '<strong>' + tier.label + '</strong> · ' + topoLabel + ' · ' + replicas + ' replica(s) · ' +
+            storageGB.toLocaleString() + ' GB ' + (cls === 'io1' ? 'io1' : cls === 'aurora' ? 'Aurora' : 'GP-SSD') +
+            ' · backup ' + backupDays + 'd · ' + (commitKey === 'ondemand' ? 'On-Demand' : commitKey === 'r1' ? '1-yr' : '3-yr') + ' · ' + regionKey;
+
+        // volume metrics
+        document.getElementById('volume-metrics').innerHTML =
+            '<div class="metric-tile"><div class="metric-val">' + fmtCurrency(minTotal) + '</div><div class="metric-label">Cheapest Provider/mo</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + rows[0].name.replace('AWS ','').replace('Amazon ','') + '</div><div class="metric-label">RDS = ' + fmtCurrency(rows[0].total) + '/mo</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + rows[1].name.replace('Amazon ','') + '</div><div class="metric-label">Aurora = ' + fmtCurrency(rows[1].total) + '/mo</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtCurrency(rows[0].total - rows[1].total) + '</div><div class="metric-label">RDS − Aurora Δ/mo</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtCurrency(Math.max.apply(null, rows.map(function(r){return r.total;})) - minTotal) + '</div><div class="metric-label">Max Spread/mo</div></div>';
+
+        // bar chart
+        var barMax = Math.max.apply(null, rows.map(function(r){ return r.total; }));
+        var colors = { rds: '#ff9900', aurora: '#16161a', gcp: '#4285f4', azure: '#0078d4' };
+        var barHtml = '';
+        rows.forEach(function(r) {
+            var pct = Math.max(4, (r.total / barMax) * 100);
+            var isBest = Math.abs(r.total - minTotal) < 0.01;
+            barHtml += '<div class="cost-bar-col">' +
+                '<div class="cost-bar-value">' + fmtCurrency(r.total) + '</div>' +
+                '<div class="cost-bar-fill" style="height:' + pct + '%;background:' + colors[r.key] + ';' + (isBest ? 'border:2px solid var(--success);box-shadow:0 0 8px rgba(13,148,136,0.3);' : '') + '">' +
+                    (pct > 22 ? (isBest ? '★ BEST' : '') : '') + '</div>' +
+                '<div class="cost-bar-label">' + r.name + '</div>' +
+            '</div>';
+        });
+        document.getElementById('cost-bar-chart').innerHTML = barHtml;
+
+        // table
+        var tbody = '';
+        rows.forEach(function(r) {
+            var isBest = Math.abs(r.total - minTotal) < 0.01;
+            tbody += '<tr class="' + (isBest ? 'best-row' : '') + '">' +
+                '<td>' + r.name + '</td>' +
+                '<td class="num">' + fmtCurrency(r.compute) + '</td>' +
+                '<td class="num">' + fmtCurrency(r.storage) + '</td>' +
+                '<td class="num">' + (r.iops > 0.005 ? fmtCurrency(r.iops) : '—') + '</td>' +
+                '<td class="num">' + (r.backup > 0.005 ? fmtCurrency(r.backup) : '—') + '</td>' +
+                '<td class="num">' + (r.egress > 0.005 ? fmtCurrency(r.egress) : '—') + '</td>' +
+                '<td class="num cost-highlight">' + fmtCurrency(r.total) + '</td>' +
+                '<td class="num">' + fmtCurrency(r.total * 12) + '</td>' +
+            '</tr>';
+        });
+        document.getElementById('cost-tbody').innerHTML = tbody;
+
+        document.getElementById('results-note').innerHTML =
+            'Compute discount applied to ' + (commitKey === 'ondemand' ? 'on-demand (no commitment)' : (commitKey === 'r1' ? '1-yr commitment' : '3-yr commitment')) +
+            '. Storage, IOPS, backup, and egress stay at list price (reservations cover compute only). Cheapest: ' +
+            rows.filter(function(r){ return Math.abs(r.total - minTotal) < 0.01; })[0].name + '.';
+    }
+
+    // ── Event binding ──
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+
+    document.getElementById('preset-select').addEventListener('change', function() {
+        var p = PRESETS[this.value];
+        if (!p) return;
+        document.getElementById('tier').value = p.tier;
+        document.getElementById('topology').value = p.topology;
+        document.getElementById('replicas').value = String(p.replicas);
+        document.getElementById('storage-gb').value = p.storage;
+        document.getElementById('storage-class').value = p.cls;
+        document.getElementById('iops').value = p.iops;
+        document.getElementById('backup-days').value = String(p.backup);
+        document.getElementById('egress-gb').value = p.egress;
+        compute();
+    });
+
+    (function() {
+        var p = PRESETS['prod'];
+        document.getElementById('preset-select').value = 'prod';
+        document.getElementById('tier').value = p.tier;
+        document.getElementById('topology').value = p.topology;
+        document.getElementById('replicas').value = String(p.replicas);
+        document.getElementById('storage-gb').value = p.storage;
+        document.getElementById('storage-class').value = p.cls;
+        document.getElementById('iops').value = p.iops;
+        document.getElementById('backup-days').value = String(p.backup);
+        document.getElementById('egress-gb').value = p.egress;
+        compute();
+    })();
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

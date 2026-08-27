@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Token Size to Storage Estimator — jslet</title>
+    <meta name="description" content="Estimate LLM token count to approximate storage requirements. Convert between token counts and estimated disk/memory footprint for training corpus and inference caching.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Token Size to Storage Estimator",
+      "description": "Estimate LLM token count to approximate storage requirements. Convert between token counts and estimated disk/memory footprint for training corpus and inference caching.",
+      "url": "https://www.jslet.com/token-size-to-storage",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <link rel="canonical" href="https://www.jslet.com/token-size-to-storage">
+    <meta property="og:title" content="Token Size to Storage Estimator — jslet">
+    <meta property="og:description" content="Estimate LLM token count to approximate storage requirements. Convert between token counts and estimated disk/memory footprint for training corpus and inference caching.">
+    <meta property="og:url" content="https://www.jslet.com/token-size-to-storage">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Token Size to Storage Estimator — jslet">
+    <meta name="twitter:description" content="Estimate LLM token count to approximate storage requirements. Convert between token counts and estimated disk/memory footprint for training corpus and inference caching.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I estimate storage from token counts?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Tokens translate to bytes through your model's tokenizer — typically 3-4 bytes per token for English, more for code or CJK. The calculator converts token counts to approximate disk and memory footprints for training corpora and inference caching, so corpus planning is grounded in the real size."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does the same text use different token counts across models?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Tokenizers differ per model: BPE splits English into ~0.75 tokens/word, while some models pack CJK or code differently. The same corpus can be 20% larger in tokens on one tokenizer than another. The calculator's corpus reference gives you realistic per-language sizes so storage estimates survive the tokenizer swap."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What storage should I plan for a training corpus?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Plan for the token count × bytes-per-token, plus duplication for shuffling and checkpointing. The calculator shows both the raw corpus size and the practical footprint with overhead, which is the number your data engineering budget needs."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>Token Count <span>→ Storage Estimate</span></h1>
+            <p>Each token in modern LLM training pipelines consumes approximately 4 bytes of raw text storage (~4 tokens per word in English). Use this tool to estimate corpus storage requirements and inference KV-cache sizing.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <div class="calculator-card">
+                <h3>Bidirectional Token Storage Estimator</h3>
+                <p class="card-desc">Convert between token counts and estimated storage in both directions. Assumes ~4 bytes per token (UTF-8 average for English text corpora).</p>
+                <div class="input-group">
+                    <label for="token-input">Token Count</label>
+                    <input type="number" class="input-val unit-input" id="token-input" value="1000000000" step="any">
+                </div>
+                <div class="input-group">
+                    <label for="storage-input">Estimated Storage (GB)</label>
+                    <input type="number" class="input-val unit-input" id="storage-input" value="4" step="any">
+                </div>
+                <button class="btn-calc">Run Conversion</button>
+                <div class="result-display result-box" style="display: none;">
+                    <h4>STORAGE ESTIMATE</h4>
+                    <ul>
+                        <li>Raw Text Storage: <span class="res-output res-main" id="res-storage">--</span></li>
+                        <li>With Metadata (~20% overhead): <span class="res-output" id="res-meta">--</span></li>
+                        <li>Equivalent Words (≈4 tok/word): <span class="res-output" id="res-words">--</span></li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="calculator-card">
+                <h3>Famous Corpus Size Reference</h3>
+                <p class="card-desc">Real-world training dataset sizes for context.</p>
+                <div class="table-scroll">
+<table>
+                    <thead>
+                        <tr>
+                            <th>Dataset / Model</th>
+                            <th>Tokens</th>
+                            <th>Est. Raw Storage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Common Crawl (Filtered)</td><td>~3T</td><td>~12 TB</td></tr>
+                        <tr><td>The Pile (v1)</td><td>~800B</td><td>~3.2 TB</td></tr>
+                        <tr><td>FineWeb</td><td>~15T</td><td>~60 TB</td></tr>
+                        <tr><td>GPT-4 Training Corpus</td><td>~13T</td><td>~52 TB</td></tr>
+                        <tr><td>Claude Training Corpus</td><td>~10T+</td><td>~40 TB+</td></tr>
+                        <tr><td>Wikipedia (English, Full)</td><td>~4.4B</td><td>~17.6 GB</td></tr>
+                    </tbody>
+                </table>
+</div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>Token Economics: From Text to Storage to GPU Memory</h2>
+            <p>The 4 bytes-per-token estimate is derived from UTF-8 encoding averages on English-dominated text corpora. Non-English languages (CJK scripts in particular) produce fewer bytes per token due to more compact semantic encoding per Unicode codepoint. Multilingual datasets should budget 3–5 bytes per token depending on language distribution.</p>
+            <p>Raw text storage is only the first layer. Training infrastructure multiplies this footprint: tokenized integer sequences double the storage (4 bytes per token ID), shuffled and packed sequences add another 1–1.5×, and the final dataloader memory-map typically requires 2–3× the raw corpus size. A 10 TB raw corpus often translates to 25–30 TB of training-ready storage — before replication, snapshots, or backup. Factor this into your HPC cluster procurement or cloud NAS provisioning from the start.</p>
+        </section>
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/vram-gb-to-mib">VRAM GB → GiB &rarr;</a>
+                <a href="/tflops-to-pflops">TFLOPS to PFLOPS &rarr;</a>
+                <a href="/parameters-to-vram-fp16">FP16 VRAM Estimator &rarr;</a>
+                <a href="/context-window-vram-inflation">KV Cache VRAM &rarr;</a>
+            </div>
+        </div>
+
+
+                <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        var TOKEN_TO_MB = 0.000004; // 4 bytes per token = 0.000004 MB
+
+        function formatBytes(mb) {
+            var mbNum = Number(mb);
+            if (mbNum >= 1e6) return (mbNum / 1e6).toFixed(2) + ' PB';
+            if (mbNum >= 1000) return (mbNum / 1000).toFixed(2) + ' GB';
+            return mbNum.toFixed(2) + ' MB';
+        }
+
+        function formatWords(tokens) {
+            var words = tokens / 4;
+            if (words >= 1e12) return (words / 1e12).toFixed(2) + ' trillion words';
+            if (words >= 1e9) return (words / 1e9).toFixed(2) + ' billion words';
+            if (words >= 1e6) return (words / 1e6).toFixed(2) + ' million words';
+            return Math.round(words).toLocaleString() + ' words';
+        }
+
+        function convertToken() {
+            var tokenInput = document.getElementById('token-input');
+            var storageInput = document.getElementById('storage-input');
+            var resultBox = document.querySelector('.result-box');
+            var resStorage = document.getElementById('res-storage');
+            var resMeta = document.getElementById('res-meta');
+            var resWords = document.getElementById('res-words');
+
+            var tokens, storageMB;
+
+            if (document.activeElement === tokenInput) {
+                tokens = parseFloat(tokenInput.value);
+                if (isNaN(tokens) || tokens < 0) { alert("Invalid token count."); return; }
+                storageMB = tokens * TOKEN_TO_MB;
+                storageInput.value = (storageMB / 1000).toFixed(6);
+            } else {
+                var storageGB = parseFloat(storageInput.value);
+                if (isNaN(storageGB) || storageGB < 0) { alert("Invalid GB value."); return; }
+                storageMB = storageGB * 1000;
+                tokens = storageMB / TOKEN_TO_MB;
+                tokenInput.value = Math.round(tokens);
+            }
+
+            resStorage.innerText = formatBytes(storageMB);
+            resMeta.innerText = formatBytes(storageMB * 1.2) + ' (with index/metadata)';
+            resWords.innerText = formatWords(tokens);
+            resultBox.style.display = 'block';
+        }
+        document.querySelector('.btn-calc').addEventListener('click', convertToken);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

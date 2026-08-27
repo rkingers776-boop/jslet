@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Chmod Calculator — Numeric to Symbolic Permission Converter Online — jslet</title>
+    <meta name="description" content="Convert Unix file permissions between numeric (755) and symbolic (rwxr-xr-x) formats. Permission bit visualization, special bits (setuid/setgid/sticky), common permission presets. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/chmod-calculator">
+    <meta property="og:title" content="Chmod Calculator — Numeric ↔ Symbolic Permissions">
+    <meta property="og:description" content="755 = rwxr-xr-x. Convert numeric ↔ symbolic Unix permissions with bit visualization and special bits. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/chmod-calculator">
+    <meta property="og:type" content="website"><meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Chmod Calculator — Numeric ↔ Symbolic Permissions">
+    <meta name="twitter:description" content="755 = rwxr-xr-x. Convert Unix permissions with bit visualization. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Chmod Calculator","description":"Convert Unix file permissions between numeric (755) and symbolic (rwxr-xr-x) formats with permission bit visualization and special bits. 100% client-side.","url":"https://www.jslet.com/chmod-calculator","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I convert chmod 755 to symbolic notation?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Each digit of 755 maps to a class — 7 = owner, 5 = group, 5 = others. Each digit is the sum of read (4), write (2) and execute (1). 7 = 4+2+1 = rwx, 5 = 4+1 = r-x. So 755 becomes rwxr-xr-x: owner can read/write/execute, group and others can read and execute but not write. This is the most common permission set for executable files and directories (files get 644: rw-r--r--). This tool converts both directions instantly and shows the bit breakdown for each class."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the difference between chmod 644 and 755?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "644 (rw-r--r--) gives the owner read/write and everyone else read-only. It is the standard for regular files — source code, configs, documents. 755 (rwxr-xr-x) adds execute for all classes and is the standard for executables and directories, which need the execute (search) bit to be traversable. The practical rule: files 644, executables 755, directories 755. Using 777 (rwxrwxrwx) on files is a security smell — anyone can modify them — and many CI/CD scanners flag it."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What are setuid, setgid and sticky bits?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The special bits appear as a fourth digit (4000, 2000, 1000) or as s/S/t in symbolic notation. Setuid (4): a program runs with the file owner's privileges — /usr/bin/passwd uses it so any user can change their password. Setgid (2): a program runs with the group's privileges, and on directories, new files inherit the directory's group instead of the creator's. Sticky (1): on directories, only the owner can delete their own files even if the directory is world-writable — /tmp is the classic example. The uppercase S/T means the setuid/setgid/sticky bit is set but execute is not, which is almost always a mistake."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I use chmod with symbolic notation?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Symbolic chmod has three parts: who (u=user, g=group, o=others, a=all), operator (+ add, - remove, = set exactly), and permissions (r, w, x, X, s, t). Examples: chmod +x script.sh adds execute for all classes; chmod u=rwx,g=rx,o=rx file sets exactly rwxr-xr-x; chmod -R u+rwX dir adds read/write for the owner recursively and execute only where a bit of execute already exists (the capital X). This calculator accepts symbolic input and converts it to the numeric equivalent."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .tool-layout { display: flex; gap: 20px; }
+        @media (max-width: 768px) { .tool-layout { flex-direction: column; } }
+        .tool-panel { flex: 1; }
+        .tool-panel label { font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; display: block; color: var(--text-body); }
+        .mode-switch { display: flex; gap: 10px; margin: 14px 0; }
+        .mode-switch button { padding: 8px 18px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: transparent; cursor: pointer; font-weight: 700; font-size: 0.85rem; color: var(--text-body); }
+        .mode-switch button.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+        .perm-input { font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 1.2rem; padding: 12px 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); width: 100%; box-sizing: border-box; }
+        .perm-input:focus { border-color: var(--accent); outline: none; }
+        .bits-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 20px; }
+        .bits-card { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; background: var(--bg-input); }
+        .bits-card h3 { margin: 0 0 8px; font-size: 0.85rem; }
+        .bits-row { display: flex; gap: 6px; font-family: 'Cascadia Code','Consolas',monospace; font-size: 1.1rem; margin-bottom: 6px; }
+        .bit-cell { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: var(--bg-input); border: 1px solid var(--border); }
+        .bit-cell.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .info-bar { font-size: 0.82rem; color: var(--text-muted); margin-top: 10px; }
+        .preset-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85rem; }
+        .preset-table th, .preset-table td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+        .preset-table th { background: var(--bg-input); }
+        .preset-table tr { cursor: pointer; }
+        .preset-table tr:hover { background: var(--accent-soft); }
+        .special-row { margin-top: 14px; font-size: 0.88rem; }
+        .special-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 400; }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>Chmod <span>Calculator</span></h1><p>Convert Unix permissions between numeric and symbolic formats — 755 is <code>rwxr-xr-x</code>. Bit visualization, special bits, and the presets every deploy runs into.</p></header>
+        <div class="mode-switch">
+            <button id="mode-num" class="active" onclick="setMode('num')"># Numeric → Symbolic</button>
+            <button id="mode-sym" onclick="setMode('sym')">rws Symbolic → Numeric</button>
+        </div>
+        <div class="tool-panel">
+            <label for="perm-input">🟢📥 Permission</label>
+            <input type="text" id="perm-input" class="perm-input" value="755" inputmode="numeric" placeholder="755 or rwxr-xr-x" oninput="onInput()">
+            <div class="special-row">
+                <label><input type="checkbox" id="opt-setuid" onchange="recalc()"> Setuid (4) — program runs as owner</label>
+                <label><input type="checkbox" id="opt-setgid" onchange="recalc()"> Setgid (2) — group inheritance</label>
+                <label><input type="checkbox" id="opt-sticky" onchange="recalc()"> Sticky (1) — /tmp-style protection</label>
+            </div>
+        </div>
+        <div class="bits-grid" id="bits-grid"></div>
+        <div class="info-bar" id="perm-info"></div>
+        <section style="margin-top: 28px; border-top:2px solid var(--border); padding-top:16px;">
+            <h2 style="font-size:1rem;">🟢📖 Common Permission Presets</h2>
+            <table class="preset-table" id="preset-table">
+                <thead><tr><th>Numeric</th><th>Symbolic</th><th>Use case</th></tr></thead>
+                <tbody>
+                    <tr data-v="644"><td>644</td><td>rw-r--r--</td><td>Regular files (source, configs, docs)</td></tr>
+                    <tr data-v="755"><td>755</td><td>rwxr-xr-x</td><td>Executables &amp; directories (web roots)</td></tr>
+                    <tr data-v="600"><td>600</td><td>rw-------</td><td>Private keys, secrets, .env</td></tr>
+                    <tr data-v="700"><td>700</td><td>rwx------</td><td>Private directories</td></tr>
+                    <tr data-v="664"><td>664</td><td>rw-rw-r--</td><td>Team-shared files (group writable)</td></tr>
+                    <tr data-v="775"><td>775</td><td>rwxrwxr-x</td><td>Team-shared directories</td></tr>
+                    <tr data-v="4755"><td>rwsr-xr-x</td><td>rwsr-xr-x</td><td>Setuid executables (passwd, sudo)</td></tr>
+                    <tr data-v="1777"><td>rwxrwxrwt</td><td>rwxrwxrwt</td><td>World-writable + sticky (/tmp)</td></tr>
+                </tbody>
+            </table>
+            <p style="font-size:0.85rem; color:var(--text-muted); margin-top:12px;">Click a preset to load it. <strong>777 is a security smell</strong> — anyone can modify the file, and CI/CD scanners flag it.</p>
+        </section>
+        <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:16px;">
+            <h2 style="font-size:1rem;">🟢📖 The Bit Math</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p>Each digit is <code>read(4) + write(2) + execute(1)</code>. The three digits are owner, group, others. So <code>755</code> = owner <code>7</code> (rwx), group <code>5</code> (r-x), others <code>5</code> (r-x). Directories need the execute bit (<code>x</code>) to be <em>traversable</em> — that is why <code>644</code> on a directory makes it inaccessible.</p>
+                <p>See also: <a href="/cron-expression-tester">Cron Expression Tester</a> · <a href="/hash-generator">Hash Generator</a> · <a href="/password-generator">Password Generator</a> · <a href="/devops-utilities">DevOps Utilities</a> · <a href="/security-sre">Security &amp; SRE</a></p>
+            </div>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var input = document.getElementById('perm-input');
+        var grid = document.getElementById('bits-grid');
+        var info = document.getElementById('perm-info');
+        var mode = 'num';
+
+        var CLASSES = [
+            { name: 'Owner (user)', digits: 0 },
+            { name: 'Group', digits: 1 },
+            { name: 'Others', digits: 2 }
+        ];
+        var PERM_NAMES = [['r', 'read'], ['w', 'write'], ['x', 'execute']];
+        var PERM_VALUES = [4, 2, 1];
+
+        function numToSym(n) {
+            var s = '';
+            s += (n & 4) ? 'r' : '-';
+            s += (n & 2) ? 'w' : '-';
+            s += (n & 1) ? 'x' : '-';
+            return s;
+        }
+
+        function symToNum(sym) {
+            var n = 0;
+            if (sym.indexOf('r') >= 0) n += 4;
+            if (sym.indexOf('w') >= 0) n += 2;
+            if (sym.indexOf('x') >= 0) n += 1;
+            return n;
+        }
+
+        function applySpecial(sym, special) {
+            // special: 4=setuid, 2=setgid, 1=sticky；s/S/t/T 位置
+            var out = sym.split('');
+            if (special & 4) out[2] = (out[2] === 'x') ? 's' : 'S';
+            if (special & 2) out[5] = (out[5] === 'x') ? 's' : 'S';
+            if (special & 1) out[8] = (out[8] === 'x') ? 't' : 'T';
+            return out.join('');
+        }
+
+        function parseSpecial(sym) {
+            var sp = 0;
+            if (sym[2] === 's' || sym[2] === 'S') sp += 4;
+            if (sym[5] === 's' || sym[5] === 'S') sp += 2;
+            if (sym[8] === 't' || sym[8] === 'T') sp += 1;
+            return sp;
+        }
+
+        function calcFromNumeric(numStr) {
+            var special = 0;
+            var body = numStr;
+            if (numStr.length === 4) {
+                special = parseInt(numStr[0], 10) || 0;
+                body = numStr.slice(1);
+            }
+            if (!/^[0-7]{3}$/.test(body)) { renderError('Enter a 3-digit octal (0-7), e.g. 755'); return; }
+            var digits = [parseInt(body[0], 10), parseInt(body[1], 10), parseInt(body[2], 10)];
+            // 特殊位 checkbox 同步
+            document.getElementById('opt-setuid').checked = (special & 4) > 0;
+            document.getElementById('opt-setgid').checked = (special & 2) > 0;
+            document.getElementById('opt-sticky').checked = (special & 1) > 0;
+            render(digits, special);
+        }
+
+        function calcFromSymbolic(symStr) {
+            var m = symStr.match(/^([r-][w-][x-])([r-][w-][x-])([r-][w-][x-])$/);
+            if (!m) { renderError('Enter symbolic form like rwxr-xr-x'); return; }
+            var digits = [symToNum(m[1]), symToNum(m[2]), symToNum(m[3])];
+            var special = parseSpecial(symStr);
+            document.getElementById('opt-setuid').checked = (special & 4) > 0;
+            document.getElementById('opt-setgid').checked = (special & 2) > 0;
+            document.getElementById('opt-sticky').checked = (special & 1) > 0;
+            render(digits, special);
+        }
+
+        function render(digits, special) {
+            var syms = [numToSym(digits[0]), numToSym(digits[1]), numToSym(digits[2])];
+            var fullSym = applySpecial(syms.join(''), special);
+            var html = '';
+            for (var i = 0; i < 3; i++) {
+                html += '<div class="bits-card"><h3>' + CLASSES[i].name + '</h3><div class="bits-row">';
+                for (var b = 0; b < 3; b++) {
+                    var on = (digits[i] & PERM_VALUES[b]) > 0;
+                    html += '<div class="bit-cell' + (on ? ' on' : '') + '" title="' + PERM_NAMES[b][1] + '">' + PERM_NAMES[b][0] + '</div>';
+                }
+                html += '</div><div style="font-size:0.8rem;color:var(--text-muted);">' + digits[i] + ' = ' + syms[i] + '</div></div>';
+            }
+            grid.innerHTML = html;
+            var num = digits.join('');
+            if (special) num = special + num;
+            info.innerHTML = '<strong>Numeric:</strong> <code>chmod ' + num + '</code> &nbsp;|&nbsp; <strong>Symbolic:</strong> <code>chmod ' + fullSym + '</code>'
+                + (special ? ' &nbsp;|&nbsp; <strong>Special bits:</strong> ' + specialBits(special) : '');
+        }
+
+        function specialBits(sp) {
+            var parts = [];
+            if (sp & 4) parts.push('setuid');
+            if (sp & 2) parts.push('setgid');
+            if (sp & 1) parts.push('sticky');
+            return parts.join(', ');
+        }
+
+        function renderError(msg) {
+            grid.innerHTML = '<div style="grid-column:1/-1;color:var(--accent);font-size:0.9rem;">⚠ ' + msg + '</div>';
+            info.textContent = '';
+        }
+
+        function recalc() {
+            var special = 0;
+            if (document.getElementById('opt-setuid').checked) special += 4;
+            if (document.getElementById('opt-setgid').checked) special += 2;
+            if (document.getElementById('opt-sticky').checked) special += 1;
+            if (mode === 'num') {
+                var m = input.value.match(/[0-7]{3}$/);
+                if (!m) { renderError('Enter a 3-digit octal (0-7), e.g. 755'); return; }
+                var digits = [parseInt(m[0][0], 10), parseInt(m[0][1], 10), parseInt(m[0][2], 10)];
+                render(digits, special);
+            } else {
+                calcFromSymbolic(input.value.replace(/^[stTS-]{1}?/ , ''));
+            }
+        }
+
+        function onInput() {
+            var v = input.value.trim();
+            if (!v) return;
+            if (/^[0-7]{3,4}$/.test(v)) {
+                mode = 'num';
+                document.getElementById('mode-num').classList.add('active');
+                document.getElementById('mode-sym').classList.remove('active');
+                calcFromNumeric(v);
+            } else if (/^[r-][w-][x-][r-][w-][x-][r-][w-][x-]$/.test(v)) {
+                mode = 'sym';
+                document.getElementById('mode-sym').classList.add('active');
+                document.getElementById('mode-num').classList.remove('active');
+                calcFromSymbolic(v);
+            } else {
+                renderError('Enter octal like 755 or symbolic like rwxr-xr-x');
+            }
+        }
+
+        window.setMode = function(m) {
+            mode = m;
+            document.getElementById('mode-num').classList.toggle('active', m === 'num');
+            document.getElementById('mode-sym').classList.toggle('active', m === 'sym');
+            var v = input.value.trim();
+            if (m === 'num') {
+                if (!/^[0-7]{3,4}$/.test(v)) input.value = '755';
+                calcFromNumeric(input.value.trim());
+            } else {
+                if (!/^[r-][w-][x-]{3}$/.test(v) && !/^[r-][w-][x-][r-][w-][x-][r-][w-][x-]$/.test(v)) input.value = 'rwxr-xr-x';
+                calcFromSymbolic(input.value.trim());
+            }
+        };
+        window.recalc = recalc;
+        window.onInput = onInput;
+
+        // 预设表点击
+        Array.prototype.forEach.call(document.querySelectorAll('#preset-table tbody tr'), function(tr) {
+            tr.addEventListener('click', function() {
+                var v = tr.getAttribute('data-v');
+                input.value = v;
+                if (/^[0-7]{3,4}$/.test(v)) {
+                    mode = 'num';
+                    document.getElementById('mode-num').classList.add('active');
+                    document.getElementById('mode-sym').classList.remove('active');
+                    calcFromNumeric(v);
+                } else {
+                    mode = 'sym';
+                    document.getElementById('mode-sym').classList.add('active');
+                    document.getElementById('mode-num').classList.remove('active');
+                    calcFromSymbolic(v);
+                }
+            });
+        });
+
+        // Expose for tests
+        window.numToSymForTest = numToSym;
+        window.symToNumForTest = symToNum;
+
+        // Initial
+        input.value = '755';
+        calcFromNumeric('755');
+    })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Serverless Lambda Compute Cost Estimator — jslet</title>
+    <meta name="description" content="Lambda bills in GB-seconds. Each invocation looks free. 10M invocations/month at 200ms × 256MB is $8.50 in compute, $2.00 in requests. 100 functions like that = $1,050/month. Compute the real number.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Serverless Lambda Compute Cost Estimator — jslet">
+    <meta property="og:description" content="Forecast serverless runtime fees by breaking function processing windows into millisecond usage units. GB-seconds, request charges, and per-million cost breakdown.">
+    <meta property="og:url" content="https://www.jslet.com/lambda-execution-ms-to-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Serverless Lambda Compute Cost Estimator — jslet">
+    <meta name="twitter:description" content="Forecast serverless runtime fees by breaking function processing windows into millisecond usage units. GB-seconds, request charges, per-million cost.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/lambda-execution-ms-to-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Serverless Lambda Compute Cost Estimator",
+      "description": "Forecasts serverless runtime fees by breaking function processing windows into millisecond usage units. Estimate AWS Lambda costs from monthly invocations, average duration, and memory configuration.",
+      "url": "https://www.jslet.com/lambda-execution-ms-to-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How is AWS Lambda billed exactly?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Lambda bills in GB-seconds plus a per-request charge. The classic surprise: 10M invocations at 200ms with 256MB costs about $8.50 in compute plus $2.00 in requests — but 100 functions like that is $1,050/month. The calculator reproduces the GB-second formula with current pricing so the real number is visible."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does each Lambda invocation look free but add up?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A single invocation at 256MB × 200ms is fractions of a cent, which is why serverless feels free in a demo. Multiply by millions of invocations across many functions and the compute + request charges compound into real money. The calculator projects monthly cost from your invocation volume and duration, so the architecture decision uses the annual number."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What are the best Lambda cost optimization strategies?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Reduce execution duration (cold-start tuning, larger memory can paradoxically cut cost by finishing faster), minimize request count with batching, and consolidate cold-start-prone functions. The calculator's optimization section quantifies each lever — duration, memory, invocation volume — so you prioritize the one that moves your bill."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>λ <span>Serverless Lambda</span> Compute Cost Estimator</h1>
+            <p>Lambda bills in GB-seconds. Each invocation looks free — $0.0000166667 per GB-second is too small to feel. At 10M invocations/month with 200ms avg duration and 256MB, you're at $10.50/month per function. 100 functions. The decimal place shifts fast. Model it before your CFO asks why serverless costs more than EC2.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Lambda Workload Profile</h3>
+                <p class="card-desc">Configure invocation volume, avg duration (ms), and memory (MB). The engine computes GB-seconds at $0.0000166667/GB-s plus $0.20/million requests. Small unit cost, big multiplier effect.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="inv">Monthly Executions (Millions)</label>
+                        <input type="number" class="unit-input" id="inv" value="5" step="any" min="0.01">
+                    </div>
+                    <div class="input-group">
+                        <label for="dur">Average Duration (ms)</label>
+                        <input type="number" class="unit-input" id="dur" value="200" step="any" min="1">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="mem">Memory Allocated (MB)</label>
+                        <input type="number" class="unit-input" id="mem" value="512" step="any" min="128">
+                    </div>
+                    <div class="input-group">
+                        <label for="region">Pricing Region</label>
+                        <select class="unit-input" id="region" disabled style="opacity:0.6;">
+                            <option value="us-east-1" selected>US East (N. Virginia) — Standard Pricing</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Calculation</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Lambda Cost Breakdown</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-compute">—</div><div class="metric-label">Compute Cost</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-request">—</div><div class="metric-label">Request Cost</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-total">—</div><div class="metric-label">Total Cost /mo</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-per-mil">—</div><div class="metric-label">Cost Per Million</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>AWS Lambda Pricing: GB-Seconds + Request Charges</h2>
+            <p>AWS Lambda employs a <strong>two-part pricing model</strong> that charges separately for compute duration and invocation count. The compute charge is based on <strong>GB-seconds</strong> — the product of memory allocated (in GB) and execution duration (in seconds). The request charge is a flat <strong>$0.20 per million invocations</strong>, regardless of function size or duration. This decoupled model means that short, memory-light functions can be extremely cheap, while long-running, high-memory functions can accrue significant costs even at modest invocation volumes.</p>
+
+            <h3>How This Calculator Works</h3>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Component</th><th>Formula</th><th>Rate (US East)</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Compute Cost</strong></td><td><code>Invocations × Duration(s) × Memory(GB) × $0.0000166667</code></td><td>$0.0000166667 per GB-second</td></tr>
+                    <tr><td><strong>Request Cost</strong></td><td><code>Invocations × $0.20 / 1,000,000</code></td><td>$0.20 per million requests</td></tr>
+                    <tr><td><strong>Total Cost</strong></td><td><code>Compute Cost + Request Cost</code></td><td>—</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>The GB-Second Formula in Practice</h3>
+            <p>A GB-second is the fundamental unit of Lambda compute billing. A function configured with 1,024 MB (1 GB) of memory running for 1 second consumes exactly 1 GB-second. For a function with 512 MB running for 200 ms, each invocation consumes <code>0.5 GB × 0.2 s = 0.1 GB-seconds</code>. At 5 million invocations per month, that is 500,000 GB-seconds. Multiplied by the $0.0000166667 rate, the pure compute cost is approximately $8.33. The request charge adds another $1.00 (5 × $0.20), totaling roughly $9.33 per month for a moderate-volume API backend.</p>
+
+            <h3>Cost Optimization Strategies</h3>
+            <p>Lambda costs scale linearly with duration and memory, but <strong>not independently</strong>. Increasing memory also increases vCPU allocation proportionally (1,769 MB = 1 vCPU), which can reduce execution duration for CPU-bound workloads. This creates a non-obvious optimization surface: a 256 MB function running for 400 ms costs the same in GB-seconds as a 512 MB function running for 200 ms, but the latter may provide lower latency. Use AWS Compute Optimizer or Lambda Power Tuning to find the cost-latency Pareto frontier for your specific function payloads.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/lambda-cost-real">📰 The Serverless Tax (Full Briefing) →</a>
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var i = v('inv') * 1e6, d = v('dur') / 1000, m = v('mem') / 1024;
+        var gbs = i * d * m;
+        var rc = v('inv') * 0.20;
+        var cc = gbs * 0.0000166667;
+        var tc = rc + cc;
+        var perM = tc / v('inv');
+
+        document.getElementById('val-compute').textContent = '$' + cc.toFixed(2);
+        document.getElementById('val-request').textContent = '$' + rc.toFixed(2);
+        document.getElementById('val-total').textContent = '$' + tc.toFixed(2);
+        document.getElementById('val-per-mil').textContent = '$' + perM.toFixed(2);
+
+        document.getElementById('results-params').innerText =
+            v('inv') + 'M invocations × ' + v('dur') + ' ms × ' + v('mem') + ' MB — ' + (gbs / 1e6).toFixed(2) + ' M GB-seconds';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', compute);
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

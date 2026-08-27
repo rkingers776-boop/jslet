@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>HTML to Markdown Converter — Clean HTML to MD Online — jslet</title>
+    <meta name="description" content="Convert HTML to Markdown online. Handles headings, tables, code blocks, links, images and lists. Paste any HTML fragment and get clean GitHub-flavored Markdown. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/html-to-markdown">
+    <meta property="og:title" content="HTML to Markdown Converter — Clean HTML to MD">
+    <meta property="og:description" content="Convert HTML fragments to GitHub-flavored Markdown. Tables, code, links, images handled. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/html-to-markdown">
+    <meta property="og:type" content="website"><meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="HTML to Markdown Converter — Clean HTML to MD">
+    <meta name="twitter:description" content="Convert HTML fragments to GitHub-flavored Markdown. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"HTML to Markdown Converter","description":"Convert HTML fragments to GitHub-flavored Markdown. Handles headings, tables, code blocks, links, images, lists, blockquotes and inline formatting. 100% client-side.","url":"https://www.jslet.com/html-to-markdown","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I convert HTML to Markdown without installing a library?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Paste your HTML fragment into jslet's HTML to Markdown converter and the output appears instantly. The tool runs entirely in your browser: it parses the HTML with the browser's own DOM parser, then walks the element tree converting each tag to its Markdown equivalent — h1-h6 to #-######, p to blank-line separated paragraphs, ul/ol to - and 1. lists, a to [text](href), img to ![alt](src), pre/code to fenced code blocks, table to GitHub-flavored pipe tables, blockquote to >, and strong/em/code to **, * and backticks. The output is GitHub-flavored Markdown, so it works directly in GitHub READMEs, GitLab wikis, Notion imports and most static site generators. No server, no upload — the conversion never leaves your browser."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does my HTML table come out as raw HTML in Markdown?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Markdown does not have a native table syntax — GitHub-flavored Markdown (GFM) added pipe tables as a convention, and that is what this tool emits. But if a table cell contains block-level elements (a nested div, a list, or multiple paragraphs), it cannot be represented as a flat pipe row, so the converter falls back to keeping the table as HTML. That is the correct behavior: a GFM pipe table with a block element inside breaks every renderer. If you need a clean table, flatten the cell content first. The same fallback applies to any construct Markdown cannot express — the tool keeps the HTML so nothing is lost, rather than producing broken Markdown."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does this tool work with full web pages or just fragments?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Both. Paste a full page and the converter ignores the head, script, style, and nav boilerplate, converting only the meaningful content. Paste a fragment — a single table, a blockquote, an article body — and it converts just that. The DOM parser used is the browser's own, so malformed HTML (unclosed tags, stray attributes) is auto-corrected the same way a browser renders it, which means what you see is what you get: the Markdown matches the rendered page, not the raw source quirks."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is my HTML sent to a server?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Everything runs in your browser via JavaScript — your HTML never leaves your device. This matters when converting proprietary documentation, internal wikis or client content. Open the Network tab (F12) before converting and you will see zero outbound requests. Free, no account, no usage limits."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .tool-layout { display: flex; gap: 20px; min-height: 450px; }
+        @media (max-width: 768px) { .tool-layout { flex-direction: column; } }
+        .tool-panel { flex: 1; display: flex; flex-direction: column; }
+        .tool-panel label { font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; color: var(--text-body); }
+        .tool-panel textarea { flex: 1; min-height: 380px; font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 0.82rem; padding: 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); resize: vertical; line-height: 1.5; }
+        .tool-panel textarea:focus { border-color: var(--accent); outline: none; }
+        .btn-row { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+        .info-bar { font-size: 0.82rem; color: var(--text-muted); margin-top: 8px; display: flex; gap: 20px; flex-wrap: wrap; }
+        .options-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; font-size: 0.85rem; }
+        .options-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; font-weight: 400; }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>HTML <span>→Markdown</span> Converter</h1><p>Paste any HTML fragment, get clean GitHub-flavored Markdown. Tables, code blocks, links and images handled — with honest fallbacks when Markdown can't express something.</p></header>
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="convertHtml()">🟢🔄 Convert HTML →MD</button>
+            <button class="btn btn-outline" onclick="copyMd()">🟢📋 Copy Markdown</button>
+            <button class="btn btn-outline" onclick="loadSample()">🟢🧪 Sample</button>
+            <button class="btn btn-outline" onclick="clearAll()">🗑 Clear</button>
+        </div>
+        <div class="options-row">
+            <label><input type="checkbox" id="opt-gfm" checked> GitHub-flavored (pipe tables)</label>
+            <label><input type="checkbox" id="opt-esc" checked> Escape special chars in text</label>
+            <label><input type="checkbox" id="opt-ignore" checked> Skip script / style / nav</label>
+        </div>
+        <div class="tool-layout">
+            <div class="tool-panel"><label for="input-html">🟢📥 HTML Input</label><textarea id="input-html" placeholder='Paste HTML here...&#10;<h2>Title</h2><p>Hello <strong>world</strong></p>'></textarea></div>
+            <div class="tool-panel"><label for="output-md">🟢📤 Markdown Output</label><textarea id="output-md" placeholder="Markdown will appear here..." readonly></textarea><div class="info-bar" id="md-stats"></div></div>
+        </div>
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">🟢📖 What This Converter Does (and What Markdown Can't Do)</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>Tag mapping:</strong> <code>h1-h6</code> → <code>#-######</code>, <code>p</code> → blank-line paragraphs, <code>ul/ol</code> → <code>-</code> and <code>1.</code> lists, <code>a</code> → <code>[text](href)</code>, <code>img</code> → <code>![alt](src)</code>, <code>pre/code</code> → fenced code blocks, <code>table</code> → GFM pipe tables, <code>blockquote</code> → <code>&gt;</code>, <code>strong/em</code> → <code>**</code> / <code>*</code>.</p>
+                <p><strong>The honest fallback:</strong> Markdown has no native table syntax — GFM pipe tables are a convention, and a cell containing a block-level element (div, list, multi-paragraph) cannot be flattened into a pipe row. When that happens, the converter keeps the table as HTML instead of emitting broken Markdown. Something is lost only when a lossless conversion is impossible.</p>
+                <p><strong>Boilerplate skip:</strong> With "Skip script / style / nav" enabled, the converter drops <code>script</code>, <code>style</code>, <code>head</code> and <code>nav</code> content so pasting a full web page yields just the readable article.</p>
+                <p><strong>Escaping:</strong> Text-level special characters (<code># * _ [ ] \`</code>) are escaped in prose so the Markdown round-trips back to the same visible text.</p>
+                <p>See also: <a href="/markdown-preview">Markdown Preview</a> (reverse) · <a href="/html-to-jsx">HTML to JSX</a> · <a href="/html-to-jsx">HTML to JSX</a> · <a href="/dev-tools">More Developer Tools</a></p>
+            </div>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var inp = document.getElementById('input-html');
+        var out = document.getElementById('output-md');
+        var stats = document.getElementById('md-stats');
+
+        function escapeMd(text) {
+            if (!document.getElementById('opt-esc').checked) return text;
+            return text.replace(/([\\`*_{}\[\]()#+\-.!|>])/g, '\\$1');
+        }
+
+        // ── inline 三函数：inlineTag(节点自身装饰) / inlineChildren(子节点) / inlineConvert(入口) ──
+        function inlineTag(node, esc) {
+            if (node.nodeType !== 1) return null;
+            var tag = node.tagName.toLowerCase();
+            if (tag === 'strong' || tag === 'b') return '**' + inlineChildren(node, esc) + '**';
+            if (tag === 'em' || tag === 'i') return '*' + inlineChildren(node, esc) + '*';
+            if (tag === 'code') return '`' + node.textContent + '`';
+            if (tag === 'a') {
+                var href = node.getAttribute('href') || '';
+                return '[' + inlineChildren(node, esc) + '](' + href + ')';
+            }
+            if (tag === 'img') {
+                var alt = node.getAttribute('alt') || '';
+                var src = node.getAttribute('src') || '';
+                return '![' + alt + '](' + src + ')';
+            }
+            if (tag === 'br') return '  \n';
+            if (tag === 'del') return '~~' + inlineChildren(node, esc) + '~~';
+            return null;
+        }
+
+        function inlineChildren(node, esc) {
+            var result = '';
+            Array.prototype.forEach.call(node.childNodes, function(child) {
+                if (child.nodeType === 3) { result += esc ? escapeMd(child.textContent) : child.textContent; return; }
+                if (child.nodeType !== 1) return;
+                var t = inlineTag(child, esc);
+                result += (t !== null) ? t : inlineChildren(child, esc);
+            });
+            return result.trim();
+        }
+
+        function inlineConvert(node, esc) {
+            var self = inlineTag(node, esc);
+            if (self !== null) return self;
+            return inlineChildren(node, esc);
+        }
+
+        // ── block 转换 ──
+        function blockConvert(node, depth, gfm, esc, skipBoilerplate) {
+            var out = '';
+            if (node.nodeType === 3) {
+                var t = node.textContent;
+                if (t.trim()) out += t;
+                return out;
+            }
+            if (node.nodeType !== 1) return out;
+            var tag = node.tagName.toLowerCase();
+            var skipTags = ['script', 'style', 'head', 'nav', 'iframe', 'noscript', 'template', 'svg'];
+            if (skipBoilerplate && skipTags.indexOf(tag) >= 0) return out;
+
+            if (tag === 'h1' || tag === 'h2' || tag === 'h3' || tag === 'h4' || tag === 'h5' || tag === 'h6') {
+                var level = parseInt(tag.charAt(1), 10);
+                var hashes = '';
+                for (var h = 0; h < level; h++) hashes += '#';
+                out += hashes + ' ' + inlineConvert(node, esc) + '\n\n';
+                return out;
+            }
+            if (tag === 'p') {
+                var txt = inlineConvert(node, esc);
+                if (txt) out += txt + '\n\n';
+                return out;
+            }
+            if (tag === 'blockquote') {
+                var inner = '';
+                Array.prototype.forEach.call(node.childNodes, function(child) {
+                    inner += blockConvert(child, depth + 1, gfm, esc, skipBoilerplate);
+                });
+                inner = inner.trim();
+                if (inner) {
+                    var lines = inner.split('\n');
+                    out += lines.map(function(l) { return '> ' + l; }).join('\n') + '\n\n';
+                }
+                return out;
+            }
+            if (tag === 'pre') {
+                var codeEl = node.querySelector('code');
+                var codeText = codeEl ? codeEl.textContent : node.textContent;
+                var lang = '';
+                if (codeEl && codeEl.className) {
+                    var m = codeEl.className.match(/language-([\w-]+)/);
+                    if (m) lang = m[1];
+                }
+                out += '```' + lang + '\n' + codeText.replace(/\n$/, '') + '\n```\n\n';
+                return out;
+            }
+            if (tag === 'ul' || tag === 'ol') {
+                var ordered = tag === 'ol';
+                var liIdx = 1;
+                Array.prototype.forEach.call(node.children, function(li) {
+                    if (li.tagName.toLowerCase() !== 'li') return;
+                    var prefix = ordered ? liIdx + '. ' : '- ';
+                    var content = blockConvert(li, depth + 1, gfm, esc, skipBoilerplate).trim().split('\n');
+                    out += '  '.repeat(depth) + prefix + content[0] + '\n';
+                    for (var c = 1; c < content.length; c++) {
+                        out += '  '.repeat(depth + 1) + content[c] + '\n';
+                    }
+                    liIdx++;
+                });
+                out += '\n';
+                return out;
+            }
+            if (tag === 'li') {
+                var liOut = '';
+                Array.prototype.forEach.call(node.childNodes, function(child) {
+                    liOut += blockConvert(child, depth + 1, gfm, esc, skipBoilerplate);
+                });
+                return liOut;
+            }
+            if (tag === 'table') {
+                return tableToMd(node, gfm, esc);
+            }
+            if (tag === 'hr') {
+                out += '---\n\n';
+                return out;
+            }
+            if (tag === 'div' || tag === 'section' || tag === 'article' || tag === 'main' || tag === 'body' || tag === 'html' || tag === 'figure' || tag === 'figcaption') {
+                Array.prototype.forEach.call(node.childNodes, function(child) {
+                    out += blockConvert(child, depth, gfm, esc, skipBoilerplate);
+                });
+                return out;
+            }
+            // Fallback: inline content in block position (a, img, span, strong at root)
+            var txt2 = inlineConvert(node, esc);
+            if (txt2) out += txt2 + '\n\n';
+            return out;
+        }
+
+        function tableToMd(table, gfm, esc) {
+            var rows = Array.prototype.map.call(table.rows, function(r) {
+                return Array.prototype.map.call(r.cells, function(c) {
+                    if (c.querySelector('div, p, ul, ol, table, blockquote, pre')) {
+                        return null;
+                    }
+                    return inlineConvert(c, esc);
+                });
+            });
+            var hasBlock = false;
+            for (var i = 0; i < rows.length; i++) {
+                if (!rows[i] || rows[i].indexOf(null) >= 0) { hasBlock = true; break; }
+            }
+            if (hasBlock || !gfm) return table.outerHTML + '\n\n';
+            if (!rows.length) return '';
+            var header = rows[0];
+            var out = '| ' + header.join(' | ') + ' |\n';
+            out += '| ' + header.map(function() { return '---'; }).join(' | ') + ' |\n';
+            for (var r = 1; r < rows.length; r++) {
+                out += '| ' + rows[r].join(' | ') + ' |\n';
+            }
+            return out + '\n';
+        }
+
+        function convertHtml() {
+            var html = inp.value;
+            if (!html.trim()) { out.value = ''; stats.textContent = ''; return; }
+            var gfm = document.getElementById('opt-gfm').checked;
+            var esc = document.getElementById('opt-esc').checked;
+            var skip = document.getElementById('opt-ignore').checked;
+
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var body = doc.body;
+            var md = blockConvert(body, 0, gfm, esc, skip).trim() + '\n';
+
+            out.value = md;
+            var bytes = new Blob([md]).size;
+            stats.textContent = '🟢📊 ' + md.length.toLocaleString() + ' chars · ' + bytes.toLocaleString() + ' bytes · GFM ' + (gfm ? 'on' : 'off');
+        }
+
+        window.convertHtml = convertHtml;
+        window.copyMd = function() { if (out.value) navigator.clipboard.writeText(out.value); };
+        window.clearAll = function() { inp.value = ''; out.value = ''; stats.textContent = ''; };
+        window.loadSample = function() {
+            inp.value = '<h2>Release Notes 1.4</h2><p>Fixed the <strong>cache invalidation</strong> bug and added <code>--retry</code> flag. See the <a href="https://github.com/jslet/cli">repo</a> for details.</p><h3>What changed</h3><ul><li>Faster startup</li><li>Better error messages</li></ul><h3>Benchmarks</h3><table><thead><tr><th>Version</th><th>Startup</th></tr></thead><tbody><tr><td>1.3</td><td>320ms</td></tr><tr><td>1.4</td><td><strong>180ms</strong></td></tr></tbody></table><pre><code class="language-bash">npm install -g jslet-cli</code></pre>';
+            convertHtml();
+        };
+
+        // Expose for tests
+        window.escapeMdForTest = escapeMd;
+        window.inlineConvertForTest = inlineConvert;
+        window.blockConvertForTest = function(n) { return blockConvert(n, 0, true, true, true); };
+
+        // Initial sample
+        inp.value = '<h1>Hello World</h1><p>This is <strong>bold</strong> and <em>italic</em> with <code>inline code</code> and a <a href="https://jslet.com">link</a>.</p><ul><li>Item one</li><li>Item two</li></ul>';
+        convertHtml();
+    })();
+    </script>
+</body>
+</html>

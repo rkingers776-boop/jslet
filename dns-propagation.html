@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>DNS Propagation Time Estimator — How Long Until Your DNS Change Goes Live? (2026) — jslet</title>
+    <meta name="description" content="You changed an A record. Your browser says the new IP. Your coworker in Singapore still sees the old one. DNS propagation isn't one number — it's a distribution shaped by TTL, ISP resolver caching policy, geographic anycast topology, and the resolver hierarchy between your user and the authoritative nameserver. This tool models the actual time-to-visibility for a DNS change across 8 resolver populations.">
+    <meta property="og:title" content="DNS Propagation Time Estimator — How Long Until Your Change Goes Live?">
+    <meta property="og:description" content="You changed the A record. Singapore still sees the old IP. Model DNS propagation time across Google DNS, Cloudflare, OpenDNS, and ISP resolvers — TTL, cache policy, and geographic topology all factored in.">
+    <meta property="og:url" content="https://www.jslet.com/dns-propagation">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-07-13T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-13T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="DNS Propagation Time Estimator — How Long Until Your Change Goes Live?">
+    <meta name="twitter:description" content="Change an A record. One browser shows the new IP. Another shows the old one. Model the real propagation time across 8 resolver populations.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/dns-propagation">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "DNS Propagation Time Estimator — How Long Until Your DNS Change Goes Live? (2026)",
+      "description": "Model the actual time-to-visibility for a DNS record change across Google DNS, Cloudflare, OpenDNS, Quad9, and ISP default resolvers. TTL, resolver cache policy, geographic anycast topology, and the full resolver hierarchy factored in.",
+      "url": "https://www.jslet.com/dns-propagation",
+      "datePublished": "2026-07-13T00:00:00+00:00",
+      "dateModified": "2026-07-13T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research" },
+      "publisher": { "@type": "Organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How long does DNS propagation actually take?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "DNS propagation is not a single time — it's a distribution. For a record with a 300-second (5-minute) TTL, the median user sees the change within 5 minutes. But some resolver populations — especially ISP default resolvers that override TTLs with 24-hour minimums — can take hours or even days. Google Public DNS and Cloudflare 1.1.1.1 honor TTLs strictly and typically propagate within the TTL window. ISP resolvers (Comcast, AT&T, Deutsche Telekom) often ignore short TTLs and impose their own minimum cache durations (1–24 hours). The geographic resolver hierarchy adds another layer: a user in Tokyo querying through a local ISP resolver that forwards to a regional cache may see the old record long after users in Virginia on Google DNS see the new one. For a 300-second TTL record: Google DNS/Cloudflare users see it in under 5 minutes; Quad9/OpenDNS users in 5–15 minutes; ISP resolver users in 1–48 hours depending on the ISP's cache policy. The worst case for global propagation is typically 48 hours — but for 95%+ of users, changes propagate within the TTL window when using public resolvers."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why do some users see my DNS change immediately while others don't?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The discrepancy comes from the resolver hierarchy. When you change a DNS record at your authoritative nameserver, that change does not 'push' to every resolver — resolvers pull it by making queries when their cached copy expires. Three factors create the time spread: (1) Resolver cache policy — Google DNS and Cloudflare respect your TTL; many ISP resolvers override short TTLs with their own minimum (often 300–3600 seconds for A records, 86400 seconds for NS records). (2) Geographic topology — a resolver in Singapore may cache the record 5 seconds after the resolver in Virginia, starting their TTL countdowns at different times. (3) Recursive resolver chains — when an ISP resolver forwards to an upstream resolver (common in carrier-grade NAT deployments), the cached copy lives at both levels, and the upstream resolver may have its own TTL override policy. The solution: reduce your TTL to 60–300 seconds at least 24 hours before a planned DNS change (so the old TTL expires everywhere), make the change, then restore the TTL after propagation confirms. This 'pre-warming' technique is standard practice for DNS migrations."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which DNS resolvers propagate changes the fastest?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Google Public DNS (8.8.8.8) and Cloudflare (1.1.1.1) are the fastest — both honor TTLs strictly and query authoritative nameservers directly without upstream forwarding, meaning changes propagate within the TTL window (typically 60–300 seconds for short TTLs). Quad9 (9.9.9.9) is close behind at TTL + 0–5 minutes. OpenDNS (208.67.222.222) honors TTLs but adds a small processing delay (1–3 minutes). ISP default resolvers are the slowest — many ignore TTLs below their configured minimum (often 300–3600 seconds), and some cache negative responses (NXDOMAIN) for up to 4 hours regardless of the SOA negative TTL. The worst offenders among major ISPs: Comcast/Xfinity (minimum 300s, sometimes overrides to 3600s), Deutsche Telekom (minimum 3600s for A records), BT/EE (minimum 900s). For fastest global propagation: use a 60-second TTL, verify with Google DNS and Cloudflare first (they'll show the change within 60 seconds), then check Quad9 and OpenDNS (within 5 minutes), and expect ISP resolver populations to trail by 1–24 hours depending on the ISP."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does reducing my TTL to 1 second make DNS propagation instant?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Even with a TTL of 1 second, real-world propagation has a floor determined by resolver behavior. (1) Not all resolvers honor sub-30-second TTLs — many enforce a minimum of 30–60 seconds regardless of what you set. (2) Query latency — a recursive resolver still needs to traverse the DNS hierarchy to your authoritative nameserver, which takes 20–200ms per cold query. (3) Negative caching — SOA minimum TTL controls how long resolvers cache NXDOMAIN responses; setting a 1-second positive TTL but a 3600-second negative TTL creates asymmetric propagation where the record resolves quickly but 'host not found' errors persist for an hour. (4) DNS query load — a 1-second TTL means every resolver queries your authoritative nameserver every second for every user behind it. At scale this can overwhelm your nameserver. Practical minimum: 30 seconds for critical infrastructure with resilient authoritative DNS, 60–300 seconds for general use."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I check DNS propagation globally?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Use multiple vantage points. Command-line: dig +short A example.com @8.8.8.8 (Google), @1.1.1.1 (Cloudflare), @9.9.9.9 (Quad9), @208.67.222.222 (OpenDNS). Web tools: dnschecker.org queries from 30+ locations, whatsmyDNS.net from 20+ locations. API: Google DNS-over-HTTPS (dns.google/resolve?name=example.com&type=A) gives you Google's current cached answer. The key insight: don't just check one resolver. If Google DNS shows the new IP but your ISP's resolver doesn't, the problem is your ISP's cache policy, not your DNS configuration. For migrations: test from the specific geographic regions your users are in — a record that resolves correctly from Virginia may still show the old value from Mumbai because the resolver caches are independent."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 700px) { .calc-grid { grid-template-columns: 1fr; } }
+        select.unit-input, input.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        select.unit-input { appearance: none; cursor: pointer; }
+        select.unit-input:focus, input.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .propagation-bar-wrap { margin: 8px 0; }
+        .propagation-bar-label { display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 3px; }
+        .propagation-bar-label .resolver-name { font-weight: 600; color: var(--text-heading); }
+        .propagation-bar-label .resolver-time { font-family: monospace; color: var(--accent); }
+        .propagation-bar { height: 22px; border-radius: 4px; background: var(--border); position: relative; overflow: hidden; }
+        .propagation-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; position: relative; }
+        .propagation-bar-fill.fast { background: linear-gradient(90deg, #27ae60, #2ecc71); }
+        .propagation-bar-fill.medium { background: linear-gradient(90deg, #f39c12, #e67e22); }
+        .propagation-bar-fill.slow { background: linear-gradient(90deg, #e74c3c, #c0392b); }
+        .resolver-card {
+            border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px;
+            margin-bottom: 10px; background: var(--bg-card); transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .resolver-card:hover { border-color: var(--accent); box-shadow: var(--shadow-md); }
+        .resolver-card .resolver-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .resolver-card .resolver-title { font-weight: 700; color: var(--text-heading); font-size: 0.95rem; }
+        .resolver-card .resolver-ip { font-family: monospace; font-size: 0.75rem; color: var(--text-muted); }
+        .resolver-card .resolver-detail { font-size: 0.82rem; color: var(--text-body); line-height: 1.5; }
+        .resolver-card .resolver-ttl-policy {
+            display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 3px; margin-top: 4px;
+        }
+        .policy-honor { background: #27ae6022; color: #27ae60; }
+        .policy-override { background: #e67e2222; color: #e67e22; }
+        .policy-ignore { background: #e74c3c22; color: #e74c3c; }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.5rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .timeline-marker {
+            position: relative; padding-left: 24px; margin: 8px 0;
+            border-left: 2px solid var(--border);
+        }
+        .timeline-marker::before {
+            content: ''; position: absolute; left: -6px; top: 4px;
+            width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+        }
+        table.prop-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.88rem; }
+        table.prop-table th { background: var(--bg-input); padding: 10px; text-align: left; border-bottom: 2px solid var(--border); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); }
+        table.prop-table td { padding: 9px 10px; border-bottom: 1px solid var(--border-light); }
+        table.prop-table tr:hover td { background: var(--accent-soft); }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+    <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>DNS <span>Propagation</span></h1>
+        <p>How Long Until Your DNS Change Goes Live? — Resolver-by-Resolver Timing Model</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-07-13 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 9 min read</p>
+    </header>
+
+    <!-- ═══ Executive Summary ═══ -->
+    <section class="seo-section">
+        <h2>Executive Summary</h2>
+        <p>You change the A record for <code>api.example.com</code> from <code>203.0.113.10</code> to <code>203.0.113.20</code>. Your browser shows the new IP. The deployment dashboard says green. Then the Slack messages start: "API is down" from Singapore. "Getting connection refused" from Frankfurt. "Works fine here" from Virginia.</p>
+        <p>This is DNS propagation. It's not a single number. It's a distribution — shaped by your TTL setting, by the cache policies of the 8 major resolver populations between your users and your authoritative nameserver, and by the geographic topology of the DNS hierarchy itself. The user on Google DNS in Virginia sees the change in 60 seconds. The user on a Deutsche Telekom resolver in Berlin might wait 24 hours. Both are correct from their vantage point.</p>
+        <p>This tool models that distribution. Input your record's TTL and record type, select the resolver populations relevant to your user base, and get the per-resolver propagation time range — with the underlying cache policy data that drives the math. Use it before your next DNS cutover to know exactly which users will see the change when, and which ones need a lower TTL.</p>
+    </section>
+
+    <!-- ═══ Calculator ═══ -->
+    <section class="seo-section">
+        <h2>Propagation Time Calculator</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 16px;">Model the distribution of propagation times across 8 resolver populations. All calculations client-side — your DNS configuration never leaves your browser.</p>
+
+        <div class="calc-grid">
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="ttl-input">Record TTL (seconds)</label>
+                <input type="number" id="ttl-input" class="unit-input" value="300" min="1" max="86400" step="1" style="width:100%;">
+                <span style="font-size:0.72rem;color:var(--text-muted);">Common: 60 (fast cutover), 300 (standard), 3600 (default), 86400 (24h)</span>
+            </div>
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="rectype-input">Record Type</label>
+                <select id="rectype-input" class="unit-input" style="width:100%;">
+                    <option value="A">A / AAAA</option>
+                    <option value="CNAME">CNAME</option>
+                    <option value="MX">MX</option>
+                    <option value="NS">NS (delegation)</option>
+                    <option value="TXT">TXT / SPF / DKIM</option>
+                </select>
+            </div>
+        </div>
+
+        <div style="margin-top: 12px;">
+            <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="prereduce-input">TTL Reduction Window <span style="font-weight:400;color:var(--text-muted);">(did you lower the TTL before the change?)</span></label>
+            <select id="prereduce-input" class="unit-input" style="width:100%;">
+                <option value="yes">Yes — TTL was lowered to this value at least 24h before the change (old cache expired)</option>
+                <option value="no" selected>No — record had a different (likely longer) TTL before this change</option>
+            </select>
+        </div>
+
+        <h3 style="color: var(--accent); margin: 20px 0 12px;">Estimated Propagation by Resolver</h3>
+        <div id="resolver-results">
+            <p style="color:var(--text-muted); font-style:italic;">Adjust the TTL slider above to see per-resolver propagation estimates.</p>
+        </div>
+    </section>
+
+    <!-- ═══ Resolver Deep-Dive ═══ -->
+    <section class="seo-section">
+        <h2>The 8 Resolver Populations That Determine Your Propagation Time</h2>
+        <p>DNS propagation is not a network phenomenon — it's a cache invalidation problem. Each resolver population has its own cache policy. Some honor your TTL. Some override it. Some ignore it entirely for certain record types. Understanding who does what is the difference between a 5-minute cutover and a 48-hour outage for half your users.</p>
+
+        <h3 style="color: var(--accent);">Tier 1: TTL-Honoring Public Resolvers (Fastest)</h3>
+
+        <div class="resolver-card">
+            <div class="resolver-header">
+                <span class="resolver-title">Google Public DNS</span>
+                <span class="resolver-ip">8.8.8.8 · 8.8.4.4</span>
+            </div>
+            <div class="resolver-detail">
+                <strong>Cache policy:</strong> Strictly honors TTL. No minimum override. No maximum clamp for records with TTL &lt; 6 hours. Authoritative-only resolution — Google DNS does not forward to upstream resolvers, it walks the DNS hierarchy from root to authoritative for every cold query.<br>
+                <strong>Propagation:</strong> TTL + 0–60 seconds (cold query traversal time). For a 300s TTL record: 5–6 minutes maximum.<br>
+                <strong>Global anycast:</strong> Queries route to the nearest Google edge node, but the cache is shared globally — a user in Tokyo and a user in Virginia querying the same record within the TTL window get the same cached answer.<br>
+                <strong>Market share:</strong> ~10% of global DNS queries. Dominant among technically literate users, developers, and Android devices (default on many OEM builds).
+            </div>
+            <span class="resolver-ttl-policy policy-honor">Honors TTL Strictly</span>
+        </div>
+
+        <div class="resolver-card">
+            <div class="resolver-header">
+                <span class="resolver-title">Cloudflare 1.1.1.1</span>
+                <span class="resolver-ip">1.1.1.1 · 1.0.0.1</span>
+            </div>
+            <div class="resolver-detail">
+                <strong>Cache policy:</strong> Strictly honors TTL. Cloudflare's resolver infrastructure is built on the same anycast network as their CDN — queries hit the nearest of 330+ edge locations. Cache is per-edge-location, not global, which means a user in Mumbai may see the cached record expire at a slightly different time than a user in London (the TTL countdown started when each edge independently cached it).<br>
+                <strong>Propagation:</strong> TTL + 0–90 seconds (edge location variance).<br>
+                <strong>WARP nuance:</strong> Users on Cloudflare WARP (their consumer VPN) use 1.1.1.1 as their resolver by default but with an additional caching layer at the WARP egress point. This can add 30–60 seconds of propagation delay vs native 1.1.1.1 users.
+            </div>
+            <span class="resolver-ttl-policy policy-honor">Honors TTL Strictly</span>
+        </div>
+
+        <h3 style="color: var(--accent); margin-top: 24px;">Tier 2: Mostly-Honoring Resolvers (Slight Lag)</h3>
+
+        <div class="resolver-card">
+            <div class="resolver-header">
+                <span class="resolver-title">Quad9</span>
+                <span class="resolver-ip">9.9.9.9 · 149.112.112.112</span>
+            </div>
+            <div class="resolver-detail">
+                <strong>Cache policy:</strong> Honors TTL but adds threat-intelligence filtering. Every query passes through Quad9's blocklist (IBM X-Force + 18 other threat feeds). This filtering adds 5–50ms to each cold query but does not affect cache expiration. For hot (cached) queries, the filtering is on the cached answer — no additional latency.<br>
+                <strong>Propagation:</strong> TTL + 0–5 minutes. Minimum effective TTL of 30 seconds enforced.<br>
+                <strong>DNSSEC:</strong> Quad9 validates DNSSEC by default. If your zone has broken DNSSEC configuration, Quad9 returns SERVFAIL — and caches that SERVFAIL for the negative TTL. This is a common but misdiagnosed cause of "propagation failure."
+            </div>
+            <span class="resolver-ttl-policy policy-honor">Honors TTL (min 30s)</span>
+        </div>
+
+        <div class="resolver-card">
+            <div class="resolver-header">
+                <span class="resolver-title">OpenDNS / Cisco Umbrella</span>
+                <span class="resolver-ip">208.67.222.222 · 208.67.220.220</span>
+            </div>
+            <div class="resolver-detail">
+                <strong>Cache policy:</strong> Honors TTL for most record types. Small processing delay (1–3 minutes) due to their content filtering pipeline. Umbrella (enterprise) users may have additional policy-based cache overrides configured by their admin.<br>
+                <strong>Propagation:</strong> TTL + 1–5 minutes.<br>
+                <strong>NXDOMAIN handling:</strong> OpenDNS replaces NXDOMAIN with a search results page for non-existent domains on the free tier unless the user opts out. This does not affect propagation of real records but can cause confusion when testing.
+            </div>
+            <span class="resolver-ttl-policy policy-honor">Honors TTL (+1–3 min)</span>
+        </div>
+
+        <h3 style="color: var(--accent); margin-top: 24px;">Tier 3: ISP Resolvers — The Wild West (Slowest)</h3>
+
+        <div class="resolver-card">
+            <div class="resolver-header">
+                <span class="resolver-title">Comcast / Xfinity</span>
+                <span class="resolver-ip">75.75.75.75 · 75.75.76.76</span>
+            </div>
+            <div class="resolver-detail">
+                <strong>Cache policy:</strong> Enforces a minimum TTL of 300 seconds for A/AAAA records, even if the authoritative nameserver sets a lower value. SOA minimum TTL is respected but with a floor of 600 seconds for negative caching. Comcast's resolver infrastructure is regional (not anycast) — resolvers on the East Coast are independent from West Coast, so propagation is geographic.<br>
+                <strong>Propagation:</strong> Max(your TTL, 300s) + 0–15 minutes (regional cache variance).<br>
+                <strong>Market share:</strong> ~30 million subscribers. Largest single ISP resolver population in the US.
+            </div>
+            <span class="resolver-ttl-policy policy-override">Overrides TTL &lt; 300s</span>
+        </div>
+
+        <div class="resolver-card">
+            <div class="resolver-header">
+                <span class="resolver-title">Deutsche Telekom</span>
+                <span class="resolver-ip">Varies by region</span>
+            </div>
+            <div class="resolver-detail">
+                <strong>Cache policy:</strong> Enforces a minimum TTL of 3,600 seconds (1 hour) for A/AAAA records. This is the most aggressive override among major ISPs. The Telekom resolver fleet uses a hierarchical caching architecture — edge resolvers forward to regional resolvers which forward to central resolvers. Each tier has its own cache. A record change must expire from all three tiers sequentially.<br>
+                <strong>Propagation:</strong> Typically 1–24 hours for A record changes. NS record changes can take 48+ hours.<br>
+                <strong>Impact:</strong> This is the primary reason "DNS propagation takes up to 48 hours" persists as industry folklore. For Deutsche Telekom users — ~45 million subscribers across Germany and Central Europe — it genuinely can take that long.
+            </div>
+            <span class="resolver-ttl-policy policy-ignore">Overrides TTL &lt; 3600s</span>
+        </div>
+
+        <div class="resolver-card">
+            <div class="resolver-header">
+                <span class="resolver-title">BT / EE (UK)</span>
+                <span class="resolver-ip">Varies by region</span>
+            </div>
+            <div class="resolver-detail">
+                <strong>Cache policy:</strong> Minimum TTL of 900 seconds (15 minutes) for A/AAAA records. DNSSEC-validating. Regional cache architecture — independent resolver clusters serving different UK regions.<br>
+                <strong>Propagation:</strong> Max(your TTL, 900s) + 0–10 minutes.
+            </div>
+            <span class="resolver-ttl-policy policy-override">Overrides TTL &lt; 900s</span>
+        </div>
+
+        <div class="resolver-card">
+            <div class="resolver-header">
+                <span class="resolver-title">General ISP Default Resolvers</span>
+                <span class="resolver-ip">(Catch-all model)</span>
+            </div>
+            <div class="resolver-detail">
+                <strong>Cache policy:</strong> Most Tier 2/3 ISPs worldwide run BIND or Unbound with default configurations. BIND's default minimum TTL is 300 seconds. Unbound defaults to honoring TTL with no minimum override but applies a 86400-second maximum. However, many ISPs customize these defaults upward to reduce upstream query volume. A safe modeling assumption: ISP resolvers enforce a minimum TTL of 300–900 seconds for A/AAAA records, 3600 seconds for MX and NS records, and 600–3600 seconds for negative caching.<br>
+                <strong>Propagation:</strong> Max(your TTL, 300–900s) + 0–30 minutes.
+            </div>
+            <span class="resolver-ttl-policy policy-override">Variable — assume 300–900s min</span>
+        </div>
+    </section>
+
+    <!-- ═══ The Hierarchy ═══ -->
+    <section class="seo-section">
+        <h2>The DNS Resolver Hierarchy — Why "Propagation" Is a Cache Invalidation Problem</h2>
+        <p>DNS is not a push protocol. When you change a record at your authoritative nameserver, that nameserver does not notify anyone. It waits. Resolvers come to it when their cached copy expires and they need a fresh answer. The time between "you made the change" and "every resolver has the new answer" is the propagation window — and its length is determined entirely by cache policies, not by network physics.</p>
+
+        <div class="timeline-marker">
+            <strong>Step 1: Authoritative nameserver update (t=0).</strong> Your DNS provider (Route 53, Cloudflare DNS, DNSMadeEasy) updates the zone file and increments the SOA serial. The change is live on the authoritative nameservers. Nothing else has happened yet.
+        </div>
+        <div class="timeline-marker">
+            <strong>Step 2: Recursive resolver cold query.</strong> A user types your domain. Their configured resolver (ISP, Google DNS, etc.) has no cached answer or the cached answer has expired. It starts at the DNS root, follows the delegation chain (.com → example.com → api.example.com), and queries your authoritative nameserver. It gets the new record. TTL countdown starts at this moment — for this resolver only.
+        </div>
+        <div class="timeline-marker">
+            <strong>Step 3: Cached serving.</strong> While the TTL is counting down, the resolver serves the cached answer without querying upstream. Other users behind the same resolver get the same cached answer. If the record was cached before your change (step 0), the resolver continues serving the old value until its cache expires.
+        </div>
+        <div class="timeline-marker">
+            <strong>Step 4: Cache expiration and refresh.</strong> When the TTL expires, the resolver discards the cached record. The next query triggers a fresh lookup — which now gets the new record. Repeat for every independent resolver in your user population.
+        </div>
+
+        <p style="margin-top: 16px;"><strong>The key insight:</strong> Propagation is the time between steps 1 and 4, summed across all resolver populations. Each resolver's timer started when it last cached the record — not when you made the change. If a resolver cached the old record 30 seconds before your change with a 3600-second TTL, it will serve the old value for 59 minutes and 30 seconds after your change. This is why the "pre-warming" technique works: lower the TTL to 60 seconds at least 24 hours before the change, wait for the old long TTL to expire everywhere, then make the change. Every resolver now has a 60-second stale window, not a 3600-second one.</p>
+    </section>
+
+    <!-- ═══ TTL Pre-Warming ═══ -->
+    <section class="seo-section">
+        <h2>The Pre-Warming Technique — How to Make DNS Changes Instant for 95% of Users</h2>
+        <p>The standard playbook for a zero-downtime DNS migration:</p>
+        <ol>
+            <li><strong>24+ hours before cutover:</strong> Reduce the TTL on the record(s) you plan to change to 60–300 seconds. Wait at least the old TTL duration — if the old TTL was 86400 (24 hours), you wait 24 hours. This ensures every resolver that cached the old record with the old long TTL has expired it and re-cached with the new short TTL.</li>
+            <li><strong>At cutover time:</strong> Make the DNS change. Resolvers with the short TTL will refresh within 60–300 seconds.</li>
+            <li><strong>After propagation confirms:</strong> Restore the TTL to its original value (or a value appropriate for your operational needs). The restored TTL only takes effect after the current short TTL expires.</li>
+        </ol>
+        <p>This technique works because you're not fighting the old cache — you expired it before the change. The only remaining variable is the resolver's minimum TTL policy (if any). On Google DNS and Cloudflare, a 60-second TTL means 60-second propagation. On Comcast, it means 300 seconds (their minimum). On Deutsche Telekom, it means 3600 seconds (their minimum). Pre-warming eliminates the old-cache variable but cannot override ISP minimum TTL policies.</p>
+        <p><strong>When pre-warming doesn't help:</strong> NS record changes (delegation changes). The parent zone's NS records have their own TTLs set by the registry, independent of your zone. Changing nameservers for example.com involves updating the .com zone's NS records — which have a 2-day TTL at the registry level. No amount of pre-warming your own zone can accelerate the registry's NS TTL. Nameserver migrations are inherently 24–48 hour processes.</p>
+    </section>
+
+    <!-- ═══ Related ═══ -->
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/cdn-cache-hit-ratio-impact">🖩 CDN Cache Hit Ratio Impact →</a>
+            <a href="/latency-budget-calculator">🖩 Latency Budget Calculator →</a>
+            <a href="/mbps-to-mbytes-per-sec">🖩 Mbps to MB/s Converter →</a>
+            <a href="/concurrent-users-to-bandwidth">🖩 Concurrent Users → Bandwidth →</a>
+            <a href="/vpn-throughput-degradation">🖩 VPN Throughput Degradation →</a>
+            <a href="/system-availability-sla">🖩 SLA → Downtime Calculator →</a>
+            <a href="/cdn-cached-ratio-to-bandwidth-saving">🖩 CDN Cache → Bandwidth Saving →</a>
+            <a href="/network-economics">🌐 Network Economics Tools →</a>
+        </div>
+    </div>
+
+    <!-- ═══ Copyright ═══ -->
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission.</p>
+            <p style="margin:0;"><strong>Resolver Data Disclaimer:</strong> ISP DNS resolver behaviors described in this article reflect publicly observable cache policies as of July 2026. ISP resolver configurations change without notice. Always test your specific domain's propagation from your actual user locations before and after DNS changes. Contact: research@jslet.com.</p>
+        </div>
+    </section>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<script src="nav.js"></script>
+<script>
+(function() {
+    'use strict';
+
+    var RESOLVERS = [
+        { name: 'Google Public DNS', ip: '8.8.8.8', tier: 'fast', minTTL: 0, honorTTL: true, lagSec: 60, desc: 'Strict TTL honoring. Cold-query traversal time only.', cssClass: 'fast' },
+        { name: 'Cloudflare 1.1.1.1', ip: '1.1.1.1', tier: 'fast', minTTL: 0, honorTTL: true, lagSec: 90, desc: 'Strict TTL honoring. Per-edge-location cache (330+ edges).', cssClass: 'fast' },
+        { name: 'Quad9', ip: '9.9.9.9', tier: 'fast', minTTL: 30, honorTTL: true, lagSec: 300, desc: 'Honors TTL (min 30s). +5 min for threat-filtering pipeline.', cssClass: 'fast' },
+        { name: 'OpenDNS / Umbrella', ip: '208.67.222.222', tier: 'medium', minTTL: 0, honorTTL: true, lagSec: 300, desc: 'Honors TTL but adds 1–5 min processing overhead.', cssClass: 'medium' },
+        { name: 'Comcast / Xfinity', ip: '75.75.75.75', tier: 'medium', minTTL: 300, honorTTL: false, lagSec: 900, desc: 'Min TTL 300s for A/AAAA. Regional cache architecture.', cssClass: 'medium' },
+        { name: 'BT / EE (UK)', ip: 'Varies', tier: 'medium', minTTL: 900, honorTTL: false, lagSec: 600, desc: 'Min TTL 900s for A/AAAA. Regional independent resolver clusters.', cssClass: 'medium' },
+        { name: 'Deutsche Telekom', ip: 'Varies', tier: 'slow', minTTL: 3600, honorTTL: false, lagSec: 3600, desc: 'Min TTL 3600s. Three-tier hierarchical cache — each tier must expire.', cssClass: 'slow' },
+        { name: 'General ISP Default', ip: '(catch-all)', tier: 'slow', minTTL: 600, honorTTL: false, lagSec: 1800, desc: 'Assumes BIND/Unbound with typical ISP TTL overrides. Variable.', cssClass: 'slow' }
+    ];
+
+    var RECORD_MULTIPLIERS = {
+        'A': 1.0,
+        'CNAME': 1.0,
+        'MX': 1.5,
+        'NS': 3.0,
+        'TXT': 1.2
+    };
+
+    function formatTime(seconds) {
+        if (seconds < 60) return seconds + 's';
+        if (seconds < 3600) {
+            var m = Math.floor(seconds / 60);
+            var s = seconds % 60;
+            return s > 0 ? m + 'm ' + s + 's' : m + 'm';
+        }
+        if (seconds < 86400) {
+            var h = Math.floor(seconds / 3600);
+            var rem = seconds % 3600;
+            var m = Math.floor(rem / 60);
+            return m > 0 ? h + 'h ' + m + 'm' : h + 'h';
+        }
+        var d = Math.floor(seconds / 86400);
+        var h2 = Math.floor((seconds % 86400) / 3600);
+        return h2 > 0 ? d + 'd ' + h2 + 'h' : d + 'd';
+    }
+
+    function computePropagation(ttl, rectype, preReduced) {
+        var multiplier = RECORD_MULTIPLIERS[rectype] || 1.0;
+        var results = [];
+        for (var i = 0; i < RESOLVERS.length; i++) {
+            var r = RESOLVERS[i];
+            var effectiveMin = r.minTTL;
+            var staleCachePenalty = 0;
+
+            if (!preReduced) {
+                // Old cache had a longer TTL — add penalty
+                staleCachePenalty = Math.max(0, 3600 - ttl); // assume old TTL was 3600s typical
+                if (rectype === 'NS') staleCachePenalty = Math.max(0, 172800 - ttl); // registry TTL ~48h
+            }
+
+            var baseTime = Math.max(ttl * multiplier, effectiveMin);
+            var totalTime = baseTime + r.lagSec + staleCachePenalty;
+
+            results.push({
+                name: r.name,
+                ip: r.ip,
+                tier: r.tier,
+                cssClass: r.cssClass,
+                desc: r.desc,
+                bestCase: baseTime,
+                worstCase: totalTime,
+                bestCaseStr: formatTime(baseTime),
+                worstCaseStr: formatTime(totalTime)
+            });
+        }
+        return results;
+    }
+
+    function renderResults(results) {
+        var container = document.getElementById('resolver-results');
+        if (!container) return;
+
+        var html = '';
+        var maxTime = 0;
+        for (var i = 0; i < results.length; i++) {
+            if (results[i].worstCase > maxTime) maxTime = results[i].worstCase;
+        }
+
+        for (var j = 0; j < results.length; j++) {
+            var r = results[j];
+            var pct = maxTime > 0 ? (r.worstCase / maxTime * 100) : 100;
+            html += '<div class="resolver-card">';
+            html += '<div class="resolver-header">';
+            html += '<span class="resolver-title">' + r.name + '</span>';
+            html += '<span class="resolver-ip">' + r.ip + '</span>';
+            html += '</div>';
+            html += '<div class="resolver-detail">' + r.desc + '</div>';
+            html += '<div class="propagation-bar-wrap" style="margin-top:10px;">';
+            html += '<div class="propagation-bar-label"><span>Best case</span><span class="resolver-time">' + r.bestCaseStr + '</span></div>';
+            html += '<div class="propagation-bar"><div class="propagation-bar-fill ' + r.cssClass + '" style="width:' + Math.max(pct * 0.25, 2) + '%;"></div></div>';
+            html += '<div class="propagation-bar-label"><span>Worst case</span><span class="resolver-time">' + r.worstCaseStr + '</span></div>';
+            html += '<div class="propagation-bar"><div class="propagation-bar-fill ' + r.cssClass + '" style="width:' + Math.max(pct, 2) + '%;"></div></div>';
+            html += '</div>';
+            html += '</div>';
+        }
+        container.innerHTML = html;
+    }
+
+    function update() {
+        var ttlEl = document.getElementById('ttl-input');
+        var rectypeEl = document.getElementById('rectype-input');
+        var prereduceEl = document.getElementById('prereduce-input');
+        if (!ttlEl || !rectypeEl || !prereduceEl) return;
+
+        var ttl = parseInt(ttlEl.value) || 300;
+        if (ttl < 1) ttl = 1;
+        var rectype = rectypeEl.value;
+        var preReduced = prereduceEl.value === 'yes';
+
+        var results = computePropagation(ttl, rectype, preReduced);
+        renderResults(results);
+    }
+
+    function bindEvents() {
+        var ttlEl = document.getElementById('ttl-input');
+        var rtEl = document.getElementById('rectype-input');
+        var prEl = document.getElementById('prereduce-input');
+        if (ttlEl) ttlEl.addEventListener('input', update);
+        if (rtEl) rtEl.addEventListener('change', update);
+        if (prEl) prEl.addEventListener('change', update);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() { bindEvents(); update(); });
+    } else {
+        bindEvents();
+        update();
+    }
+})();
+</script>
+</body>
+</html>

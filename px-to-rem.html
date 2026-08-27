@@ -1,0 +1,296 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>PX to REM Converter — px↔rem/em/% Conversion & Bulk CSS — jslet</title>
+    <meta name="description" content="Convert px to rem, em and percent — and back. Configurable root font size. Bulk conversion mode converts an entire stylesheet, preserving comments and structure. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/px-to-rem">
+    <meta property="og:title" content="PX to REM Converter — px/rem/em/% & Bulk CSS"><meta property="og:description" content="Convert px to rem, em and percent with configurable root font size. Bulk-convert whole stylesheets. 100% client-side."><meta property="og:url" content="https://www.jslet.com/px-to-rem"><meta property="og:type" content="website"><meta property="og:site_name" content="jslet"><meta property="og:image" content="https://www.jslet.com/og-image.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="PX to REM Converter"><meta name="twitter:description" content="px/rem/em/% conversion with root font size. Bulk CSS conversion. 100% client-side."><meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"PX to REM Converter","description":"Convert pixel values to rem, em and percent — and back — with a configurable root font size (default 16px). Bulk mode converts an entire stylesheet at once, preserving comments and property structure. Runs 100% in the browser.","url":"https://www.jslet.com/px-to-rem","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the difference between rem and em?","acceptedAnswer":{"@type":"Answer","text":"rem (root em) is always relative to the root font-size (usually 16px) — 2rem is 32px no matter where the element sits in the tree. em is relative to the current element's font-size, so 2em on a 20px element is 40px. This makes em values cascade unpredictably through nested elements (the classic compounding bug: nested elements with 1.2em font-size multiply). Use rem for layout-scale values (spacing, sizes, margins) and em only for properties that should scale with the element's own font-size, like padding on a button."}},{"@type":"Question","name":"What root font size should I use?","acceptedAnswer":{"@type":"Answer","text":"16px is the browser default and the most common choice — the html element defaults to 16px unless your CSS sets html { font-size }. Some design systems use 10px (making 1rem = 10px, which makes the math 1rem = 10px and 1.6rem = 16px) for easy mental conversion, at the cost of overridden browser defaults. Whatever you choose, set it explicitly on the html element and never use a percentage that isn't 100% — percent-based root sizes (like 62.5%) break user browser-zoom accessibility."}},{"@type":"Question","name":"Why convert px to rem at all?","acceptedAnswer":{"@type":"Answer","text":"Accessibility and maintainability. When a user increases their browser's default font size (accessibility setting), rem-based layouts scale proportionally while px-based layouts stay fixed — hard-coded px text sizes are a WCAG accessibility failure mode. rem also makes design-token changes one-line edits: change the root size and the whole layout scales. The cost is negligible: rem is computed once per element at render time."}},{"@type":"Question","name":"How do I convert px to rem in my head?","acceptedAnswer":{"@type":"Answer","text":"At the default 16px root: divide by 16. 16px = 1rem, 8px = 0.5rem, 24px = 1.5rem, 32px = 2rem. Common shortcuts: 1px = 0.0625rem, 4px = 0.25rem, 12px = 0.75rem, 48px = 3rem. For a 10px root: just move the decimal — 1rem = 10px, 0.8rem = 8px, 1.4rem = 14px. The bulk converter below does this for whole stylesheets."}},{"@type":"Question","name":"Should I convert percentages too?","acceptedAnswer":{"@type":"Answer","text":"For width/height, percentages and rem serve different purposes — percent is relative to the parent, rem is absolute. Don't convert width: 100% to rem. But font-size percentages and line-height behave differently: line-height in px is converted to rem just like any length; percentage line-height is relative to the element's font-size and should stay a percentage or become a unitless number. The bulk converter only touches px values, which is the safe rule."}}]}</script>
+    <style>
+        .pr-card { background: var(--bg-card, #fff); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
+        .pr-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+        .pr-row label { font-size: 0.85rem; font-weight: 600; color: var(--text-heading); min-width: 120px; }
+        .pr-input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text-body); font-size: 0.9rem; font-family: 'Cascadia Code','Consolas',monospace; width: 110px; box-sizing: border-box; }
+        .pr-select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text-body); font-size: 0.85rem; }
+        .pr-result { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 14px 0; }
+        .pr-res-item { background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+        .pr-res-item .u { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 4px; }
+        .pr-res-item .v { font-family: 'Cascadia Code','Consolas',monospace; font-size: 1.05rem; color: var(--accent); cursor: pointer; }
+        .pr-res-item .v:hover { text-decoration: underline; }
+        .pr-textarea { width: 100%; min-height: 200px; font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.8rem; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-input); color: var(--text-body); box-sizing: border-box; resize: vertical; }
+        .pr-out { width: 100%; min-height: 200px; font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.8rem; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text-body); box-sizing: border-box; white-space: pre-wrap; word-break: break-all; margin-top: 10px; cursor: pointer; }
+        .pr-breakpoints { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin: 12px 0; }
+        .pr-bp { background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 0.78rem; }
+        .pr-bp b { font-family: 'Cascadia Code','Consolas',monospace; color: var(--accent); }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); } .btn-outline:hover { background: var(--accent-soft, rgba(234,88,12,0.08)); }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+        .pr-note { font-size: 0.8rem; color: var(--text-muted); margin-top: 8px; }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>PX to REM <span>Converter</span></h1><p>Convert pixel values to rem, em and percent — and back — with a configurable root font size. Bulk mode converts an entire stylesheet in one click.</p></header>
+
+        <div class="pr-card">
+            <div class="pr-row">
+                <label for="pr-root">Root font size</label>
+                <select id="pr-root" class="pr-select" onchange="convertAll()">
+                    <option value="16" selected>16px (browser default)</option>
+                    <option value="10">10px (design-system style)</option>
+                    <option value="14">14px</option>
+                    <option value="custom">Custom…</option>
+                </select>
+                <input type="number" id="pr-root-custom" class="pr-input" value="16" min="1" max="64" aria-label="Custom root font size" style="display:none;" oninput="convertAll()">
+            </div>
+            <div class="pr-row">
+                <label for="pr-value">Value</label>
+                <input type="number" id="pr-value" class="pr-input" value="16" step="0.1" aria-label="Value to convert" oninput="convertAll()">
+                <select id="pr-unit" class="pr-select" onchange="convertAll()">
+                    <option value="px" selected>px</option>
+                    <option value="rem">rem</option>
+                    <option value="em">em</option>
+                    <option value="percent">%</option>
+                </select>
+                <button class="btn btn-primary" onclick="convertAll()">Convert</button>
+            </div>
+            <div class="pr-result" id="pr-result"></div>
+            <div class="pr-breakpoints" id="pr-breakpoints"></div>
+        </div>
+
+        <div class="pr-card">
+            <h2 style="font-size:1rem;margin:0 0 8px;">Bulk CSS Converter</h2>
+            <p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 10px;">Paste a stylesheet — every <code>px</code> value becomes <code>rem</code>, comments and structure preserved.</p>
+            <textarea class="pr-textarea" id="pr-bulk-in" aria-label="CSS input" placeholder=".card { padding: 16px; margin: 8px 16px; font-size: 14px; }" oninput="convertBulk()">.card { padding: 16px; margin: 8px 16px; font-size: 14px; }</textarea>
+            <div class="btn-row">
+                <button class="btn btn-primary" onclick="convertBulk()">🔄 Convert CSS</button>
+                <button class="btn-outline" onclick="copyBulkOut()">📋 Copy Result</button>
+            </div>
+            <div class="pr-out" id="pr-bulk-out" onclick="copyBulkOut()" title="Click to copy"></div>
+            <p class="pr-note" id="pr-bulk-note"></p>
+        </div>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">🟢📖 rem vs em vs px: Which Unit When</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>px is absolute; rem and em are relative — and that's the whole story.</strong> <code>px</code> is a fixed CSS pixel, identical on every device and every user setting. <code>rem</code> is relative to the root font size (html, default 16px): <code>1rem = 16px</code>, <code>2.5rem = 40px</code>. <code>em</code> is relative to the current element's font size — and this is where the classic bug lives: an element with <code>font-size: 1.2em</code> inside a parent with <code>font-size: 1.2em</code> compounds to 1.44em, not 1.2em. Nested ems multiply.</p>
+                <p><strong>Why the industry moved to rem.</strong> Two reasons. First, accessibility: when a user raises their browser's default font size (a WCAG-friendly behavior), rem-based text and spacing scale proportionally, while px values stay frozen — hard-coded px text is a real accessibility failure. Second, maintainability: with rem, changing one root value resizes the entire design system. Tailwind's default scale and most 2026 design systems are rem-based for exactly this reason.</p>
+                <p><strong>When em is actually right.</strong> For properties that should scale with the element's own font size: padding and border-radius on buttons (a 1em padding button scales with its font), icon sizing, and margin spacing around text. The rule: <strong>rem for layout scale, em for component-relative scale, px for 1px borders and hairline details.</strong> A 1px border should never be rem (0.0625rem is nonsense); a 16px gap should never be px if you care about accessibility.</p>
+                <p><strong>The 10px root trap.</strong> Some systems set <code>html { font-size: 62.5% }</code> so 1rem = 10px and the math is easy. This is an anti-pattern: 62.5% overrides the user's browser default (16px → 10px), breaking browser-zoom accessibility. If you want a 10px mental model, use <code>html { font-size: 10px }</code> — still an override, but explicit. The default 16px with divide-by-16 math (this tool's default) is the safe choice.</p>
+                <p><strong>line-height is a special case.</strong> A px line-height converts cleanly to rem (16px → 1rem). But the modern best practice is unitless line-height (<code>line-height: 1.5</code>), which is relative to the element's own font size and doesn't need conversion at all. Don't blindly bulk-convert unitless values — this tool only touches px, which is the safe rule.</p>
+                <p>See also: <a href="/css-unit-converter">CSS Unit Converter</a> &middot; <a href="/css-animation-generator">CSS Animation Generator</a> &middot; <a href="/css-grid-generator">CSS Grid Generator</a> &middot; <a href="/flexbox-generator">Flexbox Generator</a> &middot; <a href="/css-tools">All CSS Tools</a></p>
+            </div>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var rootSize = 16;
+        var resultEl = document.getElementById('pr-result');
+        var bpEl = document.getElementById('pr-breakpoints');
+
+        function getRoot() {
+            var sel = document.getElementById('pr-root').value;
+            if (sel === 'custom') {
+                document.getElementById('pr-root-custom').style.display = '';
+                rootSize = parseFloat(document.getElementById('pr-root-custom').value) || 16;
+            } else {
+                document.getElementById('pr-root-custom').style.display = 'none';
+                rootSize = parseFloat(sel);
+            }
+            return rootSize;
+        }
+
+        function fmt(n, unit) {
+            var v = Math.round(n * 10000) / 10000;
+            return v + unit;
+        }
+
+        function convertAll() {
+            getRoot();
+            var val = parseFloat(document.getElementById('pr-value').value);
+            if (isNaN(val)) val = 0;
+            var unit = document.getElementById('pr-unit').value;
+            var results = [];
+            if (unit === 'px') {
+                results.push(['rem', fmt(val / rootSize, 'rem')]);
+                results.push(['em', fmt(val / rootSize, 'em')]);
+                results.push(['%', fmt(val / rootSize * 100, '%')]);
+            } else if (unit === 'rem') {
+                results.push(['px', fmt(val * rootSize, 'px')]);
+                results.push(['em', fmt(val, 'em')]);
+                results.push(['%', fmt(val * 100, '%')]);
+            } else if (unit === 'em') {
+                results.push(['px', fmt(val * rootSize, 'px')]);
+                results.push(['rem', fmt(val, 'rem')]);
+                results.push(['%', fmt(val * 100, '%')]);
+            } else {
+                results.push(['px', fmt(val / 100 * rootSize, 'px')]);
+                results.push(['rem', fmt(val / 100, 'rem')]);
+                results.push(['em', fmt(val / 100, 'em')]);
+            }
+            resultEl.innerHTML = '';
+            for (var i = 0; i < results.length; i++) {
+                (function(r) {
+                    var d = document.createElement('div');
+                    d.className = 'pr-res-item';
+                    var u = document.createElement('div');
+                    u.className = 'u';
+                    u.textContent = r[0];
+                    var v = document.createElement('div');
+                    v.className = 'v';
+                    v.textContent = r[1];
+                    v.title = 'Click to copy';
+                    v.onclick = function() { copyText(r[1]); };
+                    d.appendChild(u); d.appendChild(v);
+                    resultEl.appendChild(d);
+                })(results[i]);
+            }
+            renderBreakpoints();
+        }
+
+        function renderBreakpoints() {
+            var bps = [[320, 'Mobile'], [375, 'Mobile+'], [640, 'Tablet'], [768, 'Tablet+'], [1024, 'Desktop'], [1280, 'Desktop+'], [1440, 'Wide']];
+            bpEl.innerHTML = '';
+            for (var i = 0; i < bps.length; i++) {
+                (function(bp) {
+                    var d = document.createElement('div');
+                    d.className = 'pr-bp';
+                    d.innerHTML = bp[1] + ': <b>' + fmt(bp[0] / rootSize, 'rem') + '</b>';
+                    bpEl.appendChild(d);
+                })(bps[i]);
+            }
+        }
+
+        function convertBulk() {
+            getRoot();
+            var input = document.getElementById('pr-bulk-in').value;
+            var out = input.replace(/(\d+(?:\.\d+)?)px/g, function(m, num) {
+                return fmt(parseFloat(num) / rootSize, 'rem');
+            });
+            document.getElementById('pr-bulk-out').textContent = out;
+            var converted = (input.match(/(\d+(?:\.\d+)?)px/g) || []).length;
+            document.getElementById('pr-bulk-note').textContent = 'Converted ' + converted + ' px value' + (converted === 1 ? '' : 's') + ' at ' + rootSize + 'px root.';
+        }
+
+        window.convertAll = convertAll;
+        window.convertBulk = convertBulk;
+
+        window.copyBulkOut = function() {
+            var text = document.getElementById('pr-bulk-out').textContent;
+            if (text) copyText(text);
+        };
+
+        function copyText(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).catch(function() { fallbackCopy(text); });
+            } else {
+                fallbackCopy(text);
+            }
+        }
+
+        function fallbackCopy(text) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            document.body.removeChild(ta);
+        }
+
+        // 初始化
+        convertAll();
+        convertBulk();
+    })();
+    </script>
+</body>
+</html>

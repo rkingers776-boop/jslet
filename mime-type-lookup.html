@@ -1,0 +1,503 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>MIME Type Lookup —Find MIME Types by File Extension —jslet</title>
+    <meta name="description" content="Look up MIME types by file extension instantly. 100+ common MIME types with categories. Filter as you type. Copy MIME type on click. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/mime-type-lookup">
+    <meta property="og:title" content="MIME Type Lookup —Find MIME Types by Extension">
+    <meta property="og:description" content="Look up 100+ MIME types by file extension. Filter as you type. Copy MIME on click. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/mime-type-lookup">
+    <meta property="og:type" content="website"><meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="MIME Type Lookup">
+    <meta name="twitter:description" content="Look up MIME types by file extension. Filter and copy. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"MIME Type Lookup","description":"Look up MIME types by file extension from a database of 100+ common types. Filter as you type across extension, MIME type, and category. Click to copy the MIME type. 100% client-side.","url":"https://www.jslet.com/mime-type-lookup","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <style>
+        .search-box { margin-bottom: 16px; }
+        .search-box input { width: 100%; max-width: 500px; padding: 12px 16px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); font-size: 0.95rem; font-family: 'Cascadia Code','Consolas',monospace; }
+        .search-box input:focus { border-color: var(--accent); outline: none; }
+        .mime-table-wrap { max-height: 600px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+        .mime-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .mime-table thead { position: sticky; top: 0; z-index: 2; }
+        .mime-table th { background: var(--accent); color: #fff; padding: 10px 14px; text-align: left; font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; user-select: none; white-space: nowrap; }
+        .mime-table th:hover { background: var(--accent-hover); }
+        .mime-table td { padding: 8px 14px; border-bottom: 1px solid var(--border-light); font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.82rem; }
+        .mime-table tbody tr { cursor: pointer; transition: background 0.1s; }
+        .mime-table tbody tr:hover { background: var(--accent-soft); }
+        .mime-table tbody tr.copied-flash { background: #d4edda; }
+        .mime-table td.ext { color: var(--text-heading); font-weight: 700; }
+        .mime-table td.mime { color: var(--accent); }
+        .mime-table td.cat { color: var(--text-muted); font-size: 0.78rem; }
+        .result-count { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 10px; }
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--accent); color: #fff; padding: 10px 24px; border-radius: 20px; font-size: 0.85rem; font-weight: 700; z-index: 999; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+        .toast.show { opacity: 1; }
+        .sort-arrow { margin-left: 4px; font-size: 0.7rem; opacity: 0.5; }
+        .sort-arrow.active { opacity: 1; }
+    </style>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is a MIME type and why does it matter?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A MIME type tells the browser and servers what kind of file a resource is — text/html, image/png, application/json. Setting the right MIME type is what makes files render, download, or parse correctly instead of triggering \"octet-stream\" fallbacks. The lookup covers 100+ common types with categories and filters as you type."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I find the MIME type for a file extension?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Type the extension (e.g. .pdf, .webp) and the lookup returns the MIME type instantly, filtered as you type, with the category shown. Click any row to copy the MIME type. Everything runs client-side, so even extension lists from internal files stay local."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does a wrong MIME type break downloads?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "If a server sends application/octet-stream for a .pdf, the browser may download it instead of opening it; a wrong type for JSON can make APIs fail to parse. Correct MIME types are the contract between server and client. The reference section explains the common mistakes and the correct type for each format."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+    <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container">
+    <header>
+        <h1>MIME Type <span>Lookup</span></h1>
+        <p>Look up MIME types by file extension. 100+ common MIME types with categories. Filter as you type, click any row to copy the MIME type.</p>
+    </header>
+
+    <div class="search-box">
+        <input type="text" id="mime-search" aria-label="Search MIME types" placeholder="Filter by extension, MIME type, or category... (e.g. 'json', 'image', 'javascript')" autocomplete="off">
+    </div>
+
+    <div class="result-count" id="result-count">Showing all 130 MIME types</div>
+
+    <div class="mime-table-wrap">
+        <table class="mime-table">
+            <thead>
+                <tr>
+                    <th onclick="sortTable('ext')" style="width:25%;">Extension <span class="sort-arrow" id="sort-ext"></span></th>
+                    <th onclick="sortTable('mime')" style="width:45%;">MIME Type <span class="sort-arrow" id="sort-mime"></span></th>
+                    <th onclick="sortTable('cat')" style="width:30%;">Category <span class="sort-arrow" id="sort-cat"></span></th>
+                </tr>
+            </thead>
+            <tbody id="mime-tbody"></tbody>
+        </table>
+    </div>
+
+    <div class="toast" id="toast">Copied!</div>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🟢📖 What Are MIME Types?</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p><strong>MIME types</strong> (Multipurpose Internet Mail Extensions) are a standard way to identify the format and nature of a file. They are used by web servers (in the <code>Content-Type</code> header), browsers, email clients, and operating systems to determine how to handle a file.</p>
+            <p>A MIME type consists of a <strong>type</strong> and a <strong>subtype</strong>, separated by a slash: <code>text/html</code>, <code>image/png</code>, <code>application/json</code>. The type indicates the general category (text, image, audio, video, application), and the subtype specifies the exact format.</p>
+            <p><strong>Why MIME types matter:</strong></p>
+            <ul>
+                <li><strong>Web servers</strong> must send the correct <code>Content-Type</code> header, or browsers may refuse to load resources (e.g., <code>application/wasm</code> for WebAssembly).</li>
+                <li><strong>File uploads</strong> rely on MIME type validation to prevent malicious files.</li>
+                <li><strong>API responses</strong> use <code>application/json</code> to signal JSON data.</li>
+                <li><strong>SVG files</strong> need <code>image/svg+xml</code> —the wrong type can break rendering or security policies.</li>
+            </ul>
+            <p>This lookup table covers 130+ of the most commonly encountered MIME types across web development, system administration, and content delivery.</p>
+            <p>See also: <a href="/base64-encode-decode">Base64 Encode/Decode</a> · <a href="/url-encode-decode">URL Encode/Decode</a> · <a href="/curl-to-fetch">cURL →Fetch</a></p>
+        </div>
+    </section>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<script src="nav.js"></script>
+<script>
+(function() {
+    // 130+ MIME types database
+    var MIME_TYPES = [
+        // ──── Text ────
+        { ext: '.html', mime: 'text/html', cat: 'Text' },
+        { ext: '.htm', mime: 'text/html', cat: 'Text' },
+        { ext: '.css', mime: 'text/css', cat: 'Text' },
+        { ext: '.csv', mime: 'text/csv', cat: 'Text' },
+        { ext: '.txt', mime: 'text/plain', cat: 'Text' },
+        { ext: '.xml', mime: 'text/xml', cat: 'Text' },
+        { ext: '.md', mime: 'text/markdown', cat: 'Text' },
+        { ext: '.ics', mime: 'text/calendar', cat: 'Text' },
+        { ext: '.vtt', mime: 'text/vtt', cat: 'Text' },
+        { ext: '.srt', mime: 'text/plain', cat: 'Text' },
+        { ext: '.yaml', mime: 'text/yaml', cat: 'Text' },
+        { ext: '.yml', mime: 'text/yaml', cat: 'Text' },
+        { ext: '.log', mime: 'text/plain', cat: 'Text' },
+        { ext: '.rtf', mime: 'text/rtf', cat: 'Text' },
+        { ext: '.tsv', mime: 'text/tab-separated-values', cat: 'Text' },
+
+        // ──── JavaScript / Code ────
+        { ext: '.js', mime: 'text/javascript', cat: 'JavaScript' },
+        { ext: '.mjs', mime: 'text/javascript', cat: 'JavaScript' },
+        { ext: '.cjs', mime: 'text/javascript', cat: 'JavaScript' },
+        { ext: '.jsx', mime: 'text/javascript', cat: 'JavaScript' },
+        { ext: '.ts', mime: 'text/typescript', cat: 'JavaScript' },
+        { ext: '.tsx', mime: 'text/typescript', cat: 'JavaScript' },
+        { ext: '.json', mime: 'application/json', cat: 'JavaScript' },
+        { ext: '.jsonld', mime: 'application/ld+json', cat: 'JavaScript' },
+        { ext: '.map', mime: 'application/json', cat: 'JavaScript' },
+        { ext: '.wasm', mime: 'application/wasm', cat: 'WebAssembly' },
+
+        // ──── Images ────
+        { ext: '.png', mime: 'image/png', cat: 'Image' },
+        { ext: '.jpg', mime: 'image/jpeg', cat: 'Image' },
+        { ext: '.jpeg', mime: 'image/jpeg', cat: 'Image' },
+        { ext: '.gif', mime: 'image/gif', cat: 'Image' },
+        { ext: '.svg', mime: 'image/svg+xml', cat: 'Image' },
+        { ext: '.webp', mime: 'image/webp', cat: 'Image' },
+        { ext: '.avif', mime: 'image/avif', cat: 'Image' },
+        { ext: '.ico', mime: 'image/vnd.microsoft.icon', cat: 'Image' },
+        { ext: '.bmp', mime: 'image/bmp', cat: 'Image' },
+        { ext: '.tiff', mime: 'image/tiff', cat: 'Image' },
+        { ext: '.tif', mime: 'image/tiff', cat: 'Image' },
+        { ext: '.heic', mime: 'image/heic', cat: 'Image' },
+        { ext: '.heif', mime: 'image/heif', cat: 'Image' },
+        { ext: '.apng', mime: 'image/apng', cat: 'Image' },
+
+        // ──── Audio ────
+        { ext: '.mp3', mime: 'audio/mpeg', cat: 'Audio' },
+        { ext: '.mpga', mime: 'audio/mpeg', cat: 'Audio' },
+        { ext: '.wav', mime: 'audio/wav', cat: 'Audio' },
+        { ext: '.wave', mime: 'audio/wav', cat: 'Audio' },
+        { ext: '.ogg', mime: 'audio/ogg', cat: 'Audio' },
+        { ext: '.oga', mime: 'audio/ogg', cat: 'Audio' },
+        { ext: '.opus', mime: 'audio/opus', cat: 'Audio' },
+        { ext: '.aac', mime: 'audio/aac', cat: 'Audio' },
+        { ext: '.flac', mime: 'audio/flac', cat: 'Audio' },
+        { ext: '.mid', mime: 'audio/midi', cat: 'Audio' },
+        { ext: '.midi', mime: 'audio/midi', cat: 'Audio' },
+        { ext: '.weba', mime: 'audio/webm', cat: 'Audio' },
+        { ext: '.m4a', mime: 'audio/mp4', cat: 'Audio' },
+        { ext: '.ra', mime: 'audio/x-realaudio', cat: 'Audio' },
+        { ext: '.wma', mime: 'audio/x-ms-wma', cat: 'Audio' },
+
+        // ──── Video ────
+        { ext: '.mp4', mime: 'video/mp4', cat: 'Video' },
+        { ext: '.mpeg', mime: 'video/mpeg', cat: 'Video' },
+        { ext: '.mpg', mime: 'video/mpeg', cat: 'Video' },
+        { ext: '.webm', mime: 'video/webm', cat: 'Video' },
+        { ext: '.ogv', mime: 'video/ogg', cat: 'Video' },
+        { ext: '.mov', mime: 'video/quicktime', cat: 'Video' },
+        { ext: '.qt', mime: 'video/quicktime', cat: 'Video' },
+        { ext: '.avi', mime: 'video/x-msvideo', cat: 'Video' },
+        { ext: '.wmv', mime: 'video/x-ms-wmv', cat: 'Video' },
+        { ext: '.flv', mime: 'video/x-flv', cat: 'Video' },
+        { ext: '.mkv', mime: 'video/x-matroska', cat: 'Video' },
+        { ext: '.m4v', mime: 'video/mp4', cat: 'Video' },
+        { ext: '.3gp', mime: 'video/3gpp', cat: 'Video' },
+        { ext: '.3g2', mime: 'video/3gpp2', cat: 'Video' },
+        { ext: '.h264', mime: 'video/h264', cat: 'Video' },
+        { ext: '.h265', mime: 'video/h265', cat: 'Video' },
+        { ext: '.av1', mime: 'video/av1', cat: 'Video' },
+
+        // ──── Fonts ────
+        { ext: '.woff', mime: 'font/woff', cat: 'Font' },
+        { ext: '.woff2', mime: 'font/woff2', cat: 'Font' },
+        { ext: '.ttf', mime: 'font/ttf', cat: 'Font' },
+        { ext: '.otf', mime: 'font/otf', cat: 'Font' },
+        { ext: '.eot', mime: 'application/vnd.ms-fontobject', cat: 'Font' },
+
+        // ──── Documents ────
+        { ext: '.pdf', mime: 'application/pdf', cat: 'Document' },
+        { ext: '.doc', mime: 'application/msword', cat: 'Document' },
+        { ext: '.docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', cat: 'Document' },
+        { ext: '.xls', mime: 'application/vnd.ms-excel', cat: 'Document' },
+        { ext: '.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', cat: 'Document' },
+        { ext: '.ppt', mime: 'application/vnd.ms-powerpoint', cat: 'Document' },
+        { ext: '.pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', cat: 'Document' },
+        { ext: '.odt', mime: 'application/vnd.oasis.opendocument.text', cat: 'Document' },
+        { ext: '.ods', mime: 'application/vnd.oasis.opendocument.spreadsheet', cat: 'Document' },
+        { ext: '.odp', mime: 'application/vnd.oasis.opendocument.presentation', cat: 'Document' },
+        { ext: '.epub', mime: 'application/epub+zip', cat: 'Document' },
+        { ext: '.mobi', mime: 'application/x-mobipocket-ebook', cat: 'Document' },
+        { ext: '.azw', mime: 'application/vnd.amazon.ebook', cat: 'Document' },
+
+        // ──── Archives ────
+        { ext: '.zip', mime: 'application/zip', cat: 'Archive' },
+        { ext: '.tar', mime: 'application/x-tar', cat: 'Archive' },
+        { ext: '.gz', mime: 'application/gzip', cat: 'Archive' },
+        { ext: '.tgz', mime: 'application/gzip', cat: 'Archive' },
+        { ext: '.bz2', mime: 'application/x-bzip2', cat: 'Archive' },
+        { ext: '.bz', mime: 'application/x-bzip', cat: 'Archive' },
+        { ext: '.7z', mime: 'application/x-7z-compressed', cat: 'Archive' },
+        { ext: '.rar', mime: 'application/vnd.rar', cat: 'Archive' },
+        { ext: '.xz', mime: 'application/x-xz', cat: 'Archive' },
+        { ext: '.zst', mime: 'application/zstd', cat: 'Archive' },
+        { ext: '.lz', mime: 'application/x-lzip', cat: 'Archive' },
+        { ext: '.lz4', mime: 'application/x-lz4', cat: 'Archive' },
+        { ext: '.br', mime: 'application/brotli', cat: 'Archive' },
+
+        // ──── Web ────
+        { ext: '.php', mime: 'application/x-httpd-php', cat: 'Web' },
+        { ext: '.asp', mime: 'text/html', cat: 'Web' },
+        { ext: '.aspx', mime: 'text/html', cat: 'Web' },
+        { ext: '.jsp', mime: 'text/html', cat: 'Web' },
+        { ext: '.rss', mime: 'application/rss+xml', cat: 'Web' },
+        { ext: '.atom', mime: 'application/atom+xml', cat: 'Web' },
+        { ext: '.xhtml', mime: 'application/xhtml+xml', cat: 'Web' },
+        { ext: '.swf', mime: 'application/x-shockwave-flash', cat: 'Web' },
+
+        // ──── Data / Binary ────
+        { ext: '.bin', mime: 'application/octet-stream', cat: 'Binary' },
+        { ext: '.exe', mime: 'application/vnd.microsoft.portable-executable', cat: 'Binary' },
+        { ext: '.dll', mime: 'application/vnd.microsoft.portable-executable', cat: 'Binary' },
+        { ext: '.so', mime: 'application/octet-stream', cat: 'Binary' },
+        { ext: '.dylib', mime: 'application/octet-stream', cat: 'Binary' },
+        { ext: '.class', mime: 'application/java-vm', cat: 'Binary' },
+        { ext: '.jar', mime: 'application/java-archive', cat: 'Binary' },
+        { ext: '.war', mime: 'application/java-archive', cat: 'Binary' },
+        { ext: '.dat', mime: 'application/octet-stream', cat: 'Binary' },
+        { ext: '.dmg', mime: 'application/x-apple-diskimage', cat: 'Binary' },
+        { ext: '.iso', mime: 'application/x-iso9660-image', cat: 'Binary' },
+        { ext: '.apk', mime: 'application/vnd.android.package-archive', cat: 'Binary' },
+        { ext: '.ipa', mime: 'application/octet-stream', cat: 'Binary' },
+        { ext: '.deb', mime: 'application/vnd.debian.binary-package', cat: 'Binary' },
+        { ext: '.rpm', mime: 'application/x-rpm', cat: 'Binary' },
+
+        // ──── Images (vector / design) ────
+        { ext: '.ai', mime: 'application/postscript', cat: 'Design' },
+        { ext: '.eps', mime: 'application/postscript', cat: 'Design' },
+        { ext: '.ps', mime: 'application/postscript', cat: 'Design' },
+        { ext: '.psd', mime: 'image/vnd.adobe.photoshop', cat: 'Design' },
+        { ext: '.sketch', mime: 'application/octet-stream', cat: 'Design' },
+        { ext: '.fig', mime: 'application/x-figma', cat: 'Design' },
+        { ext: '.xd', mime: 'application/octet-stream', cat: 'Design' },
+        { ext: '.cdr', mime: 'application/cdr', cat: 'Design' },
+
+        // ──── Certificate / Security ────
+        { ext: '.pem', mime: 'application/x-pem-file', cat: 'Security' },
+        { ext: '.crt', mime: 'application/x-x509-ca-cert', cat: 'Security' },
+        { ext: '.cert', mime: 'application/x-x509-ca-cert', cat: 'Security' },
+        { ext: '.key', mime: 'application/x-iwork-keynote-sffkey', cat: 'Security' },
+        { ext: '.der', mime: 'application/x-x509-ca-cert', cat: 'Security' },
+        { ext: '.p12', mime: 'application/x-pkcs12', cat: 'Security' },
+        { ext: '.pfx', mime: 'application/x-pkcs12', cat: 'Security' },
+        { ext: '.p7b', mime: 'application/x-pkcs7-certificates', cat: 'Security' },
+        { ext: '.crl', mime: 'application/pkix-crl', cat: 'Security' },
+
+        // ──── SQL / Database ────
+        { ext: '.sql', mime: 'application/sql', cat: 'Database' },
+        { ext: '.sqlite', mime: 'application/vnd.sqlite3', cat: 'Database' },
+        { ext: '.db', mime: 'application/octet-stream', cat: 'Database' },
+        { ext: '.mdb', mime: 'application/x-msaccess', cat: 'Database' },
+        { ext: '.accdb', mime: 'application/x-msaccess', cat: 'Database' }
+    ];
+
+    var tbody = document.getElementById('mime-tbody');
+    var searchInput = document.getElementById('mime-search');
+    var resultCount = document.getElementById('result-count');
+    var toast = document.getElementById('toast');
+
+    var sortCol = 'ext';
+    var sortAsc = true;
+
+    function esc(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add('show');
+        clearTimeout(toast._timeout);
+        toast._timeout = setTimeout(function() {
+            toast.classList.remove('show');
+        }, 1500);
+    }
+
+    function copyMime(mime, rowEl) {
+        navigator.clipboard.writeText(mime).then(function() {
+            showToast('Copied: ' + mime);
+            if (rowEl) {
+                rowEl.classList.add('copied-flash');
+                setTimeout(function() {
+                    rowEl.classList.remove('copied-flash');
+                }, 600);
+            }
+        });
+    }
+
+    function getFilteredData() {
+        var query = searchInput.value.toLowerCase().trim();
+        var filtered = [];
+        for (var i = 0; i < MIME_TYPES.length; i++) {
+            var m = MIME_TYPES[i];
+            if (!query) {
+                filtered.push(m);
+            } else if (m.ext.toLowerCase().indexOf(query) !== -1 ||
+                       m.mime.toLowerCase().indexOf(query) !== -1 ||
+                       m.cat.toLowerCase().indexOf(query) !== -1) {
+                filtered.push(m);
+            }
+        }
+        return filtered;
+    }
+
+    function sortData(data) {
+        data.sort(function(a, b) {
+            var valA = a[sortCol].toLowerCase();
+            var valB = b[sortCol].toLowerCase();
+            if (valA < valB) return sortAsc ? -1 : 1;
+            if (valA > valB) return sortAsc ? 1 : -1;
+            return 0;
+        });
+        return data;
+    }
+
+    function updateSortArrows() {
+        var arrows = document.querySelectorAll('.sort-arrow');
+        for (var i = 0; i < arrows.length; i++) {
+            arrows[i].classList.remove('active');
+            arrows[i].textContent = '';
+        }
+        var el = document.getElementById('sort-' + sortCol);
+        if (el) {
+            el.classList.add('active');
+            el.textContent = sortAsc ? '▾' : '▴';
+        }
+    }
+
+    function renderTable() {
+        var data = getFilteredData();
+        data = sortData(data);
+
+        var html = '';
+        for (var i = 0; i < data.length; i++) {
+            var m = data[i];
+            html += '<tr onclick="copyMime(\'' + m.mime.replace(/'/g, "\\'") + '\', this)" title="Click to copy MIME type">';
+            html += '<td class="ext">' + esc(m.ext) + '</td>';
+            html += '<td class="mime">' + esc(m.mime) + '</td>';
+            html += '<td class="cat">' + esc(m.cat) + '</td>';
+            html += '</tr>';
+        }
+
+        tbody.innerHTML = html;
+        resultCount.textContent = 'Showing ' + data.length + ' of ' + MIME_TYPES.length + ' MIME types' +
+            (searchInput.value.trim() ? ' (filtered)' : '');
+
+        updateSortArrows();
+    }
+
+    window.sortTable = function(col) {
+        if (sortCol === col) {
+            sortAsc = !sortAsc;
+        } else {
+            sortCol = col;
+            sortAsc = true;
+        }
+        renderTable();
+    };
+
+    window.copyMime = copyMime;
+
+    // Filter as you type
+    searchInput.addEventListener('input', function() {
+        renderTable();
+    });
+
+    // Initial render
+    renderTable();
+})();
+</script>
+</body>
+</html>

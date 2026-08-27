@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>DB Row Count to RAM/Disk Calculator — jslet</title>
+    <meta name="description" content="Rows × avg width × 2 ≈ reality. Secondary indexes, MVCC bloat, page fill factor waste inflate storage 50-150% past the naive estimate. Compute the real number in GB and GiB.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="DB Row Count to RAM/Disk Calculator — jslet">
+    <meta property="og:description" content="Rows × avg width × 2 ≈ reality. Secondary indexes, MVCC bloat, page fill factor inflate storage 50-150% past the naive estimate. Compute real footprint in GB and GiB.">
+    <meta property="og:url" content="https://www.jslet.com/database-rows-to-storage-est">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="DB Row Count to RAM/Disk Calculator — jslet">
+    <meta name="twitter:description" content="Rows × avg width × 2 ≈ reality. Secondary indexes, MVCC bloat, page fill factor inflate storage 50-150% past the naive estimate. Compute real footprint in GB and GiB.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/database-rows-to-storage-est">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "DB Row Count to RAM/Disk Calculator",
+      "description": "Rows × avg width × 2 ≈ reality. Secondary indexes, MVCC bloat, page fill factor waste inflate storage 50-150% past the naive estimate. Compute the real number in GB and GiB.",
+      "url": "https://www.jslet.com/database-rows-to-storage-est",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why does my database use much more storage than rows × width?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The naive estimate ignores secondary indexes, MVCC bloat, and page fill factor — together they inflate storage by 50-150% past the raw row math. This calculator applies a realistic factor to your row count and average width, then projects the footprint in both GB and GiB, so capacity planning matches what the disk actually shows."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much storage do secondary indexes actually cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Every secondary index duplicates the indexed columns plus the row reference, effectively adding another copy of part of your data. Wide indexes or several indexes per table can nearly double the footprint. The calculator accounts for index overhead explicitly and lets you model the impact of adding or removing indexes."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What role do MVCC, WAL, and fill factor play?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "MVCC keeps multiple row versions for concurrent transactions, the WAL adds a write-ahead log of every change, and page fill factor leaves space in each page for updates — all three consume storage beyond the live data. The calculator folds these into the projection so the number reflects a production database, not a textbook one."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>🗃️ <span>DB Row Count to</span> RAM/Disk Calculator</h1>
+            <p>Multiply row count by average row width. Now double it. That is your storage footprint before secondary indexes, MVCC bloat, and page fill factor waste have had their say. The naive estimate misses 50-150%. This calculator does not.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Table Configuration</h3>
+                <p class="card-desc">Rows × bytes/row × (1 + index overhead). That is the formula. The engine computes raw data, secondary index footprint, and total in both GB and GiB — so your RDS console and your OS agree. The hidden indexing costs that the naive row-count math misses.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="rows">Total Rows (Millions)</label>
+                        <input type="number" class="unit-input" id="rows" value="50" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="rowBytes">Avg Row Size (Bytes)</label>
+                        <input type="number" class="unit-input" id="rowBytes" value="500" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="idxPct">Secondary Index Overhead (%)</label>
+                        <input type="number" class="unit-input" id="idxPct" value="50" step="any" min="0">
+                    </div>
+                </div>
+                <button class="btn-calc">Run Storage Estimation Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Storage Footprint Projection</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="raw-data-val">0.00 GB</div><div class="metric-label">Raw Data</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="with-idx-val">0.00 GB</div><div class="metric-label">Total w/ Indexes</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="idx-footprint-val">0.00 GB</div><div class="metric-label">Index Footprint</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="gib-val">0.00 GiB</div><div class="metric-label">Total in GiB</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>Database Row Storage: Why PKs Are the Tip of the Iceberg</h2>
+            <p>Most engineers estimate database storage by multiplying row count by average row width — and then are surprised when the actual on-disk footprint is 1.5× to 3× larger. The primary key clustered index is only the beginning. <strong>Secondary indexes</strong> — every foreign key, every composite index on frequently queried columns, every unique constraint — duplicate the indexed columns (plus the primary key) into separate B-tree structures. A table with five secondary indexes can easily consume more storage in indexes than in the base data. This calculator applies the fundamental capacity planning formula: <strong>Total Storage ≈ Rows × Average Row Bytes × (1 + Index Overhead Ratio)</strong> to produce a realistic projection.</p>
+
+            <h3>What Secondary Indexes Actually Cost</h3>
+            <p>A secondary index in a B-tree-based engine (InnoDB, PostgreSQL, SQL Server) stores the indexed column values plus a pointer back to the primary key row. For a table with a 4-byte integer PK and a secondary index on a VARCHAR(255) column averaging 40 bytes, each index entry consumes approximately 44 bytes before page overhead. At 50 million rows, that single index consumes an additional 2.2 GB of raw storage — and B-tree pages are typically only 65-75% full due to fill factor and page split dynamics. The industry rule of thumb of 50% index overhead is conservative; production schemas with heavy indexing for query performance routinely exceed 100% overhead relative to the base data.</p>
+
+            <h3>MVCC, WAL, and Page Fill Factor</h3>
+            <p>Beyond indexes, several architectural mechanisms inflate the physical footprint. <strong>MVCC (Multi-Version Concurrency Control)</strong> engines like PostgreSQL and InnoDB retain old row versions until vacuum or purge reclaims them, causing transient bloat of 10-40% during heavy write workloads. The <strong>Write-Ahead Log (WAL)</strong> is a separate sequential log that can grow to gigabytes during checkpoint intervals. <strong>Page fill factor</strong> — typically 70-90% for B-trees — means 10-30% of every 8 KB or 16 KB page is intentionally left empty to accommodate future inserts without immediate page splits. These factors compound: a 25 GB raw data estimate at 50% index overhead yields 37.5 GB; add 20% MVCC bloat and 15% page fill factor waste, and the real footprint approaches 52 GB — more than double the naive row-count × row-width estimate.</p>
+
+            <h3>Practical Capacity Planning</h3>
+            <p>When provisioning storage for a new database deployment, start with the raw row count and average row width, then apply the index overhead multiplier from this calculator. Add a 20-30% buffer for MVCC bloat and WAL space. For cloud managed databases (RDS, Cloud SQL, Azure DB), this total is your minimum allocated storage — and remember that most cloud providers bill on <strong>provisioned</strong> storage, not utilized storage. Over-provisioning by 30% is far cheaper than a production outage caused by a full disk. Use the GiB conversion metric to reconcile your binary storage allocation with the decimal figures reported by most cloud console dashboards.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var rm = v('rows') * 1e6;
+        var rb = v('rowBytes');
+        var ip = v('idxPct') / 100;
+        var d = rm * rb / 1e9;
+        var t = d * (1 + ip);
+
+        document.getElementById('raw-data-val').innerText = d.toFixed(2) + ' GB';
+        document.getElementById('with-idx-val').innerText = t.toFixed(2) + ' GB';
+        document.getElementById('idx-footprint-val').innerText = (t - d).toFixed(2) + ' GB';
+        document.getElementById('gib-val').innerText = (t / 1.0737).toFixed(2) + ' GiB';
+
+        document.getElementById('results-params').innerText = v('rows').toLocaleString() + 'M rows · ' + rb + ' bytes/row · ' + v('idxPct') + '% index overhead · Total: ' + t.toFixed(2) + ' GB (' + (t / 1.0737).toFixed(2) + ' GiB)';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

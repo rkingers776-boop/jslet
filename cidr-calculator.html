@@ -1,0 +1,460 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>IP Subnet Calculator —CIDR, VLSM, Network Info —jslet</title>
+    <meta name="description" content="Free IP subnet and CIDR calculator. Get network address, broadcast, usable IP range, total hosts, wildcard mask, and binary display. Supports VLSM subnetting. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/cidr-calculator">
+    <meta property="og:title" content="IP Subnet &amp; CIDR Calculator —Network Info, VLSM">
+    <meta property="og:description" content="Free IP subnet calculator. CIDR notation, network/broadcast address, usable IPs, binary. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/cidr-calculator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="IP Subnet &amp; CIDR Calculator —Network Info, VLSM">
+    <meta name="twitter:description" content="Free IP subnet calculator. CIDR, network, broadcast, usable range. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "IP Subnet & CIDR Calculator",
+      "description": "Calculate IP subnet information from CIDR notation or IP + mask. Network address, broadcast, usable IP range, total hosts, binary display, subnet splitting.",
+      "url": "https://www.jslet.com/cidr-calculator",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I calculate all subnets from a CIDR notation like 10.0.0.0/24?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Enter the CIDR notation (e.g., 10.0.0.0/24) into jslet's IP Subnet Calculator. It instantly computes: network address (10.0.0.0), broadcast address (10.0.0.255), usable IP range (10.0.0.1 – 10.0.0.254), total hosts (254), subnet mask (255.255.255.0), wildcard mask (0.0.0.255), and the binary representation of both the IP and mask. For VLSM subnetting, use the 'Split Subnet' feature — enter the number of subnets you need (2, 4, 8, 16, etc.) and the tool divides the parent CIDR block into equal-sized subnets, showing the network address, mask, and usable range for each. This is essential for: AWS VPC design (planning public/private subnets per AZ), Kubernetes pod CIDR allocation (avoiding overlap between clusters), and office network segmentation (separating VLANs for different departments). All calculation runs in your browser."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What's the difference between /24, /16, and /8 CIDR prefixes in practical terms?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The CIDR prefix number after the slash tells you how many bits are fixed for the network portion. /24 = 24 network bits, 8 host bits → 256 total IPs (254 usable). This is the most common subnet size for a single office floor or an AWS VPC public subnet. /16 = 16 network bits, 16 host bits → 65,536 total IPs (65,534 usable). This is the default VPC CIDR size in AWS — it gives you room to carve out many /24 subnets across availability zones. /8 = 8 network bits, 24 host bits → 16,777,216 total IPs. Only used by very large organizations (10.0.0.0/8 is the entire private Class A space). In practice: for a home lab, /24 is typical. For a three-tier web app in AWS, you might use a /16 VPC with /20 or /21 subnets in each AZ. For a Kubernetes cluster, /20 to /23 per node pool is common depending on max pods per node. The key tradeoff: smaller prefix (larger number after /) = fewer IPs but more subnets to organize; larger prefix (smaller number after /) = more IPs but less segmentation."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I avoid IP address conflicts when connecting multiple VPCs or on-prem networks?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "IP conflicts happen when two networks use overlapping CIDR ranges — routing becomes impossible because the same IP could mean different things depending on which network it's in. Prevention: (1) Plan your entire IP space before creating any VPC. Assign non-overlapping /16 blocks from RFC 1918 private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) to each environment — e.g., prod = 10.0.0.0/16, staging = 10.1.0.0/16, dev = 10.2.0.0/16. (2) Use jslet's CIDR calculator to verify that any two ranges don't overlap — if 10.0.0.0/16 and 10.0.128.0/17 are both in use, they overlap (the /17 is inside the /16). (3) For VPN connections between on-prem and cloud, ensure the on-prem network range does not overlap with any VPC CIDR. AWS VPC peering and Transit Gateway both reject routes with overlapping CIDRs. (4) Document your IP allocation plan — a simple spreadsheet with columns for environment, region, VPC name, CIDR, and subnets is sufficient. Retrofitting non-overlapping IPs after services are deployed is painful and often requires re-IPing entire subnets."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .input-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+        .input-row input { padding: 12px 16px; border: 2px solid var(--border); border-radius: var(--radius-sm); font-size: 1rem; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; background: var(--bg-input); color: var(--text-body); flex: 1; min-width: 240px; }
+        .input-row input:focus { border-color: var(--accent); outline: none; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; transition: background 0.15s; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-top: 20px; }
+        .result-card { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 18px; }
+        .result-card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 4px; }
+        .result-card .value { font-size: 1.05rem; font-weight: 700; color: var(--text-heading); font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; word-break: break-all; }
+        .result-card .sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+        .binary-display { background: var(--bg-body); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 18px; margin-top: 20px; }
+        .binary-display .row { display: flex; align-items: center; gap: 12px; padding: 4px 0; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 0.82rem; }
+        .binary-display .row-label { min-width: 110px; font-weight: 600; color: var(--text-body); }
+        .binary-display .bits { letter-spacing: 2px; }
+        .binary-display .net { color: #005cc5; }
+        .binary-display .host { color: #22863a; }
+        .subnet-list { margin-top: 20px; }
+        .subnet-list table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .subnet-list th { background: var(--bg-input); text-align: left; padding: 8px 12px; font-weight: 700; color: var(--text-body); border-bottom: 2px solid var(--border); font-size: 0.8rem; text-transform: uppercase; }
+        .subnet-list td { padding: 8px 12px; border-bottom: 1px solid var(--border-light); font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 0.8rem; color: var(--text-body); }
+        .subnet-list tr:nth-child(even) td { background: var(--bg-input); }
+        .error-msg { color: #dc2626; font-size: 0.85rem; margin-top: 8px; display: none; }
+        .quick-cidrs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        .quick-pill { padding: 4px 12px; border: 1px solid var(--border); border-radius: 20px; font-size: 0.78rem; cursor: pointer; background: #fff; color: var(--text-body); transition: all 0.15s; }
+        .quick-pill:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+    <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container">
+    <header>
+        <h1>IP Subnet <span>&amp; CIDR</span> Calculator</h1>
+        <p>Enter an IP address with CIDR prefix (e.g. <code>192.168.1.0/24</code>) or IP + subnet mask. Get network address, broadcast, usable range, total hosts, binary breakdown, and subnet splitting. 100% client-side.</p>
+    </header>
+
+    <div class="input-row">
+        <input type="text" id="cidr-input" placeholder="e.g. 192.168.1.0/24  or  10.0.0.0/255.255.255.0" oninput="calculate()" autofocus>
+        <button class="btn btn-primary" onclick="calculate()">🟢🔍 Calculate</button>
+        <button class="btn btn-primary" style="background:var(--navy)" onclick="clearAll()">🗑 Clear</button>
+    </div>
+    <div id="error-msg" class="error-msg"></div>
+
+    <div class="quick-cidrs">
+        <span style="font-size:0.78rem;color:var(--text-muted);">Quick:</span>
+        <span class="quick-pill" onclick="quickCalc('192.168.1.0/24')">/24</span>
+        <span class="quick-pill" onclick="quickCalc('10.0.0.0/16')">/16</span>
+        <span class="quick-pill" onclick="quickCalc('172.16.0.0/12')">/12</span>
+        <span class="quick-pill" onclick="quickCalc('10.0.0.0/8')">/8</span>
+        <span class="quick-pill" onclick="quickCalc('192.168.1.0/28')">/28</span>
+        <span class="quick-pill" onclick="quickCalc('10.0.0.0/27')">/27</span>
+        <span class="quick-pill" onclick="quickCalc('172.16.0.0/22')">/22</span>
+    </div>
+
+    <div class="results-grid" id="results-grid"></div>
+    <div class="binary-display" id="binary-display" style="display:none;"></div>
+
+    <div class="subnet-list" id="subnet-list" style="display:none;">
+        <h3 style="font-size:1rem; margin-bottom: 12px;">🟢🔪 Subnet Splitting (divide into smaller subnets)</h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <h3 style="font-size:0.82rem;font-weight:600;margin:0;">Split into:</h3>
+            <button class="btn btn-outline btn-small" onclick="splitSubnets(2)">2 subnets</button>
+            <button class="btn btn-outline btn-small" onclick="splitSubnets(4)">4 subnets</button>
+            <button class="btn btn-outline btn-small" onclick="splitSubnets(8)">8 subnets</button>
+            <button class="btn btn-outline btn-small" onclick="splitSubnets(16)">16 subnets</button>
+        </div>
+        <table id="subnet-table"><thead><tr><th>#</th><th>Network</th><th>Broadcast</th><th>Usable Range</th><th>Hosts</th><th>Mask</th></tr></thead><tbody></tbody></table>
+    </div>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🟢📖 How It Works</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p><strong>CIDR (Classless Inter-Domain Routing)</strong> notation compactly specifies an IP address range using a suffix: <code>192.168.1.0/24</code>. The number after the <code>/</code> is the prefix length —the count of bits in the network portion of the address.</p>
+            <ul>
+                <li><strong>Network Address</strong> —the first address in the subnet (all host bits = 0). Identifies the subnet itself.</li>
+                <li><strong>Broadcast Address</strong> —the last address in the subnet (all host bits = 1). Used to send to all hosts.</li>
+                <li><strong>Usable Host Range</strong> —everything between network and broadcast. Formula: <code>2^(32-prefix) - 2</code>.</li>
+                <li><strong>Subnet Mask</strong> —the bitmask that separates network bits from host bits. <code>/24</code> = <code>255.255.255.0</code>.</li>
+                <li><strong>Wildcard Mask</strong> —the inverse of the subnet mask (used in ACLs and OSPF).</li>
+            </ul>
+            <p><strong>Common private ranges:</strong> <code>10.0.0.0/8</code> (16.7M hosts), <code>172.16.0.0/12</code> (1M hosts), <code>192.168.0.0/16</code> (65K hosts). All calculations happen in your browser.</p>
+        </div>
+    </section>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<script src="nav.js"></script>
+<script>
+(function() {
+    'use strict';
+    var inp = document.getElementById('cidr-input');
+    var resultsGrid = document.getElementById('results-grid');
+    var binaryDisplay = document.getElementById('binary-display');
+    var errMsg = document.getElementById('error-msg');
+    var subnetList = document.getElementById('subnet-list');
+    var subnetTbody = document.querySelector('#subnet-table tbody');
+
+    var currentNet = null; // { ip, prefix, mask, network, broadcast }
+
+    function ipToInt(ip) {
+        var parts = ip.split('.');
+        return ((+parts[0] << 24) | (+parts[1] << 16) | (+parts[2] << 8) | (+parts[3])) >>> 0;
+    }
+
+    function intToIP(n) {
+        return ((n >>> 24) & 0xFF) + '.' + ((n >>> 16) & 0xFF) + '.' + ((n >>> 8) & 0xFF) + '.' + (n & 0xFF);
+    }
+
+    function prefixToMask(prefix) {
+        if (prefix === 0) return 0;
+        return (~0 << (32 - prefix)) >>> 0;
+    }
+
+    function maskToPrefix(maskInt) {
+        if (maskInt === 0) return 0;
+        var bits = maskInt.toString(2);
+        var leadingOnes = 0;
+        for (var i = 0; i < bits.length; i++) {
+            if (bits[i] === '1') leadingOnes++;
+            else break;
+        }
+        // Verify it's a valid contiguous mask
+        var expected = prefixToMask(leadingOnes);
+        if (expected !== maskInt) return -1;
+        return leadingOnes;
+    }
+
+    function toBinary(ipInt) {
+        var bin = '';
+        for (var i = 31; i >= 0; i--) {
+            bin += (ipInt >>> i) & 1;
+            if (i % 8 === 0 && i > 0) bin += ' ';
+        }
+        return bin;
+    }
+
+    function parseInput(str) {
+        str = str.trim();
+        if (!str) return null;
+
+        // Try CIDR: x.x.x.x/NN
+        var cidrMatch = str.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*\/\s*(\d+)$/);
+        if (cidrMatch) {
+            var ip = cidrMatch[1];
+            var prefix = parseInt(cidrMatch[2], 10);
+            if (prefix < 0 || prefix > 32) return null;
+            var ipInt = ipToInt(ip);
+            return { ipInt: ipInt, ip: ip, prefix: prefix, maskInt: prefixToMask(prefix) };
+        }
+
+        // Try IP + mask: x.x.x.x/x.x.x.x
+        var maskMatch = str.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*\/\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+        if (maskMatch) {
+            var ip = maskMatch[1];
+            var maskStr = maskMatch[2];
+            var ipInt = ipToInt(ip);
+            var maskInt = ipToInt(maskStr);
+            var prefix = maskToPrefix(maskInt);
+            if (prefix < 0) return null;
+            return { ipInt: ipInt, ip: ip, prefix: prefix, maskInt: maskInt };
+        }
+
+        // Try just IP: x.x.x.x (assume /24)
+        var ipMatch = str.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+        if (ipMatch) {
+            var ip = ipMatch[1];
+            var ipInt = ipToInt(ip);
+            var prefix = 24;
+            return { ipInt: ipInt, ip: ip, prefix: prefix, maskInt: prefixToMask(prefix) };
+        }
+
+        return null;
+    }
+
+    function calculate() {
+        var parsed = parseInput(inp.value);
+        if (!parsed) {
+            errMsg.style.display = 'block';
+            errMsg.textContent = '⚠ ☁️ Invalid format. Try: 192.168.1.0/24, 10.0.0.0/255.255.255.0, or just 192.168.1.1';
+            resultsGrid.innerHTML = '';
+            binaryDisplay.style.display = 'none';
+            subnetList.style.display = 'none';
+            return;
+        }
+        errMsg.style.display = 'none';
+
+        var maskInt = parsed.maskInt;
+        var prefix = parsed.prefix;
+        var ipInt = parsed.ipInt;
+        var networkInt = (ipInt & maskInt) >>> 0;
+        var broadcastInt = (networkInt | (~maskInt >>> 0)) >>> 0;
+        var wildcardInt = (~maskInt) >>> 0;
+        var totalHosts = Math.pow(2, 32 - prefix);
+        var usableHosts = totalHosts > 2 ? totalHosts - 2 : (totalHosts === 2 ? 0 : 1); // /31 and /32 edge cases
+        if (prefix === 31) usableHosts = 2; // Point-to-point
+        if (prefix === 32) usableHosts = 1; // Single host
+
+        var networkIP = intToIP(networkInt);
+        var broadcastIP = intToIP(broadcastInt);
+        var firstIP = totalHosts > 2 ? intToIP(networkInt + 1) : networkIP;
+        var lastIP = totalHosts > 2 ? intToIP((broadcastInt - 1) >>> 0) : broadcastIP;
+        if (prefix >= 31) { firstIP = networkIP; lastIP = broadcastIP; }
+
+        currentNet = { ipInt: ipInt, prefix: prefix, maskInt: maskInt, networkInt: networkInt, broadcastInt: broadcastInt, wildcardInt: wildcardInt, totalHosts: totalHosts, usableHosts: usableHosts };
+
+        // IP class
+        var firstOctet = networkInt >>> 24;
+        var ipClass = firstOctet < 128 ? 'A' : firstOctet < 192 ? 'B' : firstOctet < 224 ? 'C' : firstOctet < 240 ? 'D (Multicast)' : 'E (Reserved)';
+        var isPrivate = ((firstOctet === 10) || (firstOctet === 172 && ((networkInt >>> 20) & 0xFF) === 16) || (firstOctet === 192 && ((networkInt >>> 16) & 0xFF) === 168));
+
+        var cards = [
+            { label: 'Network Address', value: networkIP, sub: 'All host bits = 0' },
+            { label: 'Broadcast Address', value: broadcastIP, sub: 'All host bits = 1' },
+            { label: 'Usable Host Range', value: firstIP + ' —' + lastIP, sub: usableHosts.toLocaleString() + ' usable hosts' },
+            { label: 'Subnet Mask', value: intToIP(maskInt), sub: 'CIDR /' + prefix },
+            { label: 'Wildcard Mask', value: intToIP(wildcardInt), sub: 'ACL / OSPF notation' },
+            { label: 'Total Addresses', value: totalHosts.toLocaleString(), sub: totalHosts >= 65536 ? (totalHosts/256).toLocaleString() + ' × /24 networks' : '' },
+            { label: 'IP Class', value: 'Class ' + ipClass, sub: isPrivate ? '🟢🔒 Private (RFC 1918)' : '🟢🌐 Public' },
+            { label: 'Binary Network', value: toBinary(networkInt), sub: 'GREEN = host bits' }
+        ];
+
+        var html = '';
+        for (var i = 0; i < cards.length; i++) {
+            html += '<div class="result-card"><div class="label">' + cards[i].label + '</div><div class="value">' + cards[i].value + '</div><div class="sub">' + cards[i].sub + '</div></div>';
+        }
+        resultsGrid.innerHTML = html;
+
+        // Binary breakdown
+        var networkBin = toBinary(networkInt);
+        var maskBin = toBinary(maskInt);
+        var colored = '';
+        for (var i = 0; i < networkBin.length; i++) {
+            if (networkBin[i] === ' ') { colored += ' '; continue; }
+            var isNet = (i < prefix + Math.floor((i + 1) / 9)); // rough: bits within prefix are net
+            var bitCount = 0;
+            var tmp = networkBin.replace(/\s/g, '');
+            for (var k = 0; k < tmp.length; k++) {
+                if (k < 32 - (32 - prefix) + Math.floor(k/8)) {
+                    // net bit
+                }
+            }
+            // Simpler: color by counting non-space chars
+            var actualBits = networkBin.replace(/\s/g, '');
+            var idx = 0;
+            var result = '';
+            for (var j = 0; j < actualBits.length; j++) {
+                if (j < prefix) result += '<span class="net">' + actualBits[j] + '</span>';
+                else result += '<span class="host">' + actualBits[j] + '</span>';
+                if ((j+1) % 8 === 0 && j < 31) result += ' ';
+            }
+        }
+
+        var coloredBinary = '';
+        var nonSpaceIdx = 0;
+        for (var i = 0; i < networkBin.length; i++) {
+            if (networkBin[i] === ' ') { coloredBinary += ' '; continue; }
+            if (nonSpaceIdx < prefix) coloredBinary += '<span class="net">' + networkBin[i] + '</span>';
+            else coloredBinary += '<span class="host">' + networkBin[i] + '</span>';
+            nonSpaceIdx++;
+        }
+
+        binaryDisplay.style.display = 'block';
+        binaryDisplay.innerHTML = '<div class="row"><span class="row-label">IP Address</span><span class="bits">' + coloredBinary + '</span></div>' +
+            '<div class="row"><span class="row-label">Subnet Mask</span><span class="bits">' + toBinary(maskInt).replace(/1/g, '<span class="net">1</span>').replace(/0/g, '<span class="host">0</span>') + '</span></div>' +
+            '<div style="margin-top:8px;font-size:0.78rem;color:var(--text-muted);"><span class="net" style="color:#005cc5;">▾<?Network bits</span> (' + prefix + ') &nbsp; <span class="host" style="color:#22863a;">▾<?Host bits</span> (' + (32 - prefix) + ')</div>';
+
+        // Subnets
+        subnetList.style.display = 'block';
+        splitSubnets(4);
+    }
+
+    window.splitSubnets = function(n) {
+        if (!currentNet) return;
+        var prefix = currentNet.prefix;
+        var newPrefix = prefix + Math.ceil(Math.log2(n));
+        if (newPrefix > 30) { newPrefix = 30; n = Math.pow(2, newPrefix - prefix); }
+        var subnetSize = Math.pow(2, 32 - newPrefix);
+        var rows = '';
+        for (var i = 0; i < n; i++) {
+            var netInt = (currentNet.networkInt + i * subnetSize) >>> 0;
+            var bcastInt = (netInt + subnetSize - 1) >>> 0;
+            var firstInt = (netInt + 1) >>> 0;
+            var lastInt = (bcastInt - 1) >>> 0;
+            var hosts = subnetSize - 2;
+            rows += '<tr><td>' + (i+1) + '</td><td>' + intToIP(netInt) + '/' + newPrefix + '</td><td>' + intToIP(bcastInt) + '</td><td>' + intToIP(firstInt) + ' —' + intToIP(lastInt) + '</td><td>' + hosts.toLocaleString() + '</td><td>' + intToIP(prefixToMask(newPrefix)) + '</td></tr>';
+        }
+        subnetTbody.innerHTML = rows;
+    };
+
+    window.clearAll = function() {
+        inp.value = '';
+        resultsGrid.innerHTML = '';
+        binaryDisplay.style.display = 'none';
+        subnetList.style.display = 'none';
+        errMsg.style.display = 'none';
+        currentNet = null;
+        inp.focus();
+    };
+
+    window.quickCalc = function(val) {
+        inp.value = val;
+        calculate();
+    };
+
+    // Load sample
+    inp.value = '192.168.1.0/24';
+    calculate();
+})();
+</script>
+</body>
+</html>

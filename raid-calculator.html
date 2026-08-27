@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>RAID Configuration Calculator — Capacity, IOPS, Rebuild Time, MTTDL — jslet</title>
+    <meta name="description" content="RAID 5 rebuild URE probability. The second disk failure during rebuild is math, not luck. Compare RAID 0/1/5/6/10 across capacity, IOPS, rebuild time, and MTTDL.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) { .multi-input-row { grid-template-columns: 1fr; } }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .raid-result-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 14px; margin-top: 16px;
+        }
+        .raid-metric {
+            background: var(--bg-input); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center;
+            border: 1px solid var(--border); transition: border-color 0.2s;
+        }
+        .raid-metric:hover { border-color: var(--accent); }
+        .raid-metric .metric-val { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .raid-metric .metric-lbl { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; margin-top: 2px; }
+        .raid-compare-table td:first-child { font-weight: 700; }
+        .gauge-wrap { position: relative; width: 120px; height: 60px; margin: 0 auto; overflow: hidden; }
+        .gauge-bg { width: 120px; height: 60px; background: var(--border); border-radius: 60px 60px 0 0; }
+        .gauge-fill {
+            position: absolute; bottom: 0; left: 0; width: 120px; border-radius: 60px 60px 0 0;
+            background: linear-gradient(90deg, var(--success), var(--accent), var(--gold), var(--error));
+            transition: height 0.5s ease;
+        }
+        .risk-low { color: var(--success); }
+        .risk-med { color: var(--gold); }
+        .risk-high { color: var(--error); }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Raid Calculator",
+      "description": "Compare RAID 0, 1, 5, 6, and 10 configurations. Calculate usable capacity, estimated IOPS, rebuild time, and MTTDL (Mean Time To Data Loss) for enterprise storage planning.",
+      "url": "https://www.jslet.com/raid-calculator",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "HowTo",
+      "name": "How to Calculate RAID Configuration: Capacity, IOPS, Rebuild Time, and MTTDL",
+      "description": "Select RAID level and drive configuration to calculate usable capacity, read/write IOPS, rebuild time, and mean time to data loss.",
+      "step": [
+        {
+          "@type": "HowToStep",
+          "position": 1,
+          "name": "Choose a RAID level",
+          "text": "Select RAID 0 (striping, zero fault tolerance), RAID 1 (mirroring, 50% capacity), RAID 5 (single parity, 1-drive fault tolerance), RAID 6 (double parity, 2-drive fault tolerance), or RAID 10 (striped mirrors). RAID 5 at 12TB+ drives has a 62% chance of URE during rebuild — consider RAID 6 or RAID 10 for large drives."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 2,
+          "name": "Set drive count, capacity, and specs",
+          "text": "Enter number of drives, per-drive capacity, drive RPM (affects IOPS), and sustained read/write speed. HDD rebuild at 200 MB/s takes hours at 20TB scale. SSD rebuild at 500+ MB/s changes the risk profile."
+        },
+        {
+          "@type": "HowToStep",
+          "position": 3,
+          "name": "Review capacity, IOPS, and rebuild time",
+          "text": "The calculator outputs usable capacity (minus parity/mirror overhead), estimated random IOPS, and rebuild time in hours. MTTDL is computed from drive AFR and rebuild window — this is the number to watch for large HDD arrays."
+        }
+      ]
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Is RAID 5 safe with 12TB or larger drives?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. At 12TB per drive with a typical consumer HDD URE spec of 1 in 10^14 bits read, a RAID 5 rebuild has a ~62% probability of hitting an unrecoverable read error — meaning data loss during rebuild. Enterprise drives with 10^15 URE spec reduce this to ~8%, but RAID 6 (double parity) or erasure coding is the minimum safe configuration for large drives. See the RAID 5 Is Dead research briefing for the full math."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How long does a RAID rebuild take?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "At 200 MB/s sustained rebuild speed (typical for 7200 RPM HDDs), a 20TB drive takes about 28 hours to rebuild. At 500 MB/s (enterprise SSD), the same rebuild takes ~11 hours. RAID 6 rebuild is only 13% slower than RAID 5 at 20TB scale — the real difference is the URE survival probability, not rebuild time. During rebuild, the array runs in degraded mode with no parity protection, making the window as short as possible critical."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "RAID 10 vs RAID 6 — which should I choose?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "RAID 10 (striped mirrors) gives better write IOPS (no parity calculation overhead), faster rebuilds (just copy the surviving mirror), and 50% usable capacity regardless of drive count. RAID 6 gives better usable capacity (N-2 drives), similar read IOPS, but slower writes and rebuilds. For databases and write-heavy workloads, RAID 10. For bulk storage and archives, RAID 6. At 8+ drives, RAID 6's capacity advantage grows significantly."
+          }
+        }
+      ]
+    }
+    </script>
+
+    <link rel="canonical" href="https://www.jslet.com/raid-calculator">
+    <meta property="og:title" content="RAID Configuration Calculator — Capacity, IOPS, Rebuild Time, MTTDL — jslet">
+    <meta property="og:description" content="Compare RAID 0, 1, 5, 6, and 10 configurations. Calculate usable capacity, estimated IOPS, rebuild time, and MTTDL (Mean Time To Data Loss) for enterprise storage planning.">
+    <meta property="og:url" content="https://www.jslet.com/raid-calculator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="RAID Configuration Calculator — Capacity, IOPS, Rebuild Time, MTTDL — jslet">
+    <meta name="twitter:description" content="Compare RAID 0, 1, 5, 6, and 10 configurations. Calculate usable capacity, estimated IOPS, rebuild time, and MTTDL (Mean Time To Data Loss) for enterprise storage planning.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+</head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">›</span> <a href="/decision-matrix">Decision Matrix</a> <span class="breadcrumb-sep">›</span> RAID Configuration Calculator</nav>
+        <header>
+            <h1>RAID <span>Configuration Calculator</span></h1>
+            <p>RAID 5 rebuild URE probability — the second disk failure during rebuild is math, not luck. A 4 TB consumer HDD with 1 in 10¹⁴ URE rate: during RAID 5 rebuild, you read 28 TB. Probability of hitting an unrecoverable read error: north of 90%. Compare RAID 0/1/5/6/10 across usable capacity, IOPS, rebuild time, and MTTDL. The rebuild window is your vulnerability surface.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Drive Configuration</h3>
+                <p class="card-desc">Configure drive count, capacity, type (HDD/SSD), and RPM. The engine computes usable capacity, IOPS, rebuild time, and MTTDL per RAID level. Flags URE risk when rebuilds exceed safe windows.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="num-drives">Number of Drives</label>
+                        <input type="number" class="unit-input" id="num-drives" value="8" step="1" min="2" max="128">
+                    </div>
+                    <div class="input-group">
+                        <label for="drive-size-tb">Single Drive Capacity (TB)</label>
+                        <input type="number" class="unit-input" id="drive-size-tb" value="4" step="any" min="0.1">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="drive-type">Drive Type</label>
+                        <select class="unit-input" id="drive-type">
+                            <option value="hdd-7200">HDD 7200 RPM (SATA)</option>
+                            <option value="hdd-10k">HDD 10K RPM (SAS)</option>
+                            <option value="hdd-15k">HDD 15K RPM (SAS)</option>
+                            <option value="ssd-sata" selected>SSD SATA (Enterprise)</option>
+                            <option value="ssd-nvme">SSD NVMe (Gen4)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="stripe-size">Stripe Size (KB)</label>
+                        <select class="unit-input" id="stripe-size">
+                            <option value="64">64 KB (Default)</option>
+                            <option value="128" selected>128 KB</option>
+                            <option value="256">256 KB</option>
+                            <option value="512">512 KB</option>
+                            <option value="1024">1 MB</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="workload">Workload Pattern</label>
+                        <select class="unit-input" id="workload">
+                            <option value="random-read">Random Read Heavy (Database)</option>
+                            <option value="random-mixed" selected>Random Mixed R/W (OLTP)</option>
+                            <option value="sequential-read">Sequential Read (Media / HPC)</option>
+                            <option value="sequential-write">Sequential Write (Log / Backup)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="raid-level">RAID Level</label>
+                        <select class="unit-input" id="raid-level">
+                            <option value="0">RAID 0 (Striping — No Redundancy)</option>
+                            <option value="1">RAID 1 (Mirroring — 2 drives only)</option>
+                            <option value="5" selected>RAID 5 (Distributed Parity — 3+ drives)</option>
+                            <option value="6">RAID 6 (Double Parity — 4+ drives)</option>
+                            <option value="10">RAID 10 (Stripe of Mirrors — 4+ drives, even count)</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Run RAID Analysis</button>
+            </div>
+
+            <!-- SINGLE RAID RESULT -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="result-card">
+                <h3>📊 Selected RAID Configuration</h3>
+                <p class="card-desc" id="result-params"></p>
+                <div class="raid-result-grid" id="raid-metrics"></div>
+                <div id="raid-warnings" style="margin-top:14px;"></div>
+            </div>
+
+            <!-- ALL RAID COMPARISON -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="compare-card">
+                <h3>⚖️ All RAID Levels Compared</h3>
+                <p class="card-desc">Side-by-side comparison of all five RAID levels with your current drive configuration.</p>
+                <div class="table-scroll">
+<table class="vendor-compare-table" id="compare-table"></table>
+</div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>RAID Calculator: Beyond Simple Capacity Math</h2>
+            <p>Most RAID calculators answer one question: "How much usable space?" This one estimates <strong>IOPS performance</strong> under different workloads, <strong>rebuild time</strong> (make-or-break for large drives where rebuilds run for days), and <strong>MTTDL</strong> (Mean Time To Data Loss). The rebuild window is your vulnerability surface — quantify it.</p>
+            <h3>Why Rebuild Time Matters in 2026</h3>
+            <p>A 20 TB HDD in a RAID 5 array can take <strong>36–72 hours</strong> to rebuild. During that window, a second drive failure (URE — Unrecoverable Read Error) causes complete data loss. This is why RAID 5 is increasingly discouraged for large-capacity HDD arrays, and why RAID 6 (double parity) or RAID 10 are the recommended configurations for arrays with drives larger than 2 TB. Our calculator flags this risk explicitly.</p>
+            <h3>IOPS Estimation Methodology</h3>
+            <p>We estimate IOPS using the standard formulas:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>RAID Level</th><th>Read IOPS</th><th>Write IOPS</th><th>Write Penalty</th></tr></thead>
+                <tbody>
+                    <tr><td>RAID 0</td><td>N × Single Drive IOPS</td><td>N × Single Drive IOPS</td><td>1×</td></tr>
+                    <tr><td>RAID 1</td><td>N × Single Drive IOPS</td><td>(N/2) × Single Drive IOPS</td><td>2×</td></tr>
+                    <tr><td>RAID 5</td><td>N × Single Drive IOPS</td><td>(N/4) × Single Drive IOPS</td><td>4×</td></tr>
+                    <tr><td>RAID 6</td><td>N × Single Drive IOPS</td><td>(N/6) × Single Drive IOPS</td><td>6×</td></tr>
+                    <tr><td>RAID 10</td><td>N × Single Drive IOPS</td><td>(N/2) × Single Drive IOPS</td><td>2×</td></tr>
+                </tbody>
+            </table>
+</div>
+        </section>
+        <!-- ── Related Tools ── -->
+        <div class="related-tools" style="margin-top:0;">
+            <h3>📰 Related Research</h3>
+            <div style="padding:12px 16px; background:var(--bg-card); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); margin-bottom:24px;">
+                <p style="margin:0; font-size:0.85rem; color:var(--text-body); line-height:1.55;"><strong>Deep-dive briefing:</strong> At 12TB per drive, a RAID 5 rebuild has a 62% chance of hitting an unrecoverable read error. RAID 6 drops that to 0.0006%. This briefing runs the URE math that makes single parity obsolete for modern drive capacities.</p>
+                <a href="/raid-5-vs-raid-6-rebuild-ure" style="display:inline-block; margin-top:8px; font-size:0.8rem; font-weight:700; color:var(--accent); text-decoration:none;">Read the full briefing →</a>
+            </div>
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/raid-5-is-dead">📰 RAID 5 Is Dead: Why 12TB+ Drives Break Single Parity (Full Briefing) →</a>
+                <a href="/raid-5-vs-raid-6-rebuild-ure">📰 RAID 5 vs RAID 6: 20TB Rebuild Times Compared (Full Briefing) →</a>
+                <a href="/iops-to-throughput">IOPS to Throughput &rarr;</a>
+                <a href="/terabytes-to-petabytes">TB to PB Scale &rarr;</a>
+                <a href="/backup-cost">Backup Strategy Cost &rarr;</a>
+            </div>
+        </div>
+
+
+        <section class="seo-section" style="margin-top:24px;">
+            <h2>📎 Embed This Calculator</h2>
+            <p style="font-size:0.88rem; margin-bottom:12px; color:var(--text-secondary);">Embed the RAID calculator on your team wiki, internal docs, or storage planning page. Zero dependencies. Zero tracking. Pure client-side math.</p>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px;">
+                <pre style="margin:0; font-size:0.78rem; overflow-x:auto; white-space:pre-wrap; font-family:'SF Mono','Cascadia Code',Consolas,monospace;"><code>&lt;iframe src="https://www.jslet.com/embed/raid-calculator" width="100%" height="650" style="border:none;border-radius:10px;" title="RAID Configuration Calculator" loading="lazy"&gt;&lt;/iframe&gt;</code></pre>
+            </div>
+        </section>
+
+        <div class="social-share-bar"><span>Share:</span><a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/raid-calculator&t=RAID+Configuration+Calculator+—+Capacity,+IOPS,+Rebuild+Time,+MTTDL" class="share-btn hn" target="_blank" rel="noopener noreferrer">HN</a><a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/raid-calculator&text=RAID+calculator:+usable+capacity,+IOPS,+rebuild+time,+and+MTTDL+for+RAID+0/1/5/6/10.+Spoiler:+RAID+5+at+12TB+is+a+62%+gamble.&via=jslet" class="share-btn twitter" target="_blank" rel="noopener noreferrer">X</a><a href="https://www.reddit.com/r/DataHoarder/submit?url=https://www.jslet.com/raid-calculator&title=RAID+Configuration+Calculator+—+Compare+RAID+0/1/5/6/10" class="share-btn reddit" target="_blank" rel="noopener noreferrer">Reddit</a><a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/raid-calculator&title=RAID+Configuration+Calculator" class="share-btn linkedin" target="_blank" rel="noopener noreferrer">LinkedIn</a></div>
+
+                <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Drive performance profiles (single-drive baseline IOPS) ──
+    var DRIVE_PROFILES = {
+        'hdd-7200': { iopsRandomRead: 75, iopsRandomWrite: 75, iopsSeqRead: 120, iopsSeqWrite: 120, throughputMBps: 150, afr: 0.02, ure: 1e-14 },
+        'hdd-10k':  { iopsRandomRead: 120, iopsRandomWrite: 120, iopsSeqRead: 160, iopsSeqWrite: 160, throughputMBps: 200, afr: 0.018, ure: 1e-15 },
+        'hdd-15k':  { iopsRandomRead: 180, iopsRandomWrite: 180, iopsSeqRead: 200, iopsSeqWrite: 200, throughputMBps: 250, afr: 0.015, ure: 1e-15 },
+        'ssd-sata': { iopsRandomRead: 98000, iopsRandomWrite: 30000, iopsSeqRead: 550, iopsSeqWrite: 520, throughputMBps: 550, afr: 0.005, ure: 1e-17 },
+        'ssd-nvme': { iopsRandomRead: 500000, iopsRandomWrite: 200000, iopsSeqRead: 7000, iopsSeqWrite: 5000, throughputMBps: 7000, afr: 0.003, ure: 1e-18 }
+    };
+
+    var RAID_FORMULAS = {
+        '0': {
+            name: 'RAID 0', minDrives: 2,
+            usableCapacity: (n, sz) => n * sz,
+            writePenalty: 1,
+            faultTolerance: 0,
+            readIOPS: (n, baseR, baseW) => n * baseR,
+            writeIOPS: (n, baseR, baseW) => n * baseW,
+            mttdlFactor: (n) => 1 / n  // higher is worse
+        },
+        '1': {
+            name: 'RAID 1', minDrives: 2,
+            usableCapacity: (n, sz) => sz,
+            writePenalty: 2,
+            faultTolerance: 1,
+            readIOPS: (n, baseR, baseW) => n * baseR,
+            writeIOPS: (n, baseR, baseW) => (n / 2) * baseW,
+            mttdlFactor: (n) => 1 / (n * (n - 1))
+        },
+        '5': {
+            name: 'RAID 5', minDrives: 3,
+            usableCapacity: (n, sz) => (n - 1) * sz,
+            writePenalty: 4,
+            faultTolerance: 1,
+            readIOPS: (n, baseR, baseW) => n * baseR,
+            writeIOPS: (n, baseR, baseW) => (n / 4) * baseW,
+            mttdlFactor: (n) => 2 / (n * (n - 1))
+        },
+        '6': {
+            name: 'RAID 6', minDrives: 4,
+            usableCapacity: (n, sz) => (n - 2) * sz,
+            writePenalty: 6,
+            faultTolerance: 2,
+            readIOPS: (n, baseR, baseW) => n * baseR,
+            writeIOPS: (n, baseR, baseW) => (n / 6) * baseW,
+            mttdlFactor: (n) => 6 / (n * (n - 1) * (n - 2))
+        },
+        '10': {
+            name: 'RAID 10', minDrives: 4,
+            usableCapacity: (n, sz) => (n / 2) * sz,
+            writePenalty: 2,
+            faultTolerance: 2,
+            readIOPS: (n, baseR, baseW) => n * baseR,
+            writeIOPS: (n, baseR, baseW) => (n / 2) * baseW,
+            mttdlFactor: (n) => 2 / (n * (n - 1))
+        }
+    };
+
+    function computeRaidMetrics(raidKey, nDrives, driveSizeTB, driveProfile, workload) {
+        var formula = RAID_FORMULAS[raidKey];
+        if (!formula || nDrives < formula.minDrives) return null;
+
+        var rawTB = driveSizeTB * 0.909; // TB → TiB (manufacturer vs OS)
+
+        var usableTB = formula.usableCapacity(nDrives, rawTB);
+        var efficiency = (usableTB / (nDrives * rawTB)) * 100;
+
+        // IOPS
+        var baseReadIOPS, baseWriteIOPS;
+        if (workload.includes('random')) {
+            baseReadIOPS = driveProfile.iopsRandomRead;
+            baseWriteIOPS = driveProfile.iopsRandomWrite;
+        } else {
+            baseReadIOPS = driveProfile.iopsSeqRead;
+            baseWriteIOPS = driveProfile.iopsSeqWrite;
+        }
+
+        var readIOPS = formula.readIOPS(nDrives, baseReadIOPS, baseWriteIOPS);
+        var writeIOPS = formula.writeIOPS(nDrives, baseReadIOPS, baseWriteIOPS);
+
+        // Weighted IOPS based on workload
+        var readWeight = 0.7, writeWeight = 0.3;
+        if (workload === 'random-read') { readWeight = 0.9; writeWeight = 0.1; }
+        else if (workload === 'random-mixed') { readWeight = 0.7; writeWeight = 0.3; }
+        else if (workload === 'sequential-read') { readWeight = 0.95; writeWeight = 0.05; }
+        else if (workload === 'sequential-write') { readWeight = 0.1; writeWeight = 0.9; }
+
+        var blendedIOPS = readIOPS * readWeight + writeIOPS * writeWeight;
+
+        // Rebuild time estimate (hours)
+        var rebuildDataTB = rawTB;
+        var rebuildRateMBps = driveProfile.throughputMBps * 0.7; // 70% of theoretical (contention + overhead)
+        var rebuildTimeHours = nDrives > formula.faultTolerance ? (rebuildDataTB * 1024 * 1024) / (rebuildRateMBps * 3600) : 0;
+
+        // MTTDL (years) — simplified model
+        var afr = driveProfile.afr;
+        var mttfHours = 1 / (afr / (365 * 24)); // Mean Time To Failure per drive in hours
+        var mttdlHours = mttfHours / formula.mttdlFactor(nDrives);
+        var mttdlYears = mttdlHours / (365 * 24);
+
+        // URE risk during rebuild
+        var ureRisk = rebuildDataTB > 0 ? 1 - Math.exp(-rebuildDataTB * 1e12 * driveProfile.ure) : 0;
+
+        return {
+            raidName: formula.name,
+            usableTB, efficiency, readIOPS, writeIOPS, blendedIOPS,
+            rebuildTimeHours, mttdlYears, ureRisk,
+            writePenalty: formula.writePenalty,
+            faultTolerance: formula.faultTolerance
+        };
+    }
+
+    function computeRaid() {
+        var nDrives = parseInt(document.getElementById('num-drives').value) || 8;
+        var driveSizeTB = parseFloat(document.getElementById('drive-size-tb').value) || 4;
+        var driveType = document.getElementById('drive-type').value;
+        var workload = document.getElementById('workload').value;
+        var raidKey = document.getElementById('raid-level').value;
+
+        var driveProfile = DRIVE_PROFILES[driveType];
+
+        // Single RAID result
+        var result = computeRaidMetrics(raidKey, nDrives, driveSizeTB, driveProfile, workload);
+        if (!result) {
+            alert('This RAID level requires more drives. Check minimum drive count.');
+            return;
+        }
+
+        var metricNames = [
+            { key: 'usableTB', label: 'Usable Capacity', fmt: v => v.toFixed(1) + ' TB', icon: '💾' },
+            { key: 'efficiency', label: 'Storage Efficiency', fmt: v => v.toFixed(1) + '%', icon: '📐' },
+            { key: 'blendedIOPS', label: 'Blended IOPS (' + workload.replace('-',' ') + ')', fmt: v => v >= 1000 ? (v/1000).toFixed(1) + 'K' : v.toFixed(0), icon: '⚡' },
+            { key: 'readIOPS', label: 'Read IOPS', fmt: v => v >= 1000 ? (v/1000).toFixed(1) + 'K' : v.toFixed(0), icon: '📖' },
+            { key: 'writeIOPS', label: 'Write IOPS', fmt: v => v >= 1000 ? (v/1000).toFixed(1) + 'K' : v.toFixed(0), icon: '✏️' },
+            { key: 'rebuildTimeHours', label: 'Rebuild Time', fmt: v => v < 1 ? (v*60).toFixed(0)+' min' : v.toFixed(1)+' h', icon: '🔧' },
+            { key: 'mttdlYears', label: 'MTTDL (Years)', fmt: v => v > 1000 ? '1,000+ yr' : v > 100 ? v.toFixed(0)+' yr' : v.toFixed(1)+' yr', icon: '🛡️' },
+            { key: 'ureRisk', label: 'URE Risk During Rebuild', fmt: v => (v*100).toFixed(v < 0.01 ? 4 : 2)+'%', icon: '⚠️' },
+        ];
+
+        document.getElementById('result-params').innerText =
+            `${nDrives} × ${driveSizeTB} TB ${driveType.replace('-',' ').toUpperCase()} drives · ${RAID_FORMULAS[raidKey].name}`;
+
+        document.getElementById('raid-metrics').innerHTML = metricNames.map(m => {
+            var val = result[m.key];
+            var riskClass = '';
+            if (m.key === 'ureRisk' && val > 0.01) riskClass = 'risk-high';
+            else if (m.key === 'ureRisk' && val > 0.001) riskClass = 'risk-med';
+            else if (m.key === 'mttdlYears' && val < 10) riskClass = 'risk-high';
+            else if (m.key === 'mttdlYears' && val < 100) riskClass = 'risk-med';
+            else if (m.key === 'efficiency' && val < 50) riskClass = 'risk-high';
+            return `<div class="raid-metric"><div class="metric-val ${riskClass}">${m.fmt(val)}</div><div class="metric-lbl">${m.icon} ${m.label}</div></div>`;
+        }).join('');
+
+        // Warnings
+        var warnings = [];
+        if (result.rebuildTimeHours > 24 && (raidKey === '5' || raidKey === '6')) {
+            warnings.push(`<p style="color:var(--error);font-weight:600;">⚠️ Rebuild time exceeds 24 hours (${result.rebuildTimeHours.toFixed(1)}h). During rebuild, a second drive failure would cause complete data loss in RAID ${raidKey === '5' ? '5' : '6'}. Consider RAID 10 for large drives.</p>`);
+        }
+        if (result.ureRisk > 0.01) {
+            warnings.push(`<p style="color:var(--error);font-weight:600;">⚠️ URE risk during rebuild is ${(result.ureRisk*100).toFixed(1)}% — dangerously high. RAID ${raidKey} is not recommended for ${driveSizeTB}TB ${driveType.includes('hdd') ? 'HDDs' : 'drives'}.</p>`);
+        }
+        if (result.mttdlYears < 10) {
+            warnings.push(`<p style="color:var(--gold);font-weight:600;">⚡ MTTDL is only ${result.mttdlYears.toFixed(1)} years — below the 10-year enterprise threshold. Consider adding hot spares or switching to RAID 6/10.</p>`);
+        }
+        if (warnings.length > 0) {
+            document.getElementById('raid-warnings').innerHTML = warnings.join('');
+        } else {
+            document.getElementById('raid-warnings').innerHTML = '<p style="color:var(--success);font-weight:600;">✅ Configuration looks healthy. No critical risks detected.</p>';
+        }
+
+        document.getElementById('result-card').style.display = 'block';
+
+        // All RAID comparison
+        var allResults = Object.keys(RAID_FORMULAS).map(key => computeRaidMetrics(key, nDrives, driveSizeTB, driveProfile, workload)).filter(Boolean);
+        var bestTCO = allResults.reduce((best, r) => r.usableTB > best.usableTB ? r : best, allResults[0]);
+
+        document.getElementById('compare-table').innerHTML = `
+            <thead><tr>
+                <th>RAID Level</th><th>Usable (TB)</th><th>Efficiency</th><th>Read IOPS</th><th>Write IOPS</th><th>Rebuild</th><th>MTTDL</th><th>Fault Tol.</th>
+            </tr></thead>
+            <tbody>${allResults.map(r => `
+                <tr>
+                    <td>${r.raidName} ${r === bestTCO ? '🏆' : ''} ${result && r.raidName === result.raidName ? '← selected' : ''}</td>
+                    <td>${r.usableTB.toFixed(1)} TB</td>
+                    <td>${r.efficiency.toFixed(0)}%</td>
+                    <td>${r.readIOPS >= 1000 ? (r.readIOPS/1000).toFixed(1)+'K' : r.readIOPS.toFixed(0)}</td>
+                    <td>${r.writeIOPS >= 1000 ? (r.writeIOPS/1000).toFixed(1)+'K' : r.writeIOPS.toFixed(0)}</td>
+                    <td>${r.rebuildTimeHours < 1 ? (r.rebuildTimeHours*60).toFixed(0)+'min' : r.rebuildTimeHours.toFixed(1)+'h'}</td>
+                    <td>${r.mttdlYears > 1000 ? '1,000+ yr' : r.mttdlYears.toFixed(1)+' yr'}</td>
+                    <td>${r.faultTolerance} drive${r.faultTolerance !== 1 ? 's' : ''}</td>
+                </tr>
+            `).join('')}</tbody>`;
+        document.getElementById('compare-card').style.display = 'block';
+        document.getElementById('result-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { computeRaid(); });
+    document.querySelector('.btn-calc').addEventListener('click', computeRaid);
+    document.querySelector('#raid-level').addEventListener('change', computeRaid);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

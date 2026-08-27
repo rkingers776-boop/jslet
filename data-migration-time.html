@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Data Migration Time Estimator — Multi-Phase Transfer &amp; Cutover Planner — jslet</title>
+    <meta name="description" content="100 TB at 10 Gbps = 24 hrs raw transfer. Add overhead, nightly windows, incremental sync, cutover. The napkin plan becomes weeks. Model all phases. Free tool." Model bandwidth, concurrency, protocol overhead, daily transfer windows, and ongoing data change rates for cloud and data center migrations.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .phase-card {
+            border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 24px;
+            margin-bottom: 12px; background: var(--bg-card); transition: border-color 0.2s;
+            position: relative; overflow: hidden;
+        }
+        .phase-card:hover { border-color: var(--accent); }
+        .phase-card .phase-num {
+            position: absolute; top: 16px; right: 20px;
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 0.7rem; font-weight: 700; color: var(--accent);
+            background: var(--accent-soft); padding: 2px 10px; border-radius: 999px;
+        }
+        .phase-card h4 { font-size: 1rem; margin-bottom: 6px; color: var(--text-heading); }
+        .phase-card .metric { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 1.05rem; font-weight: 700; color: var(--accent); }
+        .gantt-container { margin-top: 20px; padding: 16px; background: var(--bg-input); border-radius: var(--radius); }
+        .gantt-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+        .gantt-label { width: 130px; font-size: 0.78rem; font-weight: 600; color: var(--text-heading); text-align: right; flex-shrink: 0; }
+        @media (max-width: 500px) { .gantt-label { width: 90px; font-size: 0.7rem; } }
+        .gantt-track { flex: 1; height: 28px; background: var(--border); border-radius: 4px; position: relative; overflow: hidden; }
+        .gantt-bar { height: 100%; border-radius: 4px; position: absolute; display: flex; align-items: center; padding-left: 8px; font-size: 0.68rem; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; }
+        .gantt-bar.full { background: var(--accent); }
+        .gantt-bar.incr1 { background: #7c3aed; }
+        .gantt-bar.incr2 { background: #9333ea; }
+        .gantt-bar.cutover { background: var(--gold); }
+        .gantt-timeline { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--text-muted); margin-top: 4px; padding-left: 142px; }
+        @media (max-width: 500px) { .gantt-timeline { padding-left: 102px; } }
+        .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+        @media (max-width: 600px) { .summary-grid { grid-template-columns: 1fr 1fr; } }
+        .summary-tile { text-align: center; padding: 14px 10px; background: var(--bg-input); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+        .summary-tile .big { font-size: 1.3rem; font-weight: 700; color: var(--accent); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .summary-tile .tag { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 2px; }
+        .scenario-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 16px; }
+        .scenario-table th { background: var(--bg-input); }
+        .throughput-bar { height: 8px; border-radius: 4px; background: var(--border); margin-top: 4px; overflow: hidden; }
+        .throughput-bar-fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width 0.4s; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Data Migration Time",
+      "description": "Estimate data migration duration across full sync, incremental catch-up, and cutover phases. Model bandwidth, concurrency, protocol overhead, daily transfer windows, and ongoing data change rates for ",
+      "url": "https://www.jslet.com/data-migration-time",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <link rel="canonical" href="https://www.jslet.com/data-migration-time">
+    <meta property="og:title" content="Data Migration Time Estimator — Multi-Phase Transfer &amp; Cutover Planner — jslet">
+    <meta property="og:description" content="Estimate data migration duration across full sync, incremental catch-up, and cutover phases. Model bandwidth, concurrency, protocol overhead, daily transfer windows, and ongoing data change rates for cloud and data center migrations.">
+    <meta property="og:url" content="https://www.jslet.com/data-migration-time">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Data Migration Time Estimator — Multi-Phase Transfer &amp; Cutover Planner — jslet">
+    <meta name="twitter:description" content="Estimate data migration duration across full sync, incremental catch-up, and cutover phases. Model bandwidth, concurrency, protocol overhead, daily transfer windows, and ongoing data change rates for ">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why does migrating 100 TB take weeks instead of 24 hours?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Raw math says 100 TB at 10 Gbps transfers in ~24 hours, but real migrations include nightly maintenance windows, incremental sync rounds, validation, cutover, and retries — the napkin plan becomes weeks. This calculator models each phase: initial transfer, deltas, and cutover, with overhead factors, so the timeline you plan with is the timeline that actually happens."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I estimate migration time across multiple phases?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Break the migration into initial bulk transfer, ongoing incremental sync, and final cutover. Each phase has different throughput characteristics — increments are smaller but repeat until zero delta. The calculator builds the phase timeline from your dataset size, link speed, and change rate, so you can schedule the window realistically."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does parallel link aggregation speed up the transfer?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, up to the limits of the source and target. Splitting the dataset across multiple parallel links multiplies effective throughput, which the calculator models as a parallelism factor. This is how teams compress weeks of migration into days when the bandwidth budget allows."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>Data Migration <span>Time Estimator</span></h1>
+            <p>100 TB at 10 Gbps = 24 hours raw transfer. Add TCP overhead, nightly maintenance windows, incremental sync, and cutover: the napkin plan becomes weeks. Model full-sync, incremental catch-up, and cutover with bandwidth aggregation, protocol overhead, daily transfer windows, and ongoing data churn.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Migration Workload Profile</h3>
+                <p class="card-desc">Configure data volume, bandwidth per link, parallel links, protocol overhead, daily transfer window, and ongoing delta rate. The engine computes per-phase duration, effective throughput, and a Gantt timeline.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="data-tb">Total Data Volume (TB)</label>
+                        <input type="number" class="unit-input" id="data-tb" value="50" step="any" min="0.01">
+                    </div>
+                    <div class="input-group">
+                        <label for="bandwidth-mbps">Bandwidth per Link (Mbps)</label>
+                        <input type="number" class="unit-input" id="bandwidth-mbps" value="1000" step="any" min="1">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="num-links">Number of Parallel Links / Streams</label>
+                        <input type="number" class="unit-input" id="num-links" value="1" step="1" min="1" max="64">
+                    </div>
+                    <div class="input-group">
+                        <label for="protocol">Protocol / Transfer Method</label>
+                        <select class="unit-input" id="protocol">
+                            <option value="tcp">Raw TCP Stream (≈3% overhead)</option>
+                            <option value="http" selected>HTTP / HTTPS (≈12% overhead)</option>
+                            <option value="s3">S3 / Object Store Multipart (≈18% overhead)</option>
+                            <option value="rsync">rsync / SCP / SFTP (≈25% overhead)</option>
+                            <option value="custom">Custom UDP / Aspera / GridFTP (≈5% overhead)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="window-hours">Daily Migration Window (hours)</label>
+                        <input type="number" class="unit-input" id="window-hours" value="8" step="any" min="0.5" max="24">
+                    </div>
+                    <div class="input-group">
+                        <label for="daily-change-pct">Daily Data Change Rate (%)</label>
+                        <input type="number" class="unit-input" id="daily-change-pct" value="0.5" step="any" min="0" max="100">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="cutover-buffer">Cutover Buffer (hours)</label>
+                        <input type="number" class="unit-input" id="cutover-buffer" value="4" step="any" min="1" max="72">
+                    </div>
+                    <div class="input-group">
+                        <label for="start-date">Migration Start Time</label>
+                        <input type="date" class="unit-input" id="start-date">
+                    </div>
+                </div>
+                <button class="btn-calc">Run Migration Timeline Analysis</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Throughput Summary</h3>
+                <div class="summary-grid" id="throughput-summary"></div>
+                <h3 style="margin-top: 20px;">🗓️ Migration Phase Timeline</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div id="phase-results"></div>
+                <div class="gantt-container" id="gantt-viz"></div>
+                <div style="margin-top: 16px;" id="scenarios-table"></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>Data Migration Time Estimation: Beyond Simple Division</h2>
+            <p>Every cloud migration, data center relocation, or storage refresh starts with the same question: <strong>"How long will the data transfer take?"</strong> The naive answer — data volume divided by bandwidth — is almost always wrong by a factor of 2–10×. Real migrations contend with protocol overhead, concurrency limits, restricted transfer windows, and the fact that data doesn't stop changing while you're moving it.</p>
+            <h3>Why Simple Math Fails</h3>
+            <p>Consider a 50 TB database being migrated over a 1 Gbps link. The naive calculation — 50 TB ÷ 0.125 GB/s = 400,000 seconds ≈ <strong>4.6 days</strong> — is dangerously optimistic. Here's what actually happens:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Factor</th><th>Impact</th><th>Example (50 TB, 1 Gbps)</th></tr></thead>
+                <tbody>
+                    <tr><td>Protocol Overhead (HTTP/HTTPS)</td><td>~12% throughput loss</td><td>Effective throughput → 880 Mbps</td></tr>
+                    <tr><td>Transfer Window Restriction</td><td>Only 8 hrs/day for prod systems</td><td>3× longer wall-clock time</td></tr>
+                    <tr><td>Ongoing Data Changes (0.5%/day)</td><td>250 GB/day of new/changed data during migration</td><td>Extended sync required</td></tr>
+                    <tr><td>TCP Slow Start / Latency</td><td>Long-fat networks degrade throughput</td><td>Additional 10–30% on cross-region links</td></tr>
+                    <tr><td>Incremental Catch-Up</td><td>Must re-sync all data changed during full migration</td><td>Adds 20–40% to total timeline</td></tr>
+                </tbody>
+            </table>
+</div>
+            <p style="margin-top: 12px;">With these factors modeled, the same 50 TB migration over 1 Gbps with an 8-hour daily window could realistically take <strong>20–30 days</strong>, not 5. That's the difference between a smooth cutover and a missed deadline.</p>
+            <h3>Multi-Phase Migration Strategy</h3>
+            <p>Production migrations follow a staged pattern:</p>
+            <ol style="padding-left: 20px; font-size: 0.93rem; color: var(--text-body); line-height: 1.9;">
+                <li><strong>Phase 1 — Full Baseline Sync:</strong> Bulk transfer of all existing data. This is the longest phase and determines the overall timeline.</li>
+                <li><strong>Phase 2 — Incremental Catch-Up:</strong> Re-sync data that changed during Phase 1. Usually 10–30% the duration of Phase 1.</li>
+                <li><strong>Phase 3 — Final Delta Sync:</strong> A second, much smaller incremental pass to catch the last changes. Typically 1–10% of Phase 1.</li>
+                <li><strong>Cutover Window:</strong> Brief service interruption to apply the final sync, validate data integrity, and switch traffic to the new system.</li>
+            </ol>
+            <h3>Parallel Link Aggregation</h3>
+            <p>Modern migration tools (AWS DataSync, AzCopy, gsutil, rclone) support multi-threaded transfers that can saturate multiple network paths simultaneously. With 4 parallel streams on a 1 Gbps link, effective throughput can approach 3.5 Gbps — cutting migration time by 65–70%. Diminishing returns set in beyond 8–16 streams, though as the source storage I/O becomes the bottleneck.</p>
+            <p style="margin-top:16px;"><strong>Why this tool matters:</strong> It's the only free, vendor-neutral migration time calculator that models all three phases with protocol overhead, transfer windows, and ongoing data churn. Cloud providers' own calculators (AWS Migration Hub, Azure Migrate) only estimate their own services and don't model the full multi-phase timeline.</p>
+        </section>
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/latency-budget-calculator">Latency Budget Calculator &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/gbps-to-tb-per-day">Gbps to TB/Day Egress &rarr;</a>
+                <a href="/log-storage-cost">Log Storage & Retention &rarr;</a>
+            </div>
+        </div>
+
+
+                <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // Protocol overhead ratios
+    var PROTOCOL_OVERHEAD = {
+        'tcp': 0.03,
+        'http': 0.12,
+        's3': 0.18,
+        'rsync': 0.25,
+        'custom': 0.05
+    };
+
+    function computeMigration() {
+        var dataTB = parseFloat(document.getElementById('data-tb').value) || 0;
+        var bandwidthMbps = parseFloat(document.getElementById('bandwidth-mbps').value) || 0;
+        var numLinks = parseInt(document.getElementById('num-links').value) || 1;
+        var protocol = document.getElementById('protocol').value;
+        var windowHours = parseFloat(document.getElementById('window-hours').value) || 24;
+        var dailyChangePct = parseFloat(document.getElementById('daily-change-pct').value) || 0;
+        var cutoverBuffer = parseFloat(document.getElementById('cutover-buffer').value) || 4;
+        var startDateStr = document.getElementById('start-date').value;
+
+        var overhead = PROTOCOL_OVERHEAD[protocol] || PROTOCOL_OVERHEAD['http'];
+        var dataGB = dataTB * 1024;
+
+        // Effective per-link throughput
+        var effectiveMbpsPerLink = bandwidthMbps * (1 - overhead);
+        var totalEffectiveMbps = effectiveMbpsPerLink * numLinks;
+
+        // Daily transfer capacity (GB)
+        // Mbps → MB/s = Mbps / 8; MB/s → GB/hr = * 3600 / 1024; GB/day = * windowHours
+        var dailyCapacityGB = (totalEffectiveMbps * windowHours * 3600) / (8 * 1024);
+
+        // Phase 1: Full baseline sync
+        var fullPhaseDays = dataGB / Math.max(dailyCapacityGB, 0.001);
+        var fullPhaseHours = fullPhaseDays * 24;
+        var fullPhaseWallDays = fullPhaseDays / (windowHours / 24);
+
+        // Data that changes during full phase
+        var changedDuringFullGB = dataGB * (dailyChangePct / 100) * fullPhaseWallDays;
+
+        // Phase 2: First incremental catch-up
+        var incr1Days = changedDuringFullGB / Math.max(dailyCapacityGB, 0.001);
+        var incr1WallDays = incr1Days / (windowHours / 24);
+
+        // Data that changes during Phase 2
+        var changedDuringIncr1GB = dataGB * (dailyChangePct / 100) * incr1WallDays;
+
+        // Phase 3: Final delta sync
+        var incr2Days = changedDuringIncr1GB / Math.max(dailyCapacityGB, 0.001);
+        var incr2WallDays = incr2Days / (windowHours / 24);
+
+        // Cutover: final sync + validation buffer
+        var cutoverHours = Math.max(cutoverBuffer, incr2Days * 24 / (windowHours / 24));
+
+        // Total wall-clock time
+        var totalWallDays = fullPhaseWallDays + incr1WallDays + incr2WallDays + (cutoverHours / 24);
+
+        // Calendar dates
+        var startDate = new Date();
+        if (startDateStr) {
+            startDate = new Date(startDateStr + 'T00:00:00');
+        }
+        var fullEndDate = new Date(startDate.getTime() + fullPhaseWallDays * 86400000);
+        var incr1EndDate = new Date(fullEndDate.getTime() + incr1WallDays * 86400000);
+        var incr2EndDate = new Date(incr1EndDate.getTime() + incr2WallDays * 86400000);
+        var cutoverEndDate = new Date(incr2EndDate.getTime() + cutoverHours * 3600000);
+
+        // Throughput summary
+        document.getElementById('throughput-summary').innerHTML = `
+            <div class="summary-tile">
+                <div class="big">${totalEffectiveMbps.toFixed(0)}</div>
+                <div class="tag">Effective Mbps (Aggregated)</div>
+            </div>
+            <div class="summary-tile">
+                <div class="big">${(totalEffectiveMbps / 8).toFixed(1)}</div>
+                <div class="tag">Effective MB/s</div>
+            </div>
+            <div class="summary-tile">
+                <div class="big">${dailyCapacityGB.toFixed(1)}</div>
+                <div class="tag">GB per Window Day</div>
+            </div>
+            <div class="summary-tile">
+                <div class="big">${(dailyCapacityGB * 30 / 1024).toFixed(1)}</div>
+                <div class="tag">TB per Month (30d)</div>
+            </div>
+        `;
+
+        // Protocol info strings
+        var protocolNames = {
+            'tcp': 'Raw TCP Stream',
+            'http': 'HTTP / HTTPS',
+            's3': 'S3 Multipart Upload',
+            'rsync': 'rsync / SCP / SFTP',
+            'custom': 'Custom UDP / Aspera'
+        };
+
+        document.getElementById('results-params').innerText =
+            `${dataTB} TB · ${bandwidthMbps} Mbps × ${numLinks} link(s) · ${protocolNames[protocol]} (${(overhead*100).toFixed(0)}% overhead) · ${windowHours}h/day window · ${dailyChangePct}%/day data churn`;
+
+        // Helper to format date
+        var fmtDate = d => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+        // Phase cards
+        var phaseDiv = document.getElementById('phase-results');
+        phaseDiv.innerHTML = `
+            <div class="phase-card">
+                <div class="phase-num">PHASE 1</div>
+                <h4>🔵 Full Baseline Sync</h4>
+                <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;">Bulk transfer of all existing ${dataTB} TB of data.</p>
+                <p>
+                    <span class="metric">${fullPhaseWallDays.toFixed(1)} days</span>
+                    <span style="font-size:0.78rem;color:var(--text-muted);margin-left:8px;">(${fullPhaseHours.toFixed(0)} transfer hours over ${windowHours}h/day windows)</span>
+                </p>
+                <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;">
+                    ${fmtDate(startDate)} → ${fmtDate(fullEndDate)}
+                </p>
+            </div>
+            <div class="phase-card">
+                <div class="phase-num">PHASE 2</div>
+                <h4>🟣 First Incremental Catch-Up</h4>
+                <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;">Re-sync ${changedDuringFullGB.toFixed(1)} GB of data that changed during the full baseline transfer.</p>
+                <p>
+                    <span class="metric">${incr1WallDays < 0.05 ? '< 1 hour' : incr1WallDays.toFixed(1) + ' days'}</span>
+                    <span style="font-size:0.78rem;color:var(--text-muted);margin-left:8px;">(${(changedDuringFullGB/dataGB*100).toFixed(1)}% of total data changed)</span>
+                </p>
+                <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;">
+                    ${fmtDate(fullEndDate)} → ${fmtDate(incr1EndDate)}
+                </p>
+            </div>
+            <div class="phase-card">
+                <div class="phase-num">PHASE 3</div>
+                <h4>🟣 Final Delta Sync</h4>
+                <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;">Sync ${changedDuringIncr1GB.toFixed(1)} GB changed during the first incremental pass. Converges to near-zero delta.</p>
+                <p>
+                    <span class="metric">${incr2WallDays < 0.05 ? '< 1 hour' : incr2WallDays.toFixed(1) + ' days'}</span>
+                    <span style="font-size:0.78rem;color:var(--text-muted);margin-left:8px;">(${(changedDuringIncr1GB/dataGB*100).toFixed(2)}% of total data changed)</span>
+                </p>
+                <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;">
+                    ${fmtDate(incr1EndDate)} → ${fmtDate(incr2EndDate)}
+                </p>
+            </div>
+            <div class="phase-card" style="border-color: var(--gold);">
+                <div class="phase-num" style="background: var(--gold-soft); color: var(--gold);">CUTOVER</div>
+                <h4>🟡 Final Cutover Window</h4>
+                <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:8px;">Apply final delta, validate integrity, promote new system, and switch application traffic.</p>
+                <p>
+                    <span class="metric" style="color: var(--gold);">${cutoverHours.toFixed(1)} hours</span>
+                    <span style="font-size:0.78rem;color:var(--text-muted);margin-left:8px;">(buffer + final sync)</span>
+                </p>
+                <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;">
+                    ${fmtDate(incr2EndDate)} → ${fmtDate(cutoverEndDate)}
+                </p>
+            </div>
+            <div class="phase-card" style="border-color: var(--success); background: var(--success-bg);">
+                <div class="phase-num" style="background: #ecfdf5; color: var(--success);">TOTAL</div>
+                <h4>🟢 Estimated Total Migration Timeline</h4>
+                <p>
+                    <span class="metric" style="color: var(--success); font-size: 1.3rem;">${totalWallDays.toFixed(1)} days</span>
+                    <span style="font-size:0.85rem;color:var(--text-body);margin-left:12px;">(${(totalWallDays/7).toFixed(1)} weeks)</span>
+                </p>
+                <p style="font-size:0.82rem;color:var(--text-secondary);margin-top:6px;">
+                    Target completion: <strong>${fmtDate(cutoverEndDate)}</strong>
+                    ${startDateStr ? '' : ' (estimates from today; set a start date for calendar projections)'}
+                </p>
+            </div>
+        `;
+
+        // Gantt chart
+        var maxDays = totalWallDays;
+        var ganttDiv = document.getElementById('gantt-viz');
+        ganttDiv.innerHTML = `
+            <h4 style="margin-bottom:12px;">📈 Migration Timeline (${maxDays.toFixed(1)} total days)</h4>
+            <div class="gantt-row">
+                <div class="gantt-label">Full Sync</div>
+                <div class="gantt-track">
+                    <div class="gantt-bar full" style="width:${(fullPhaseWallDays/maxDays)*100}%; left:0;">${fullPhaseWallDays.toFixed(1)}d</div>
+                </div>
+            </div>
+            <div class="gantt-row">
+                <div class="gantt-label">Incr #1</div>
+                <div class="gantt-track">
+                    <div class="gantt-bar incr1" style="width:${Math.max((incr1WallDays/maxDays)*100, 1)}%; left:${(fullPhaseWallDays/maxDays)*100}%;">${incr1WallDays < 0.05 ? '<1h' : incr1WallDays.toFixed(1) + 'd'}</div>
+                </div>
+            </div>
+            <div class="gantt-row">
+                <div class="gantt-label">Incr #2</div>
+                <div class="gantt-track">
+                    <div class="gantt-bar incr2" style="width:${Math.max((incr2WallDays/maxDays)*100, 0.5)}%; left:${((fullPhaseWallDays+incr1WallDays)/maxDays)*100}%;">${incr2WallDays < 0.05 ? '<1h' : incr2WallDays.toFixed(1) + 'd'}</div>
+                </div>
+            </div>
+            <div class="gantt-row">
+                <div class="gantt-label">Cutover</div>
+                <div class="gantt-track">
+                    <div class="gantt-bar cutover" style="width:${Math.max(((cutoverHours/24)/maxDays)*100, 1)}%; left:${((fullPhaseWallDays+incr1WallDays+incr2WallDays)/maxDays)*100}%;">${cutoverHours.toFixed(0)}h</div>
+                </div>
+            </div>
+            <div class="gantt-timeline">
+                <span>Day 0</span><span>Day ${(maxDays*0.25).toFixed(0)}</span><span>Day ${(maxDays*0.5).toFixed(0)}</span><span>Day ${(maxDays*0.75).toFixed(0)}</span><span>Day ${maxDays.toFixed(0)}</span>
+            </div>
+        `;
+
+        // Scenario comparison table
+        var scenarios = [
+            { name: 'Current Config', links: numLinks, win: windowHours, label: 'Your setup' },
+            { name: '24/7 Transfer', links: numLinks, win: 24, label: 'Remove window restriction' },
+            { name: 'Double Bandwidth', links: Math.min(numLinks * 2, 64), win: windowHours, label: '2× parallel links' },
+            { name: 'Raw TCP', links: numLinks, win: windowHours, label: 'Minimize protocol overhead', overheadOverride: 'tcp' }
+        ];
+
+        var scenariosHTML = scenarios.map((s, i) => {
+            var sOverhead = s.overheadOverride ? PROTOCOL_OVERHEAD[s.overheadOverride] : overhead;
+            var sEffMbps = bandwidthMbps * (1 - sOverhead) * s.links;
+            var sDailyCap = (sEffMbps * s.win * 3600) / (8 * 1024);
+            var sFullDays = dataGB / Math.max(sDailyCap, 0.001) / (s.win / 24);
+            var changedGB = dataGB * (dailyChangePct / 100) * sFullDays;
+            var sIncrDays = changedGB / Math.max(sDailyCap, 0.001) / (s.win / 24);
+            var sTotal = sFullDays + sIncrDays + (cutoverBuffer / 24);
+            var isCurrent = i === 0;
+            return `<tr ${isCurrent ? 'style="font-weight:700;"' : ''}>
+                <td>${isCurrent ? '▶ ' : ''}${s.name}</td>
+                <td>${s.links}×${bandwidthMbps} Mbps</td>
+                <td>${s.win}h/day</td>
+                <td>${sFullDays.toFixed(1)}d + ${sIncrDays.toFixed(1)}d</td>
+                <td><strong>${sTotal.toFixed(1)} days</strong></td>
+                <td style="font-size:0.75rem;color:var(--text-muted);">${s.label}</td>
+            </tr>`;
+        }).join('');
+
+        document.getElementById('scenarios-table').innerHTML = `
+            <h4 style="margin-bottom:8px;">🔄 Alternative Scenario Comparison</h4>
+            <div class="table-scroll">
+<table class="scenario-table">
+                <thead><tr><th>Scenario</th><th>Capacity</th><th>Window</th><th>Full + Incr</th><th>Total</th><th>Notes</th></tr></thead>
+                <tbody>${scenariosHTML}</tbody>
+            </table>
+</div>
+        `;
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Set default start date to today
+        var today = new Date().toISOString().split('T')[0];
+        document.getElementById('start-date').value = today;
+        computeMigration();
+    });
+    document.querySelector('.btn-calc').addEventListener('click', computeMigration);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

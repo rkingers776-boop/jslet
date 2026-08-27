@@ -1,0 +1,294 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Base64 Encode / Decode —Text, Files &amp; Images Online —jslet</title>
+    <meta name="description" content="Free online Base64 encoder and decoder. Encode text/files/images to Base64, decode Base64 back to original. Supports UTF-8 and binary-safe encoding. Drag-and-drop image to Base64. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/base64-encode-decode">
+    <meta property="og:title" content="Base64 Encode / Decode —Text, Files &amp; Images Online">
+    <meta property="og:description" content="Free Base64 encoder/decoder with image drag-and-drop. Encode text, files, images to Base64. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/base64-encode-decode">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Base64 Encode / Decode —Online">
+    <meta name="twitter:description" content="Free Base64 encoder/decoder with image support. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Base64 Encode / Decode",
+      "description": "Encode text, files, and images to Base64. Decode Base64 strings back to original. Supports UTF-8, binary-safe, and Data URLs.",
+      "url": "https://www.jslet.com/base64-encode-decode",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I encode an image to Base64 for embedding directly in HTML or CSS?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "You can convert any image to a Base64 Data URL using a client-side Base64 encoder like jslet's tool. Simply drag and drop your image file (PNG, JPG, GIF, SVG, or WebP) onto the upload area, and the tool reads the binary file using the browser's FileReader API, encodes it to Base64, and generates a complete Data URL string like data:image/png;base64,iVBORw0KGgo... You can then paste this Data URL directly into an HTML &lt;img&gt; tag's src attribute or a CSS background-image: url() declaration. This eliminates a separate HTTP request for the image — useful for small icons, logos, and inline graphics where the extra request overhead isn't worth it. However, Base64 encoding increases file size by approximately 33% compared to the raw binary, so it's best reserved for images under ~5 KB. jslet's tool also shows you the size comparison between the original binary and the Base64 output so you can decide whether embedding is worth the bandwidth tradeoff."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Base64 encoding secure? Can encoded data be reversed?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Base64 is NOT encryption — it is a reversible encoding scheme designed to represent binary data as ASCII text. Anyone can decode a Base64 string back to its original form using any Base64 decoder. There is no key, password, or secret involved. Base64's purpose is data transport, not data protection: it ensures binary data can safely travel through text-only channels like email (MIME), JSON APIs, XML documents, and HTML attributes — places where raw bytes would cause corruption. Think of Base64 like writing a number in hexadecimal instead of binary — it's the same data in a different representation, not a locked box. For data security, use actual encryption (AES-GCM, ChaCha20-Poly1305) BEFORE Base64 encoding. For data integrity checks, combine with a hash (SHA-256) or HMAC. jslet's Base64 tool performs encoding and decoding entirely in your browser — your data is not sent to any server, which is the security guarantee that matters for this type of tool."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What's the difference between Base64 encoding, URL encoding, and HTML entity encoding?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "These three encoding schemes solve different problems and produce fundamentally different outputs. Base64 encoding converts binary data (images, files, raw bytes) into a 64-character ASCII alphabet (A–Z, a–z, 0–9, +, /, with = for padding). It expands data size by ~33% and is used for embedding binary in text contexts — email attachments, Data URLs, JSON binary fields, and JWT token payloads. URL encoding (percent-encoding) converts reserved and unsafe characters in URLs into %XX hexadecimal pairs — spaces become %20, ampersands become %26, and non-ASCII characters get UTF-8 percent-encoded. It's specifically designed for safe URL query strings and path segments. HTML entity encoding converts characters with special meaning in HTML (<, >, &, \") into named or numeric entities (&lt;, &gt;, &amp;, &quot;) to prevent browsers from interpreting them as markup — critical for XSS prevention when rendering user-generated content. You can't use Base64 in a URL query string and you can't use URL encoding to embed a PNG in CSS — each encoding has exactly one job, and using the wrong one will break your output."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .tool-layout { display: flex; gap: 20px; min-height: 420px; }
+        @media (max-width: 768px) { .tool-layout { flex-direction: column; } }
+        .tool-panel { flex: 1; display: flex; flex-direction: column; }
+        .tool-panel label { font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; color: var(--text-body); }
+        .tool-panel textarea { flex: 1; min-height: 350px; font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 0.82rem; padding: 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); resize: vertical; line-height: 1.5; }
+        .tool-panel textarea:focus { border-color: var(--accent); outline: none; }
+        .btn-row { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; transition: background 0.15s; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+        .dropzone { border: 2px dashed var(--border); border-radius: var(--radius-sm); padding: 30px; text-align: center; color: var(--text-muted); cursor: pointer; margin: 8px 0; transition: border-color 0.2s; font-size: 0.88rem; }
+        .dropzone:hover, .dropzone.dragover { border-color: var(--accent); color: var(--accent); }
+        .stats-bar { font-size: 0.82rem; color: var(--text-muted); margin-top: 8px; }
+        .toolbar-hint { font-size: 0.78rem; color: var(--text-muted); margin-top: 8px; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+<div class="container">
+    <header>
+        <h1>Base64 <span>Encode / Decode</span></h1>
+        <p>Encode text, files, and images to Base64. Decode Base64 strings back to original. All processing in your browser.</p>
+    </header>
+
+    <div class="btn-row">
+        <button class="btn btn-primary" onclick="doEncode()">🟢🔒 Encode →Base64</button>
+        <button class="btn btn-outline" onclick="doDecode()">🟢🔓 Decode →Text</button>
+        <button class="btn btn-outline" onclick="swapIO()">🟢🔄 Swap</button>
+        <button class="btn btn-outline" onclick="copyOutput64()">🟢📋 Copy Output</button>
+    </div>
+
+    <div class="tool-layout">
+        <div class="tool-panel">
+            <label for="input-64">🟢📥 Input (Text / Base64)</label>
+            <textarea id="input-64" aria-label="Input text" placeholder="Paste text to encode to Base64, or paste a Base64 string to decode..."></textarea>
+            <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">🟢📁 Drop an image or file here —or click to select<br><small>Encodes file to Base64 Data URL</small></div>
+            <input type="file" id="file-input" style="display:none" onchange="handleFile(this)">
+            <div class="toolbar-hint">Base64 encoding adds ~33% overhead. A 1MB file becomes ~1.33MB as Base64.</div>
+        </div>
+        <div class="tool-panel">
+            <label for="output-64">🟢📤 Output</label>
+            <textarea id="output-64" placeholder="Output will appear here..." readonly style="resize: none;"></textarea>
+            <div class="stats-bar" id="stats-64"></div>
+        </div>
+    </div>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🟢📖 About Base64 Encoding</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p><strong>Base64</strong> is a binary-to-text encoding scheme that represents binary data as a sequence of 64 ASCII characters (A-Z, a-z, 0-9, +, /). It is used to safely transmit binary data through text-only channels such as JSON, XML, email (MIME), and Data URLs.</p>
+            <p><strong>How it works:</strong> Base64 encodes every 3 bytes of binary data into 4 ASCII characters —hence the ~33% size increase. The encoding is not encryption —it provides zero security. It merely makes binary data text-safe.</p>
+            <p><strong>Common uses:</strong> embedding images in HTML/CSS via Data URLs (<code>data:image/png;base64,...</code>), sending file attachments in JSON APIs, storing binary data in text-based databases, and encoding credentials in HTTP Basic Auth headers.</p>
+        </div>
+    </section>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<script src="nav.js"></script>
+<script>
+(function() {
+    // UTF-8 safe helpers (TextEncoder/TextDecoder —replaces deprecated escape/unescape)
+    function utf8ToB64(str) {
+        var bytes = new TextEncoder().encode(str);
+        var bin = '';
+        for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        return btoa(bin);
+    }
+    function b64ToUtf8(b64) {
+        var bin = atob(b64);
+        var bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new TextDecoder().decode(bytes);
+    }
+
+    var inp = document.getElementById('input-64');
+    var out = document.getElementById('output-64');
+    var stats = document.getElementById('stats-64');
+    var dz = document.getElementById('dropzone');
+
+    dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('dragover'); });
+    dz.addEventListener('dragleave', function() { dz.classList.remove('dragover'); });
+    dz.addEventListener('drop', function(e) { e.preventDefault(); dz.classList.remove('dragover'); var f = e.dataTransfer.files[0]; if (f) processFile(f); });
+
+    window.handleFile = function(input) { if (input.files[0]) processFile(input.files[0]); };
+
+    function processFile(file) {
+        var reader = new FileReader();
+        reader.onload = function() {
+            var b64 = reader.result;
+            if (typeof b64 === 'string') {
+                inp.value = b64;
+                out.value = b64;
+                updateStats(b64);
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    window.doEncode = function() {
+        var text = inp.value;
+        if (!text) return;
+        try {
+            var encoded = utf8ToB64(text);
+            out.value = encoded;
+            updateStats(encoded);
+        } catch(e) {
+            out.value = 'Error: ' + e.message;
+        }
+    };
+
+    window.doDecode = function() {
+        var b64 = inp.value.trim();
+        // Strip data URL prefix if present
+        if (b64.indexOf('data:') === 0) {
+            var commaIdx = b64.indexOf(',');
+            if (commaIdx > -1) b64 = b64.substring(commaIdx + 1);
+        }
+        if (!b64) return;
+        try {
+            var decoded = b64ToUtf8(b64);
+            out.value = decoded;
+            updateStats(decoded);
+        } catch(e) {
+            out.value = 'Error: Invalid Base64 string. ' + e.message;
+        }
+    };
+
+    window.swapIO = function() { var t = inp.value; inp.value = out.value; out.value = t; updateStats(out.value); };
+    window.copyOutput64 = function() { if (out.value) { navigator.clipboard.writeText(out.value); } };
+
+    function updateStats(text) {
+        var bytes = new Blob([text]).size;
+        var chars = text.length;
+        stats.textContent = '🟢📏 ' + chars.toLocaleString() + ' chars · 🟢💾 ' + bytes.toLocaleString() + ' bytes';
+    }
+
+    // Sample
+    inp.value = 'Hello, World! 🟢🌍';
+    window.doEncode();
+})();
+</script>
+</body>
+</html>
+

@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>AWS ALB vs NLB Cost Calculator — Pay for the Max LCU Dimension (2026) — jslet</title>
+    <meta name="description" content="Calculate AWS Application Load Balancer and Network Load Balancer monthly cost by LCU: new connections, active connections, bandwidth, and rule evaluations. You pay for the MAX dimension, not the sum. Compare ALB vs NLB side by side with real 2026 pricing.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="AWS ALB vs NLB Cost Calculator — Pay for the Max LCU Dimension">
+    <meta property="og:description" content="ALB and NLB bill by LCU — and you pay for the single largest dimension, not the sum. Model new connections, active connections, bandwidth, and rule evaluations, then see ALB vs NLB head to head.">
+    <meta property="og:url" content="https://www.jslet.com/alb-nlb-cost-calculator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AWS ALB vs NLB Cost Calculator — Pay for the Max LCU Dimension">
+    <meta name="twitter:description" content="LCU math: you pay for the MAX dimension, not the sum. Compare ALB vs NLB with 2026 list pricing.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/alb-nlb-cost-calculator">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input, input.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none;
+        }
+        select.unit-input:focus, input.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .checkbox-row { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 6px; }
+        .checkbox-row label { font-size: 0.85rem; color: var(--text-body); display: flex; align-items: center; gap: 7px; cursor: pointer; }
+
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-val.warn { color: #e67e22; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+        .cost-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin-top: 14px; }
+        .cost-table th { background: var(--bg-input); text-align: left; padding: 10px 14px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .cost-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+        .cost-table .num { text-align: right; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-weight: 700; }
+        .cost-table .cost-highlight { color: var(--accent); }
+        .cost-table tr.best-row { background: #ecfdf522; }
+        .cost-table tr.best-row td { border-bottom: 2px solid var(--success); font-weight: 700; }
+        [data-theme="dark"] .cost-table tr.best-row { background: #022c2233; }
+        .cost-table tr.best-row td:first-child::before { content: "★ "; color: var(--success); }
+
+        .cost-bar-wrap { display: flex; gap: 4px; align-items: flex-end; height: 170px; margin: 16px 0 8px 0; }
+        .cost-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+        .cost-bar-fill { width: 100%; border-radius: 4px 4px 0 0; transition: height 0.5s ease; display: flex; align-items: flex-start; justify-content: center; font-size: 0.7rem; font-weight: 700; color: #fff; padding-top: 6px; min-height: 22px; }
+        .cost-bar-label { font-size: 0.65rem; color: var(--text-muted); text-align: center; line-height: 1.2; }
+        .cost-bar-value { font-size: 0.72rem; font-weight: 700; color: var(--text-heading); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+
+        .dim-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 10px; }
+        .dim-table th { background: var(--bg-input); text-align: left; padding: 8px 12px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .dim-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+        .dim-table .num { text-align: right; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-weight: 700; }
+        .dim-table tr.binding td { background: var(--accent-soft); font-weight: 700; }
+        .dim-table tr.binding td:first-child::before { content: "▶ "; color: var(--accent); }
+
+        .ref-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+        .ref-table th { background: var(--bg-input); text-align: left; padding: 8px 12px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+        .ref-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .ref-table .num { text-align: right; font-weight: 700; color: var(--accent); }
+
+        .callout-box { background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: var(--radius-sm); padding: 16px 20px; margin: 14px 0; font-size: 0.88rem; color: var(--text-body); line-height: 1.7; }
+        .callout-box strong { color: var(--text-heading); }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "AWS ALB vs NLB Cost Calculator",
+      "description": "Calculate AWS Application Load Balancer and Network Load Balancer monthly cost by LCU dimensions (new connections, active connections, bandwidth, rule evaluations) and compare ALB vs NLB side by side.",
+      "url": "https://www.jslet.com/alb-nlb-cost-calculator",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How is AWS load balancer cost actually calculated?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "You are billed for the maximum LCU across four independent dimensions — new connections, active connections, bandwidth, and rule evaluations — not the sum. One LCU is the smaller of the two capacities per dimension, and each dimension is rounded up separately. This calculator reproduces that logic with real 2026 pricing so you can compare ALB vs NLB side by side for your exact traffic profile."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does ALB cost more than NLB for the same traffic?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "ALB bills a fifth dimension — rule evaluations — that NLB does not have. Every rule you add to an ALB costs processing time that counts toward LCUs, so a balancer with many routing rules can rack up significant rule-evaluation charges even with modest traffic. NLB skips that dimension entirely, which is why for pure L4 traffic NLB is usually cheaper. The calculator lets you toggle your rule count and see the exact delta."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the fixed hourly floor in the pricing model?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Every load balancer also has a flat per-hour charge that you pay regardless of traffic. At 2026 prices that fixed component alone adds up across multiple balancers and AZs, and it is the reason a mostly-idle ALB still shows up on your bill. This tool includes that floor in the monthly projection, so the number you get is the real billable amount, not just the traffic portion."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>AWS ALB vs NLB <span>Cost Calculator</span></h1>
+            <p>Load balancers don't bill by throughput. They bill by <strong>LCU — Load Balancer Capacity Units</strong> — and you pay for the <em>single largest dimension</em>, not the sum of them. A balancer pushing 2 Gbps but only 5 new connections/sec still bills 2 LCU, because bandwidth is the binding dimension. ALB and NLB price LCU differently ($0.008 vs $0.006) and count dimensions differently (ALB caps at 25 new connections/LCU; NLB tolerates 800). This calculator models both against your exact traffic: new connections, active connections, bandwidth, and — for ALB — rule evaluations beyond the first 10. Then it puts ALB and NLB head to head.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Traffic Profile</h3>
+                <p class="card-desc">Describe your load balancer's steady-state traffic. The engine computes LCU for both ALB and NLB from the same numbers and shows which dimension binds each. All four LCU dimensions are evaluated; the max wins.</p>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="lb-count">Number of Load Balancers</label>
+                        <input type="number" class="unit-input" id="lb-count" value="2" step="1" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="rps">Requests per Second (avg)</label>
+                        <input type="number" class="unit-input" id="rps" value="2000" step="any" min="0">
+                    </div>
+                </div>
+
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="new-conn">New Connections/sec</label>
+                        <input type="number" class="unit-input" id="new-conn" value="500" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="active-conn">Active (Concurrent) Connections</label>
+                        <input type="number" class="unit-input" id="active-conn" value="40000" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="size-kb">Avg Request + Response Size (KB)</label>
+                        <input type="number" class="unit-input" id="size-kb" value="40" step="any" min="0">
+                    </div>
+                </div>
+
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="rules">Content-Based Rules (beyond first 10, free)</label>
+                        <input type="number" class="unit-input" id="rules" value="20" step="1" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="hours">Hours per Month (billing)</label>
+                        <input type="number" class="unit-input" id="hours" value="730" step="any" min="1">
+                    </div>
+                </div>
+
+                <div class="checkbox-row">
+                    <label><input type="checkbox" id="nlb-tls"> NLB terminates TLS (adds TLS-flow dimension)</label>
+                    <label><input type="checkbox" id="nlb-preserve-ip"> NLB preserves client IP:port (adds tuple dimension)</label>
+                </div>
+
+                <div class="multi-input-row" style="margin-top:12px;">
+                    <div class="input-group">
+                        <label for="preset-select">Scenario Preset</label>
+                        <select class="unit-input" id="preset-select">
+                            <option value="custom">Custom Configuration</option>
+                            <option value="small-api">Small API (1 LB, 200 rps, 50 KB)</option>
+                            <option value="web-app">Web App (2 LB, 2k rps, 40 KB, 20 rules)</option>
+                            <option value="high-conn">High-Connection (2 LB, 50k new conn/s, 200k active)</option>
+                            <option value="data-heavy">Data-Heavy (3 LB, 5k rps, 2 MB responses)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="region-select">AWS Region</label>
+                        <select class="unit-input" id="region-select">
+                            <option value="us-east-1" selected>us-east-1 (N. Virginia)</option>
+                            <option value="us-west-2">us-west-2 (Oregon)</option>
+                            <option value="eu-west-1">eu-west-1 (Ireland)</option>
+                            <option value="ap-southeast-1">ap-southeast-1 (Singapore)</option>
+                            <option value="ap-northeast-1">ap-northeast-1 (Tokyo)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn-calc">Run ALB / NLB Cost Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Monthly Load Balancer Cost — ALB vs NLB</h3>
+                <p class="card-desc" id="results-params"></p>
+
+                <div class="metric-grid" id="volume-metrics"></div>
+
+                <h4 style="margin-top: 20px; margin-bottom: 4px;">💰 Total Monthly Cost</h4>
+                <div class="cost-bar-wrap" id="cost-bar-chart"></div>
+
+                <div class="table-scroll">
+                <table class="cost-table" id="cost-table">
+                    <thead>
+                        <tr><th>Type</th><th class="num">LCU</th><th class="num">Binding Dimension</th><th class="num">Fixed $/mo</th><th class="num">LCU $/mo</th><th class="num">Total/mo</th><th class="num">Annual</th></tr>
+                    </thead>
+                    <tbody id="cost-tbody"></tbody>
+                </table>
+                </div>
+
+                <h4 style="margin-top: 20px; margin-bottom: 4px;">🧱 LCU Dimension Breakdown (which one binds you?)</h4>
+                <div id="dim-breakdown"></div>
+
+                <p style="margin-top:10px; font-size:0.76rem; color:var(--text-muted);" id="results-note"></p>
+            </div>
+
+            <!-- REFERENCE CARD -->
+            <div class="calculator-card">
+                <h3>📋 ALB / NLB LCU &amp; Pricing Reference (2026)</h3>
+                <p class="card-desc">One LCU = the smaller of the two capacities per dimension. You are billed for the MAX of the dimensions, rounded up. Fixed hourly is per load balancer. us-east-1 baseline; other regions vary ±10%.</p>
+                <div class="table-scroll">
+                <table class="ref-table">
+                    <thead><tr><th>Dimension</th><th class="num">ALB per LCU</th><th class="num">NLB per LCU</th></tr></thead>
+                    <tbody>
+                        <tr><td>New connections / flows per sec</td><td class="num">25</td><td class="num">800 (TCP)</td></tr>
+                        <tr><td>Active connections / flows</td><td class="num">3,000</td><td class="num">100,000</td></tr>
+                        <tr><td>Bandwidth</td><td class="num">1 Gbps</td><td class="num">1 Gbps</td></tr>
+                        <tr><td>Rule evaluations per sec (ALB)</td><td class="num">1,000</td><td class="num">—</td></tr>
+                        <tr><td>New TLS flows per sec (NLB)</td><td class="num">—</td><td class="num">50</td></tr>
+                        <tr><td>Source/dest IP tuples (NLB)</td><td class="num">—</td><td class="num">240,000</td></tr>
+                        <tr style="background:var(--accent-soft);"><td><strong>Price per LCU-hour</strong></td><td class="num"><strong>$0.008</strong></td><td class="num"><strong>$0.006</strong></td></tr>
+                        <tr style="background:var(--accent-soft);"><td><strong>Fixed per LB-hour</strong></td><td class="num"><strong>$0.0225</strong></td><td class="num"><strong>$0.0225</strong></td></tr>
+                    </tbody>
+                </table>
+                </div>
+                <p style="margin-top:10px; font-size:0.78rem; color:var(--text-muted);">ALB rule evaluations count only rules evaluated beyond the first 10 free rules. NLB bandwidth per LCU is 1 Gbps for both TCP and TLS. Source: AWS Pricing Calculator, July 2026. Verify against your region.</p>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>The Dimension You're Not Watching Is the One You Pay For</h2>
+            <p>Most teams size a load balancer by "how much traffic" and stop. But LCU billing doesn't care about your gut feel — it cares about four independent dimensions, and bills you for whichever is largest. Get the largest one wrong and you either over-provision (paying for LCU you don't use) or, worse, you assume NLB is always cheaper and miss that ALB's rule-evaluation dimension is silently the binding constraint on a path-based routing setup.</p>
+
+            <h3>1. "Pay for the Max, Not the Sum" — The Core Rule</h3>
+            <p>Four dimensions are computed. The LCU count is the ceiling of the maximum, not the total. A balancer at 2 Gbps, 5 new conn/s, 3,000 active, 100 rule-evals/s computes LCU = max(2/1, 5/25, 3000/3000, 100/1000) = max(2, 0.2, 1, 0.1) = <strong>2 LCU</strong>. Bandwidth binds. Doubling active connections to 6,000 (2 LCU) or adding 50 rules (still 0.05 LCU) changes nothing — you're already capped by bandwidth. This is why throwing more rules at an ALB usually costs $0 until you cross a dimension boundary. The calculator shows you exactly which dimension is binding so you know what actually moves the bill.</p>
+
+            <div class="callout-box">
+                <strong>⚡ The Insight:</strong> If your binding dimension is bandwidth, ALB and NLB cost the same per Gbps (both 1 Gbps/LCU) — NLB is only 25% cheaper because its LCU-hour is $0.006 vs $0.008. But if your binding dimension is <em>new connections</em>, NLB is 32× more efficient (800 vs 25 per LCU). The workload shape, not the vendor, decides the gap.
+            </div>
+
+            <h3>2. The Rule-Evaluation Gotcha (ALB Only)</h3>
+            <p>ALB counts rule evaluations at 1,000 per LCU-second — but only for rules evaluated <em>beyond the first 10</em>. Ten free rules is a lot; most simple path-based setups never cross it. The moment you do — 50 content-based rules on a 2,000 rps endpoint evaluates 2,000 × 40 = 80,000 rule-evals/s = 80 LCU from rules alone, which can become the binding dimension even when bandwidth is modest. This is the trap: a URL-rewrite-heavy ALB can bill more in rule LCU than in bandwidth LCU. NLB has no rule concept at all — another reason NLB wins pure L4 workloads.</p>
+
+            <h3>3. ALB vs NLB — When Each Wins</h3>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Need</th><th>Use ALB when…</th><th>Use NLB when…</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>HTTP routing</strong></td><td>Path/host-based rules, redirects, auth, gRPC, WebSocket upgrade</td><td>Not applicable — L4 only</td></tr>
+                    <tr><td><strong>Connection rate</strong></td><td>Fine up to ~tens of k new conn/s before LCU explodes</td><td>800 new flows/LCU — absorbs hundreds of k/s cheaply</td></tr>
+                    <tr><td><strong>Latency</strong></td><td>+1 rule = +~1ms (see ALB Rule Latency Inspector)</td><td>Lowest latency, no HTTP parsing, static IP option</td></tr>
+                    <tr><td><strong>Cost at high conn</strong></td><td>Pricier per connection</td><td>Up to 32× cheaper on connection-bound workloads</td></tr>
+                    <tr><td><strong>TLS termination</strong></td><td>Native, offloaded</td><td>Supported, adds TLS-flow LCU dimension</td></tr>
+                </tbody>
+            </table>
+            </div>
+
+            <h3>4. The Fixed Hourly Floor</h3>
+            <p>Every load balancer costs $0.0225/hr = $16.43/month <em>before a single request</em>. Two balancers in two AZs for HA = $32.86/mo floor. At low traffic this fixed cost dominates — a dev ALB serving 5 rps still costs ~$16/mo. If you're running multiple ALBs for marginal traffic, consolidating behind one ALB with host-based routing (free rules!) often cuts the fixed floor in half. The calculator's fixed-vs-LCU split makes this visible.</p>
+
+            <h3>5. Who Should Care Most</h3>
+            <div class="table-scroll">
+            <table>
+                <thead><tr><th>Profile</th><th>Typical Monthly Bill</th><th>What This Calculator Reveals</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Small API / internal</strong></td><td class="num">$16–40/mo</td><td>Fixed hourly floor dominates. One ALB, host-based routing beats three separate ALBs. NLB unlikely to help at this scale.</td></tr>
+                    <tr><td><strong>Standard web app</strong></td><td class="num">$40–200/mo</td><td>Bandwidth usually binds. ALB vs NLB within 25%. Rule count matters only if you exceed 10 content rules at high rps.</td></tr>
+                    <tr><td><strong>Connection-heavy (games, MQTT, IoT)</strong></td><td class="num">$200–2,000/mo</td><td>New-connection dimension binds. NLB is dramatically cheaper — 32× more efficient per LCU. Switching can cut the bill 3–5×.</td></tr>
+                    <tr><td><strong>Rule-heavy edge router</strong></td><td class="num">$150–1,000/mo</td><td>Rule-eval LCU can become binding. Audit rule count; NLB can't do the routing, so the fix is rule consolidation, not LB swap.</td></tr>
+                </tbody>
+            </table>
+            </div>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/alb-nlb-cost-real">📰 The LCU Trap (Full Briefing) →</a>
+                <a href="/cloud-load-balancer-rules-to-latency-overhead">ALB Rule Latency Inspector →</a>
+                <a href="/concurrent-users-to-bandwidth">Concurrent Users → Bandwidth →</a>
+                <a href="/latency-budget-calculator">Latency Budget Calculator →</a>
+                <a href="/nat-gateway-cost-calculator">NAT Gateway Cost →</a>
+                <a href="/streaming-bandwidth">Streaming Bandwidth →</a>
+                <a href="/gbps-to-tb-per-day">Gbps → TB/Day Egress →</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Constants ──
+    var REGION_MULT = {
+        'us-east-1': 1.00, 'us-west-2': 1.00, 'eu-west-1': 1.07,
+        'ap-southeast-1': 1.10, 'ap-northeast-1': 1.12
+    };
+
+    var ALB = { lbHourly: 0.0225, lcuHourly: 0.008,
+                  newConn: 25, active: 3000, bw: 1, rule: 1000 };
+    var NLB = { lbHourly: 0.0225, lcuHourly: 0.006,
+                  newConn: 800, active: 100000, bw: 1, tls: 50, tuples: 240000 };
+
+    var PRESETS = {
+        'small-api': { lb:1, rps:200,    newc:50,   active:3000,  size:50,  rules:5,  tls:false, ip:false, hours:730 },
+        'web-app':   { lb:2, rps:2000,   newc:500,  active:40000, size:40,  rules:20, tls:false, ip:false, hours:730 },
+        'high-conn': { lb:2, rps:5000,   newc:50000,active:200000,size:10,  rules:5,  tls:true,  ip:true,  hours:730 },
+        'data-heavy':{ lb:3, rps:5000,   newc:1000, active:60000, size:2048, rules:10, tls:false, ip:false, hours:730 }
+    };
+
+    function fmtCurrency(n) {
+        if (Math.abs(n) < 0.005) return '$0.00';
+        return '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function fmtNum(n, d) { if (d === undefined) d = 1; return n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d }); }
+
+    function compute() {
+        var lbCount = parseInt(document.getElementById('lb-count').value) || 1;
+        var rps     = parseFloat(document.getElementById('rps').value) || 0;
+        var newConn = parseFloat(document.getElementById('new-conn').value) || 0;
+        var active  = parseFloat(document.getElementById('active-conn').value) || 0;
+        var sizeKb  = parseFloat(document.getElementById('size-kb').value) || 0;
+        var rules   = parseInt(document.getElementById('rules').value) || 0;
+        var hours   = parseFloat(document.getElementById('hours').value) || 730;
+        var tls     = document.getElementById('nlb-tls').checked;
+        var preserveIp = document.getElementById('nlb-preserve-ip').checked;
+        var regionKey = document.getElementById('region-select').value;
+
+        var regMult = REGION_MULT[regionKey] || 1.00;
+
+        // bandwidth in Gbps
+        var bwGbps = (rps * sizeKb * 8) / 1e6;
+
+        // ── ALB dimensions ──
+        var ruleEvals = rps * Math.max(0, rules - 10);
+        var albDims = [
+            { name: 'New connections', val: newConn / ALB.newConn },
+            { name: 'Active connections', val: active / ALB.active },
+            { name: 'Bandwidth', val: bwGbps / ALB.bw },
+            { name: 'Rule evaluations', val: ruleEvals / ALB.rule }
+        ];
+        var albLcu = Math.max(1, Math.ceil(Math.max.apply(null, albDims.map(function(d){ return d.val; }))));
+
+        // ── NLB dimensions ──
+        var nlbDims = [
+            { name: 'New flows (TCP)', val: newConn / NLB.newConn },
+            { name: 'Active flows', val: active / NLB.active },
+            { name: 'Bandwidth', val: bwGbps / NLB.bw }
+        ];
+        if (tls) nlbDims.push({ name: 'New TLS flows', val: newConn / NLB.tls });
+        if (preserveIp) nlbDims.push({ name: 'Source/dest tuples', val: active / NLB.tuples });
+        var nlbLcu = Math.max(1, Math.ceil(Math.max.apply(null, nlbDims.map(function(d){ return d.val; }))));
+
+        // ── Cost ──
+        var albFixed = lbCount * ALB.lbHourly * regMult * hours;
+        var albLcuCost = albLcu * ALB.lcuHourly * regMult * hours;
+        var albTotal = albFixed + albLcuCost;
+
+        var nlbFixed = lbCount * NLB.lbHourly * regMult * hours;
+        var nlbLcuCost = nlbLcu * NLB.lcuHourly * regMult * hours;
+        var nlbTotal = nlbFixed + nlbLcuCost;
+
+        var minTotal = Math.min(albTotal, nlbTotal);
+
+        // show card
+        document.getElementById('results-card').style.display = 'block';
+
+        document.getElementById('results-params').innerHTML =
+            '<strong>' + lbCount + ' LB(s)</strong> · ' + fmtNum(rps,0) + ' rps · ' +
+            fmtNum(newConn,0) + ' new conn/s · ' + fmtNum(active,0) + ' active · ' +
+            fmtNum(sizeKb,0) + ' KB/req · ' + rules + ' rules (+' + Math.max(0,rules-10) + ' billed) · ' +
+            (tls ? 'NLB TLS · ' : '') + (preserveIp ? 'NLB preserve-IP · ' : '') + regionKey;
+
+        document.getElementById('volume-metrics').innerHTML =
+            '<div class="metric-tile"><div class="metric-val">' + fmtCurrency(minTotal) + '</div><div class="metric-label">Cheaper Option/mo</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + albLcu + '</div><div class="metric-label">ALB LCU</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + nlbLcu + '</div><div class="metric-label">NLB LCU</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtCurrency(albTotal - nlbTotal) + '</div><div class="metric-label">ALB − NLB Δ/mo</div></div>' +
+            '<div class="metric-tile"><div class="metric-val">' + fmtNum(bwGbps, 2) + ' Gbps</div><div class="metric-label">Bandwidth</div></div>';
+
+        // bar chart
+        var barMax = Math.max(albTotal, nlbTotal);
+        var colors = { alb: '#ff9900', nlb: '#16161a' };
+        var bars = [
+            { name: 'ALB', total: albTotal, best: Math.abs(albTotal - minTotal) < 0.01, color: colors.alb },
+            { name: 'NLB', total: nlbTotal, best: Math.abs(nlbTotal - minTotal) < 0.01, color: colors.nlb }
+        ];
+        var barHtml = '';
+        bars.forEach(function(b) {
+            var pct = Math.max(4, (b.total / barMax) * 100);
+            barHtml += '<div class="cost-bar-col">' +
+                '<div class="cost-bar-value">' + fmtCurrency(b.total) + '</div>' +
+                '<div class="cost-bar-fill" style="height:' + pct + '%;background:' + b.color + ';' + (b.best ? 'border:2px solid var(--success);box-shadow:0 0 8px rgba(13,148,136,0.3);' : '') + '">' +
+                    (pct > 22 ? (b.best ? '★ BEST' : '') : '') + '</div>' +
+                '<div class="cost-bar-label">' + b.name + '</div>' +
+            '</div>';
+        });
+        document.getElementById('cost-bar-chart').innerHTML = barHtml;
+
+        // cost table
+        function bindingName(dims, lcu) {
+            // find dim whose ceil == lcu (the binding one); pick max val
+            var best = null;
+            dims.forEach(function(d) { if (!best || d.val > best.val) best = d; });
+            return best ? best.name : '—';
+        }
+        var tbody = '';
+        tbody += '<tr class="' + (Math.abs(albTotal - minTotal) < 0.01 ? 'best-row' : '') + '">' +
+            '<td>ALB</td><td class="num">' + albLcu + '</td><td>' + bindingName(albDims, albLcu) + '</td>' +
+            '<td class="num">' + fmtCurrency(albFixed) + '</td><td class="num">' + fmtCurrency(albLcuCost) + '</td>' +
+            '<td class="num cost-highlight">' + fmtCurrency(albTotal) + '</td><td class="num">' + fmtCurrency(albTotal * 12) + '</td></tr>';
+        tbody += '<tr class="' + (Math.abs(nlbTotal - minTotal) < 0.01 ? 'best-row' : '') + '">' +
+            '<td>NLB</td><td class="num">' + nlbLcu + '</td><td>' + bindingName(nlbDims, nlbLcu) + '</td>' +
+            '<td class="num">' + fmtCurrency(nlbFixed) + '</td><td class="num">' + fmtCurrency(nlbLcuCost) + '</td>' +
+            '<td class="num cost-highlight">' + fmtCurrency(nlbTotal) + '</td><td class="num">' + fmtCurrency(nlbTotal * 12) + '</td></tr>';
+        document.getElementById('cost-tbody').innerHTML = tbody;
+
+        // dimension breakdown tables
+        function dimTable(title, dims, lcu) {
+            var h = '<p style="margin:10px 0 2px;font-size:0.82rem;color:var(--text-heading);"><strong>' + title + '</strong></p>';
+            h += '<table class="dim-table"><thead><tr><th>Dimension</th><th class="num">Value</th><th class="num">LCU from dim</th></tr></thead><tbody>';
+            dims.forEach(function(d) {
+                var v = d.val;
+                var isBinding = Math.abs(Math.ceil(v) - lcu) < 0.001 && Math.abs(v - Math.max.apply(null, dims.map(function(x){return x.val;}))) < 1e-9;
+                h += '<tr class="' + (isBinding ? 'binding' : '') + '">' +
+                    '<td>' + d.name + '</td>' +
+                    '<td class="num">' + fmtNum(v, 3) + '</td>' +
+                    '<td class="num">' + Math.ceil(v) + '</td></tr>';
+            });
+            h += '</tbody></table>';
+            return h;
+        }
+        document.getElementById('dim-breakdown').innerHTML =
+            dimTable('ALB', albDims, albLcu) + dimTable('NLB', nlbDims, nlbLcu);
+
+        document.getElementById('results-note').innerHTML =
+            (albTotal <= nlbTotal ? 'ALB is cheaper or equal here' : 'NLB is cheaper here') +
+            ' — difference ' + fmtCurrency(Math.abs(albTotal - nlbTotal)) + '/mo. NLB LCU is 25% cheaper/hour but ALB tolerates 32× fewer new connections per LCU; the binding dimension decides. Region multiplier: ' + regMult + '×.';
+    }
+
+    // ── Event binding ──
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+
+    document.getElementById('preset-select').addEventListener('change', function() {
+        var p = PRESETS[this.value];
+        if (!p) return;
+        document.getElementById('lb-count').value = p.lb;
+        document.getElementById('rps').value = p.rps;
+        document.getElementById('new-conn').value = p.newc;
+        document.getElementById('active-conn').value = p.active;
+        document.getElementById('size-kb').value = p.size;
+        document.getElementById('rules').value = p.rules;
+        document.getElementById('hours').value = p.hours;
+        document.getElementById('nlb-tls').checked = p.tls;
+        document.getElementById('nlb-preserve-ip').checked = p.ip;
+        compute();
+    });
+
+    (function() {
+        var p = PRESETS['web-app'];
+        document.getElementById('preset-select').value = 'web-app';
+        document.getElementById('lb-count').value = p.lb;
+        document.getElementById('rps').value = p.rps;
+        document.getElementById('new-conn').value = p.newc;
+        document.getElementById('active-conn').value = p.active;
+        document.getElementById('size-kb').value = p.size;
+        document.getElementById('rules').value = p.rules;
+        document.getElementById('nlb-tls').checked = p.tls;
+        document.getElementById('nlb-preserve-ip').checked = p.ip;
+        compute();
+    })();
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

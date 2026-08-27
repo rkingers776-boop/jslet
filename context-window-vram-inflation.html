@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>KV Cache Context Window VRAM Inflation Calculator — jslet</title>
+    <meta name="description" content="Estimate KV cache VRAM overhead as context length grows. From 4K to 128K tokens — how much extra GPU memory does your LLM attention block consume? Includes FlashAttention savings and grouped-query attention (GQA) scaling.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="KV Cache Context Window VRAM Inflation Calculator — jslet">
+    <meta property="og:description" content="Estimate KV cache VRAM overhead as context length grows. From 4K to 128K tokens — how much extra GPU memory does your LLM attention block consume? Includes FlashAttention savings and grouped-query attention (GQA) scaling.">
+    <meta property="og:url" content="https://www.jslet.com/context-window-vram-inflation">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="KV Cache Context Window VRAM Inflation Calculator — jslet">
+    <meta name="twitter:description" content="Estimate KV cache VRAM overhead as context length grows. From 4K to 128K tokens — how much extra GPU memory does your LLM attention block consume? Includes FlashAttention savings and grouped-query attention (GQA) scaling.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/context-window-vram-inflation">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "KV Cache Context Window VRAM Inflation Calculator",
+      "description": "Estimate KV cache VRAM overhead as context length grows. From 4K to 128K tokens — how much extra GPU memory does your LLM attention block consume? Includes FlashAttention savings and grouped-query attention (GQA) scaling.",
+      "url": "https://www.jslet.com/context-window-vram-inflation",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why does a longer context window explode my VRAM?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The KV cache grows linearly with sequence length: for every token in the context, the attention block must store key and value tensors. Going from 4K to 128K tokens can inflate the cache by 30×, which is why long-context models eat GPU memory even when the model weights are small. This calculator projects the exact cache size from your model architecture."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much VRAM does the KV cache actually use?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It is a function of layers, heads, head dimension, precision, and sequence length. The calculator applies your architecture parameters to compute the cache footprint, then shows the impact of FlashAttention and grouped-query attention (GQA), which cut cache memory dramatically. You can see both the naive and the optimized numbers."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What mitigation strategies reduce KV cache memory?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Grouped-query attention shares key/value heads across query heads, FlashAttention avoids materializing full attention matrices, and some serving stacks use cache eviction or compression. The calculator quantifies each strategy for your configuration, so you know whether an architecture change or a serving tweak closes the VRAM gap."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>KV Cache <span>Context Window VRAM Inflation</span> Calculator</h1>
+            <p>Predicts execution memory overhead spikes inside runtime attention blocks as token context envelopes expand. Model the exponential VRAM cost of long-context inference to prevent out-of-memory failures during production serving.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🪟 Model Architecture Parameters</h3>
+                <p class="card-desc">Configure your transformer model's architecture. The engine computes KV cache size using the standard attention memory formula and projects growth across context lengths.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="ctx">Context Window (Tokens)</label>
+                        <input type="number" class="unit-input" id="ctx" value="32000" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">Max sequence length</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="layers">Transformer Layers</label>
+                        <input type="number" class="unit-input" id="layers" value="80" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">e.g. Llama-2-70B → 80</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="dmodel">Hidden Dimension</label>
+                        <input type="number" class="unit-input" id="dmodel" value="8192" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">d_model</span>
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="kvheads">KV Heads (GQA)</label>
+                        <input type="number" class="unit-input" id="kvheads" value="8" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">Grouped-query attention KV heads</span>
+                    </div>
+                    <div class="input-group">
+                        <label for="batch">Batch Size</label>
+                        <input type="number" class="unit-input" id="batch" value="1" step="any" min="1">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">Concurrent sequences</span>
+                    </div>
+                </div>
+                <button class="btn-calc">Run KV Cache Estimation Engine</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 KV Cache VRAM Projection</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div id="recommendations"></div>
+            </div>
+        </main>
+
+        <!-- REFERENCE SECTION -->
+        <section class="seo-section">
+            <h2>KV Cache: The Hidden VRAM Killer in Long-Context LLM Inference</h2>
+            <p>The <strong>Key-Value (KV) Cache</strong> is the single largest consumer of GPU memory during autoregressive LLM inference — often exceeding the model weights themselves. As context windows expand from 4K to 32K, 128K, and now 1M+ tokens, the KV cache grows <strong>linearly with sequence length</strong>, making it the dominant factor in VRAM provisioning for long-context serving. Understanding this growth curve is essential to avoid out-of-memory (OOM) crashes that silently kill inference requests under peak load.</p>
+
+            <h3>How This Calculator Works</h3>
+            <p>This tool applies the standard transformer KV cache formula and projects memory consumption across multiple context lengths so you can plan GPU capacity before deploying:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Parameter</th><th>Symbol</th><th>Role in KV Cache</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Context Window</strong></td><td><code>C</code></td><td>The number of tokens stored in the cache. Every token in the sequence has a key and value entry. Doubling the context window doubles the KV cache.</td></tr>
+                    <tr><td><strong>Transformer Layers</strong></td><td><code>L</code></td><td>Each transformer layer maintains its own independent KV cache. A 70B Llama-2 model has 80 layers — so the per-token KV cost is multiplied by 80. Deeper models pay a steeper KV cache penalty.</td></tr>
+                    <tr><td><strong>Hidden Dimension</strong></td><td><code>d_model</code></td><td>The total width of the residual stream. The per-head dimension is d_model / num_heads, which determines the size of each key and value vector.</td></tr>
+                    <tr><td><strong>KV Heads (GQA)</strong></td><td><code>kv_heads</code></td><td>Grouped-Query Attention (GQA) shares key-value heads across query heads. Fewer KV heads drastically reduces cache size. Llama-2-70B uses 8 KV heads vs. 64 query heads — an 8× reduction in KV cache vs. full multi-head attention.</td></tr>
+                    <tr><td><strong>Batch Size</strong></td><td><code>B</code></td><td>Each sequence in the batch has its own KV cache. Serving 16 concurrent users means 16× the KV cache memory. Batching is throughput-friendly but memory-hostile.</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>The KV Cache Formula</h3>
+            <p>The total KV cache memory in bytes is computed as:</p>
+            <p style="font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace; background: var(--bg-input); padding: 16px 20px; border-radius: var(--radius-sm); border: 1px solid var(--border); text-align: center; font-size: 0.95rem;">
+                <strong>KV Cache (bytes) = 2 × L × C × kv_heads × (d_model / kv_heads) × 2 bytes × B</strong>
+            </p>
+            <p>Breaking this down: the factor of <strong>2</strong> accounts for both keys and values; <strong>L</strong> multiplies across all layers; <strong>C</strong> is the number of cached tokens; <strong>kv_heads × (d_model / kv_heads)</strong> simplifies to d_model (the per-head dimension cancels out); <strong>2 bytes</strong> is the FP16 storage per element; and <strong>B</strong> accounts for batch parallelism. The formula simplifies to:</p>
+            <p style="font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace; background: var(--bg-input); padding: 16px 20px; border-radius: var(--radius-sm); border: 1px solid var(--border); text-align: center; font-size: 0.95rem;">
+                <strong>KV Cache (bytes) = 4 × L × C × d_model × B</strong>
+            </p>
+
+            <h3>Why Long Contexts Explode VRAM</h3>
+            <p>Consider a Llama-2-70B model (L=80, d_model=8192) at FP16:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Context Length</th><th>KV Cache (Batch=1)</th><th>Model Weights (FP16)</th><th>KV as % of Weights</th></tr></thead>
+                <tbody>
+                    <tr><td>4,096 tokens</td><td>~10.0 GiB</td><td>~130 GiB</td><td>7.7%</td></tr>
+                    <tr><td>32,768 tokens</td><td>~80.0 GiB</td><td>~130 GiB</td><td>61.5%</td></tr>
+                    <tr><td>131,072 tokens</td><td>~320.0 GiB</td><td>~130 GiB</td><td>246%</td></tr>
+                </tbody>
+            </table>
+</div>
+            <p>At 128K tokens, the <strong>KV cache is 2.5× larger than the model weights</strong>. This is why serving long-context models at scale requires multi-GPU tensor parallelism not for the weights, but for the KV cache itself. Techniques like <strong>Multi-Query Attention (MQA)</strong>, <strong>Grouped-Query Attention (GQA)</strong>, <strong>KV cache quantization</strong> (INT8/FP8 KV), and <strong>sliding window attention</strong> (Mistral) are all architectural innovations designed to tame KV cache growth.</p>
+
+            <h3>Mitigation Strategies</h3>
+            <ul>
+                <li><strong>GQA/MQA:</strong> Reducing KV heads from 64 to 8 (as in Llama-2-70B) cuts KV cache by 8×. This is the single most impactful architectural choice.</li>
+                <li><strong>KV Cache Quantization:</strong> Storing keys and values at INT8 instead of FP16 halves the KV cache. vLLM and TensorRT-LLM support KV cache quantization natively.</li>
+                <li><strong>PagedAttention:</strong> vLLM's block-based KV cache management reduces fragmentation and allows over-commit with near-zero waste. Logical KV cache may be 2× physical allocation.</li>
+                <li><strong>Sliding Window / Sparse Attention:</strong> Mistral's 4096-token sliding window bounds KV cache to a fixed size regardless of total context length. Long-form information is handled by dense layers, not attention.</li>
+            </ul>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/parameters-to-vram-fp16">FP16 VRAM Estimator &rarr;</a>
+                <a href="/parameters-to-vram-int4">INT4 Quant VRAM &rarr;</a>
+                <a href="/token-size-to-storage">Token Size to Storage &rarr;</a>
+                <a href="/gpu-training-cost">GPU Training Cost &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function compute() {
+        var c = parseFloat(document.getElementById('ctx').value) || 0;
+        var L = parseFloat(document.getElementById('layers').value) || 0;
+        var d = parseFloat(document.getElementById('dmodel').value) || 0;
+        var kv = parseFloat(document.getElementById('kvheads').value) || 0;
+        var B = parseFloat(document.getElementById('batch').value) || 1;
+        var kvCache = 2 * L * c * kv * (d / kv) * 2 * B / 1073741824;
+        var per1k = kvCache / (c / 1000);
+
+        document.getElementById('results-params').innerText =
+            c + ' tokens · ' + L + ' layers · d_model=' + d + ' · ' + kv + ' KV heads (GQA) · batch ' + B;
+
+        document.getElementById('recommendations').innerHTML =
+            '<div class="metric-grid">' +
+                '<div class="metric-tile"><div class="metric-val">' + kvCache.toFixed(2) + ' GiB</div><div class="metric-label">Total KV Cache</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + per1k.toFixed(4) + ' GiB</div><div class="metric-label">Per 1K Tokens</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + (per1k * 32).toFixed(2) + ' GiB</div><div class="metric-label">At 32K</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + (per1k * 128).toFixed(2) + ' GiB</div><div class="metric-label">At 128K</div></div>' +
+            '</div>';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

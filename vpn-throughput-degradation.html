@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>VPN Throughput Degradation Calculator — jslet</title>
+    <meta name="description" content="WireGuard loses 4.2%. OpenVPN TCP loses up to 30% — TCP retransmitting TCP is the culprit, not your config. Model real VPN throughput. Free, client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "VPN Throughput Degradation Calculator",
+      "description": "Estimate real-world VPN throughput after protocol overhead. Compare WireGuard, IPsec, OpenVPN, GRE, and SSTP with MTU impact and TCP-over-TCP penalty modeling.",
+      "url": "https://www.jslet.com/vpn-throughput-degradation",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <link rel="canonical" href="https://www.jslet.com/vpn-throughput-degradation">
+    <meta property="og:title" content="VPN Throughput Degradation Calculator — jslet">
+    <meta property="og:description" content="Estimate real-world VPN throughput after protocol overhead. Compare WireGuard, IPsec, OpenVPN, GRE, and SSTP with MTU impact.">
+    <meta property="og:url" content="https://www.jslet.com/vpn-throughput-degradation">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="VPN Throughput Degradation Calculator — jslet">
+    <meta name="twitter:description" content="Estimate real-world VPN throughput after protocol overhead. Compare WireGuard, IPsec, OpenVPN, GRE, and SSTP.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <style>
+        .input-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) { .input-row-2 { grid-template-columns: 1fr; } }
+        select.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono","Cascadia Code",Consolas,monospace; transition: border-color 0.2s,box-shadow 0.2s; appearance: none; cursor: pointer; }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 18px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .efficiency-bar-wrap { background: var(--border); border-radius: 8px; height: 14px; margin-top: 16px; overflow: hidden; }
+        .efficiency-bar-fill { height: 100%; border-radius: 8px; transition: width 0.4s, background 0.4s; }
+        .protocol-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.88rem; }
+        .protocol-table th, .protocol-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); text-align: left; }
+        .protocol-table th { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .protocol-table td { font-family: "SF Mono","Cascadia Code",Consolas,monospace; color: var(--text-heading); }
+        .overhead-lo { color: #0d9488 !important; font-weight: 700; }
+        .overhead-md { color: #d97706 !important; font-weight: 700; }
+        .overhead-hi { color: #dc2626 !important; font-weight: 700; }
+    </style>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much throughput do different VPN protocols lose?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "WireGuard loses about 4.2%, while OpenVPN over TCP can lose up to 30% — the TCP-over-TCP meltdown where retransmits compound, not a config problem. The calculator models real VPN throughput from your link speed and protocol choice so tunnel expectations match reality."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the TCP-over-TCP meltdown?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "When the VPN encapsulates TCP inside TCP, a packet loss on the outer connection triggers retransmit at both layers — the inner and outer retransmissions amplify each other and throughput collapses. UDP-based tunnels (WireGuard, OpenVPN over UDP) avoid this. The calculator's overhead-by-protocol reference makes the difference explicit."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does VPN throughput never match link speed?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Encryption overhead, protocol headers, MTU fragmentation, and for TCP-in-TCP the retransmit amplification all consume capacity before your data. The calculator applies per-protocol overhead factors so the throughput you plan for — and the latency you measure — matches the tunnel you actually run."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>VPN <span>Throughput Degradation</span> Calculator</h1>
+            <p>WireGuard loses 4.2%. IPsec ESP in tunnel mode loses 6–8%. OpenVPN over TCP: up to 30% gone. The TCP-over-TCP retransmission problem is not a configuration error — it is baked into the protocol design. Model real throughput before you provision. The spec sheet number is not what your application sees.</p>
+        </header>
+        <main class="matrix-grid">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🔐 Tunnel Configuration</h3>
+                <p class="card-desc">Set link bandwidth, VPN protocol, and MTU. The model accounts for per-packet header overhead, encryption padding, TCP-over-TCP retransmission penalty, and MSS fragmentation cost. Compare all seven protocol configurations side by side at your link speed.</p>
+                <div class="input-row-2">
+                    <div class="input-group"><label for="bandwidth">Link Bandwidth (Mbps)</label><input type="number" class="unit-input" id="bandwidth" value="1000" min="1" max="400000"></div>
+                    <div class="input-group"><label for="protocol">VPN Protocol</label><select class="unit-input" id="protocol"><option value="wireguard">WireGuard (ChaCha20-Poly1305)</option><option value="ipsec-gcm">IPsec ESP (AES-128-GCM)</option><option value="ipsec-cbc">IPsec ESP (AES-256-CBC + HMAC)</option><option value="openvpn-udp">OpenVPN (UDP, AES-256-GCM)</option><option value="openvpn-tcp">OpenVPN (TCP, AES-256-GCM)</option><option value="gre">GRE Tunnel (no encryption)</option><option value="sstp">SSTP (SSL/TLS)</option></select></div>
+                </div>
+                <div class="input-row-2" style="margin-top: 14px;">
+                    <div class="input-group"><label for="mtu">MTU Size (bytes)</label><input type="number" class="unit-input" id="mtu" value="1420" min="576" max="9000"></div>
+                    <div class="input-group"><label for="mss">TCP MSS Clamping</label><select class="unit-input" id="mss"><option value="auto">Auto (MTU − 80)</option><option value="none">None</option><option value="manual">Manual 536 (legacy)</option></select></div>
+                </div>
+                <button class="btn-calc" id="btn-compute">Calculate Effective Throughput</button>
+            </div>
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📡 Throughput Analysis</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-effective"></div><div class="metric-label">Effective Throughput</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-overhead-pct"></div><div class="metric-label">Overhead Loss</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-lost"></div><div class="metric-label">Lost Bandwidth</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-mbs"></div><div class="metric-label">Real MB/s</div></div>
+                </div>
+                <div class="efficiency-bar-wrap"><div class="efficiency-bar-fill" id="efficiency-bar" style="width:94%;background:#0d9488;"></div></div>
+                <p style="text-align:center;margin-top:8px;font-weight:700;font-size:1rem;" id="efficiency-label">—</p>
+                <h4 style="margin-top:18px;font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);">Protocol Comparison (at your link speed)</h4>
+                <table class="protocol-table" id="comparison-body"></table>
+            </div>
+        </main>
+        <section class="seo-section">
+            <h2>Why VPN Throughput Never Matches Link Speed</h2>
+            <p>Every VPN tunnel wraps your original packet inside a new one — adding outer IP headers (20 bytes), UDP/TCP headers (8–20 bytes), protocol-specific framing, initialization vectors (IV), and authentication tags. For a 1420-byte MTU payload, <strong>WireGuard adds 60 bytes of overhead</strong> (4.2% loss), while <strong>IPsec ESP in tunnel mode adds up to 73 bytes</strong> (5.1%). These numbers compound with <strong>TCP MSS clamping</strong> — if the inner TCP stack doesn't know about the reduced MTU, packets fragment and throughput collapses.</p>
+            <h3>The TCP-over-TCP Meltdown</h3>
+            <p>OpenVPN in TCP mode suffers from a fundamental protocol flaw: <strong>two TCP layers compete for retransmission control</strong>. When the outer tunnel TCP retransmits, the inner TCP also retransmits — creating a multiplicative backlog that can consume 20–30% of link capacity. Always prefer UDP-based VPN transports (WireGuard, IPsec, OpenVPN UDP) for anything carrying TCP traffic.</p>
+            <h3>Quick Reference: Overhead by Protocol</h3>
+            <div class="table-scroll">
+                <table style="width:100%; border-collapse: collapse; font-family: monospace; font-size: 0.85rem;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid var(--border); color: var(--accent); text-align: left;">
+                            <th style="padding: 8px;">Protocol</th><th style="padding: 8px;">Per-Packet Overhead</th><th style="padding: 8px;">Effective %</th><th style="padding: 8px;">TCP Safe?</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">WireGuard</td><td style="padding: 8px;">60 bytes</td><td style="padding: 8px; color:#0d9488; font-weight:700;">~95.8%</td><td style="padding: 8px;">✅ Yes (UDP)</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">GRE (no encrypt)</td><td style="padding: 8px;">24 bytes</td><td style="padding: 8px; color:#0d9488; font-weight:700;">~98.3%</td><td style="padding: 8px;">✅ Yes (IP)</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">IPsec ESP AES-GCM</td><td style="padding: 8px;">~73 bytes</td><td style="padding: 8px; color:#0d9488; font-weight:700;">~94.9%</td><td style="padding: 8px;">✅ Yes (ESP)</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">IPsec ESP AES-CBC+HMAC</td><td style="padding: 8px;">~89 bytes</td><td style="padding: 8px; color:#d97706; font-weight:700;">~93.7%</td><td style="padding: 8px;">✅ Yes (ESP)</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">OpenVPN UDP AES-GCM</td><td style="padding: 8px;">~53 bytes</td><td style="padding: 8px; color:#0d9488; font-weight:700;">~96.3%</td><td style="padding: 8px;">✅ Yes (UDP)</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">SSTP (SSL/TLS)</td><td style="padding: 8px;">~60 bytes</td><td style="padding: 8px; color:#d97706; font-weight:700;">~95.8%</td><td style="padding: 8px;">⚠️ TCP-over-TCP risk</td></tr>
+                        <tr><td style="padding: 8px;">OpenVPN TCP</td><td style="padding: 8px;">53 + TCP retrans</td><td style="padding: 8px; color:#dc2626; font-weight:700;">~70–80%</td><td style="padding: 8px;">❌ TCP-over-TCP</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/mbps-to-mbytes-per-sec">Mbps → MB/s Throughput &rarr;</a>
+                <a href="/latency-budget-calculator">Latency Budget Calculator &rarr;</a>
+                <a href="/gbps-to-tb-per-day">Gbps to TB/Day &rarr;</a>
+                <a href="/concurrent-users-to-bandwidth">Concurrent Users → Bandwidth &rarr;</a>
+            </div>
+        </div>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script>
+    // ── Protocol models ──
+    // overheadBytes: per-packet header/auth tag overhead
+    // tcpPenalty: multiplicative factor for TCP-over-TCP retransmission (1.0 = none)
+    var PROTOCOLS = {
+        'wireguard':    { name: 'WireGuard (ChaCha20-Poly1305)', overheadBytes: 60,  tcpPenalty: 1.0  },
+        'ipsec-gcm':    { name: 'IPsec ESP (AES-128-GCM)',       overheadBytes: 73,  tcpPenalty: 1.0  },
+        'ipsec-cbc':    { name: 'IPsec ESP (AES-256-CBC+HMAC)',  overheadBytes: 89,  tcpPenalty: 1.0  },
+        'openvpn-udp':  { name: 'OpenVPN UDP (AES-256-GCM)',     overheadBytes: 53,  tcpPenalty: 1.0  },
+        'openvpn-tcp':  { name: 'OpenVPN TCP (AES-256-GCM)',     overheadBytes: 53,  tcpPenalty: 1.25 },
+        'gre':          { name: 'GRE Tunnel (no encryption)',    overheadBytes: 24,  tcpPenalty: 1.0  },
+        'sstp':         { name: 'SSTP (SSL/TLS)',                overheadBytes: 60,  tcpPenalty: 1.18 }
+    };
+
+    function fmtMbps(n) { return n >= 1000 ? (n/1000).toFixed(2) + ' Gbps' : n.toFixed(1) + ' Mbps'; }
+    function fmtNum(n) { return n.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1}); }
+
+    function compute() {
+        var bw = Math.max(1, parseFloat(document.getElementById('bandwidth').value) || 1000);
+        var protoKey = document.getElementById('protocol').value;
+        var mtu = Math.max(576, Math.min(9000, parseInt(document.getElementById('mtu').value) || 1420));
+        var mssMode = document.getElementById('mss').value;
+
+        var p = PROTOCOLS[protoKey];
+
+        // Per-packet overhead ratio
+        var overheadRatio = p.overheadBytes / mtu;
+
+        // TCP MSS penalty: if MSS isn't clamped correctly, small fragmentation adds ~3% loss
+        var mssPenalty = 1.0;
+        if (mssMode === 'manual') mssPenalty = 0.92;  // 536-byte MSS → extra fragmentation
+        if (mssMode === 'none' && mtu < 1400) mssPenalty = 0.90;
+
+        // Effective throughput calculation
+        var effectiveMbps = bw * (1 - overheadRatio) * (1 / p.tcpPenalty) * mssPenalty;
+        var lostMbps = bw - effectiveMbps;
+        var overheadPct = ((lostMbps / bw) * 100);
+
+        // MB/s real-world (accounting for TCP window limits on high-BW links)
+        var mbsReal = (effectiveMbps / 8) * 0.95; // 5% TCP window / OS stack inefficiency
+
+        // UI
+        document.getElementById('results-params').innerText =
+            fmtMbps(bw) + ' link via ' + p.name + ' · MTU ' + mtu + ' bytes';
+
+        document.getElementById('val-effective').innerText = fmtMbps(effectiveMbps);
+        document.getElementById('val-overhead-pct').innerText = overheadPct.toFixed(1) + '%';
+        document.getElementById('val-lost').innerText = fmtMbps(lostMbps);
+        document.getElementById('val-mbs').innerText = mbsReal.toFixed(1) + ' MB/s';
+
+        // Efficiency bar
+        var effPct = Math.max(0, Math.min(100, (effectiveMbps / bw) * 100));
+        var bar = document.getElementById('efficiency-bar');
+        bar.style.width = effPct + '%';
+        var barColor, barLabel;
+        if (effPct >= 93) { barColor = '#0d9488'; barLabel = 'Excellent — near line-rate throughput'; }
+        else if (effPct >= 85) { barColor = '#d97706'; barLabel = 'Good — acceptable for most workloads'; }
+        else { barColor = '#dc2626'; barLabel = 'Poor — consider switching to UDP-based protocol'; }
+        bar.style.background = barColor;
+        document.getElementById('efficiency-label').innerText = barLabel;
+        document.getElementById('efficiency-label').style.color = barColor;
+
+        // Comparison table
+        var rows = '';
+        var protoKeys = ['wireguard','gre','ipsec-gcm','ipsec-cbc','openvpn-udp','sstp','openvpn-tcp'];
+        protoKeys.forEach(function(k) {
+            var pp = PROTOCOLS[k];
+            var ratio = pp.overheadBytes / mtu;
+            var eff = bw * (1 - ratio) * (1 / pp.tcpPenalty) * mssPenalty;
+            var pct = ((eff / bw) * 100);
+            var cls = pct >= 93 ? 'overhead-lo' : (pct >= 85 ? 'overhead-md' : 'overhead-hi');
+            rows += '<tr><td>' + pp.name + '</td><td>' + pp.overheadBytes + ' bytes</td><td class="' + cls + '">' + pct.toFixed(1) + '%</td><td>' + fmtMbps(eff) + '</td></tr>';
+        });
+        document.getElementById('comparison-body').innerHTML =
+            '<tr><th>Protocol</th><th>Overhead</th><th>Effective %</th><th>Effective Throughput</th></tr>' + rows;
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.getElementById('btn-compute').addEventListener('click', compute);
+    </script>
+    <script src="nav.js"></script>
+</body>
+</html>

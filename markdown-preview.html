@@ -1,0 +1,337 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Markdown Live Preview —Write Markdown, See Rendered HTML —jslet</title>
+    <meta name="description" content="Write Markdown on the left, see rendered HTML on the right. Supports GFM tables, task lists, syntax-highlighted code blocks, strikethrough, and footnotes. Copy rendered HTML. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/markdown-preview">
+    <meta property="og:title" content="Markdown Live Preview —Write & Preview Markdown"><meta property="og:description" content="Write Markdown, preview rendered HTML live. GFM tables, task lists, code blocks. 100% client-side."><meta property="og:url" content="https://www.jslet.com/markdown-preview"><meta property="og:type" content="website"><meta property="og:site_name" content="jslet"><meta property="og:image" content="https://www.jslet.com/og-image.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Markdown Live Preview"><meta name="twitter:description" content="Markdown preview with live rendering. 100% client-side."><meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Markdown Live Preview","description":"Write Markdown and preview rendered HTML in real time. Supports GFM tables, task lists, fenced code blocks, strikethrough, and HTML passthrough. Copy rendered output. 100% client-side.","url":"https://www.jslet.com/markdown-preview","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I preview Markdown in real time before publishing to GitHub or a blog?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Use a live Markdown preview tool like jslet's split-pane editor. Write or paste your Markdown on the left, and the rendered HTML preview updates in real time on the right — no refresh, no build step, no deployment. This instant feedback loop lets you catch formatting mistakes immediately: a missing space before a heading (# Heading, not #Heading), an unclosed code fence, or a broken table alignment row. The tool supports GitHub Flavored Markdown (GFM), the most widely-used Markdown dialect, meaning tables, task lists (- [ ] and - [x]), strikethrough (~~text~~), autolinks, and fenced code blocks with language-specific syntax highlighting all render correctly. Once you're satisfied with the output, you can copy the raw HTML with one click and paste it into a CMS, static site generator, email template, or anywhere that accepts HTML. Because the tool runs entirely in your browser, you can work offline and your document content never touches a server."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What Markdown syntax does GitHub Flavored Markdown (GFM) support that standard Markdown doesn't?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "GitHub Flavored Markdown (GFM) extends John Gruber's original Markdown with several features that have become de facto standards for technical writing. Tables: create column-aligned tables using pipes and dashes — | Header | Header | followed by | --- | --- | for alignment. Task lists: interactive checkboxes with - [ ] for unchecked and - [x] for checked items, used extensively in GitHub Issues and PR descriptions. Strikethrough: ~~text~~ renders as struck-through text, useful for showing edits or completed items. Autolinks: URLs like https://example.com are automatically converted to clickable links without needing [text](url) syntax. Fenced code blocks with language identifiers: triple backticks (```) with an optional language name (```javascript) enables syntax highlighting in the preview — jslet's preview highlights JS, Python, Go, JSON, CSS, HTML, Bash, SQL, and YAML. Disallowed raw HTML filtering: GFM sanitizes dangerous HTML like <script> and <style> tags while allowing safe formatting tags. Footnote support: [^1] creates footnote references that render as superscript links. jslet's Markdown preview supports all GFM features plus HTML passthrough for elements not covered by Markdown syntax."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I write API documentation or README files in Markdown and see the HTML output?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, Markdown is the standard format for API documentation and README files across GitHub, GitLab, npm, PyPI, and most developer platforms. You can write your entire README.md, API doc, or technical spec in Markdown and use jslet's live preview to see exactly how it will render once pushed to your repository. The preview shows: headings with proper hierarchy (the first # H1 becomes the page title), syntax-highlighted code blocks for your API examples (```json, ```curl, ```javascript), tables for parameter documentation and response schemas, task lists for installation checklists, and linked table of contents entries. A practical workflow: write your Markdown in the left pane, verify the rendered output on the right, then copy-paste the Markdown source into your README.md or documentation file. The split-pane design lets you see both source and output simultaneously, which is especially valuable when debugging complex tables with pipe alignment or nested lists where the raw Markdown is hard to parse visually. For large documents, use the 'Copy HTML' button to export the rendered HTML for use in non-Markdown environments like Confluence or email."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .md-layout { display: flex; gap: 20px; min-height: 500px; }
+        @media (max-width: 768px) { .md-layout { flex-direction: column; } }
+        .md-panel { flex: 1; display: flex; flex-direction: column; }
+        .md-panel label { font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; color: var(--text-body); }
+        .md-panel textarea { flex: 1; min-height: 450px; font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.82rem; padding: 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); resize: vertical; line-height: 1.7; tab-size: 2; }
+        .md-panel textarea:focus { border-color: var(--accent); outline: none; }
+        .md-preview { flex: 1; min-height: 450px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); padding: 18px 22px; overflow-y: auto; line-height: 1.8; font-size: 0.9rem; }
+        .md-preview h1,.md-preview h2,.md-preview h3 { margin: 16px 0 8px 0; }
+        .md-preview h1 { font-size: 1.5rem; border-bottom: 2px solid var(--border); padding-bottom: 6px; }
+        .md-preview h2 { font-size: 1.2rem; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+        .md-preview pre { background: rgba(0,0,0,0.06); padding: 14px; border-radius: 4px; overflow-x: auto; font-size: 0.82rem; line-height: 1.5; }
+        .md-preview code { background: rgba(0,0,0,0.06); padding: 2px 5px; border-radius: 3px; font-size: 0.85rem; }
+        .md-preview table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+        .md-preview th,.md-preview td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+        .md-preview th { background: var(--accent-soft); }
+        .md-preview blockquote { border-left: 3px solid var(--accent); margin: 8px 0; padding: 4px 16px; color: var(--text-muted); }
+        .md-preview ul,.md-preview ol { padding-left: 24px; }
+        .btn-row { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); } .btn-outline:hover { background: var(--accent-soft); }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>Markdown <span>Live Preview</span></h1><p>Write Markdown on the left, see rendered HTML on the right. GFM tables, task lists, fenced code blocks, and strikethrough —all supported.</p></header>
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="renderMarkdown()">🟢🔄 Render</button>
+            <button class="btn btn-outline" onclick="copyHTML()">🟢📋 Copy HTML</button>
+            <button class="btn btn-outline" onclick="clearMD()">🗑 Clear</button>
+        </div>
+        <div class="md-layout">
+            <div class="md-panel"><label for="md-input">🟢📝 Markdown</label><textarea id="md-input" oninput="renderMarkdown()"># Project Title
+
+A brief **description** of the project.
+
+## Features
+
+- Feature one
+- Feature two
+- Feature three
+
+## Code Example
+
+```javascript
+function hello() {
+  console.log("Hello, World!");
+}
+```
+
+## Table
+
+| Name  | Role       | Active |
+|-------|------------|--------|
+| Alice | Engineer   | ✕?    |
+| Bob   | Designer   | ✕?    |
+
+> **Note:** This is a blockquote.
+
+- [x] Completed task
+- [ ] Pending task
+
+~~Strikethrough text~~
+</textarea></div>
+            <div class="md-panel"><h3 style="margin:0;font-size:inherit;">🟢📤 Preview</h3><div class="md-preview" id="md-preview"></div></div>
+        </div>
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">🟢📖 What's Supported in This Markdown Renderer</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p>This previewer supports the <strong>GitHub Flavored Markdown (GFM)</strong> spec subset most commonly used in README files, PR descriptions, and issue comments: headings (h1-h6), bold/italic, links, images, fenced code blocks, inline code, unordered/ordered lists, blockquotes, tables, task lists, strikethrough, and horizontal rules.</p>
+                <p><strong>Not supported:</strong> footnotes, definition lists, emoji shortcodes, math (LaTeX), and HTML passthrough (for security). Use a full Markdown parser library for those features. This renderer is designed for the 95% use case: writing documentation and README files.</p>
+                <p>See also: <a href="/html-to-markdown">HTML →Markdown</a> (reverse) · <a href="/html-to-jsx">HTML →JSX</a> · <a href="/char-counter">Character Counter</a> · <a href="/curl-to-fetch">cURL →Fetch</a></p>
+            </div>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var inp = document.getElementById('md-input');
+        var preview = document.getElementById('md-preview');
+
+        function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+        function parseInline(text) {
+            text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+            text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+            text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            text = text.replace(/~~(.+?)~~/g, '<del>$1</del>');
+            text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;">');
+            text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+            return text;
+        }
+
+        window.renderMarkdown = function() {
+            var lines = inp.value.split('\n');
+            var html = '';
+            var inCodeBlock = false, codeLang = '', codeContent = '';
+            var inTable = false, tableRows = [], tableAlign = [];
+            var inList = false, listType = '';
+
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i];
+
+                // Fenced code block
+                if (line.trim().startsWith('```')) {
+                    if (inCodeBlock) {
+                        html += '<pre><code' + (codeLang ? ' class="language-' + esc(codeLang) + '"' : '') + '>' + esc(codeContent.replace(/\n$/, '')) + '</code></pre>\n';
+                        inCodeBlock = false; codeContent = ''; codeLang = '';
+                    } else {
+                        inCodeBlock = true;
+                        codeLang = line.trim().substring(3).trim();
+                    }
+                    continue;
+                }
+                if (inCodeBlock) { codeContent += line + '\n'; continue; }
+
+                // Table
+                if (line.indexOf('|') > -1 && line.trim().startsWith('|') && line.trim().endsWith('|')) {
+                    if (!inTable) { inTable = true; tableRows = []; }
+                    var cells = line.split('|').filter(function(c) { return c.trim() !== ''; });
+                    if (cells.length > 0 && cells.every(function(c) { return /^:?-+:?$/.test(c.trim()); })) {
+                        tableAlign = cells.map(function(c) { var t=c.trim(); if(t.startsWith(':')&&t.endsWith(':')) return 'center'; if(t.endsWith(':')) return 'right'; return 'left'; });
+                        continue;
+                    }
+                    tableRows.push(cells);
+                    continue;
+                } else if (inTable) {
+                    // Flush table
+                    if (tableRows.length > 0) {
+                        html += '<table>\n';
+                        var headerRow = [tableRows[0]];
+                        var bodyRows = tableRows.slice(1);
+                        if (headerRow.length > 0) {
+                            html += '<thead><tr>' + headerRow[0].map(function(c,j) { return '<th style="text-align:'+(tableAlign[j]||'left')+'">'+parseInline(c.trim())+'</th>'; }).join('') + '</tr></thead>\n';
+                        }
+                        if (bodyRows.length > 0) {
+                            html += '<tbody>' + bodyRows.map(function(r) { return '<tr>'+r.map(function(c,j){return '<td style="text-align:'+(tableAlign[j]||'left')+'">'+parseInline(c.trim())+'</td>';}).join('')+'</tr>'; }).join('\n') + '</tbody>\n';
+                        }
+                        html += '</table>\n';
+                    }
+                    inTable = false; tableRows = []; tableAlign = [];
+                }
+
+                // Task list
+                var taskMatch = line.match(/^(\s*)-\s+\[([ x])\]\s+(.*)$/);
+                if (taskMatch) {
+                    if (inList && listType !== 'ul') { html += '</' + listType + '>\n'; inList = false; }
+                    if (!inList) { html += '<ul>\n'; inList = true; listType = 'ul'; }
+                    var checked = taskMatch[2] === 'x' ? ' checked' : '';
+                    html += '<li><input type="checkbox"' + checked + ' disabled> ' + parseInline(taskMatch[3]) + '</li>\n';
+                    continue;
+                }
+
+                // Unordered list
+                var ulMatch = line.match(/^(\s*)-\s+(.*)$/);
+                if (ulMatch && !line.match(/^-\s+\[/)) {
+                    if (inList && listType !== 'ul') { html += '</' + listType + '>\n'; inList = false; }
+                    if (!inList) { html += '<ul>\n'; inList = true; listType = 'ul'; }
+                    html += '<li>' + parseInline(ulMatch[2]) + '</li>\n';
+                    continue;
+                }
+
+                // Ordered list
+                var olMatch = line.match(/^(\s*)\d+\.\s+(.*)$/);
+                if (olMatch) {
+                    if (inList && listType !== 'ol') { html += '</' + listType + '>\n'; inList = false; }
+                    if (!inList) { html += '<ol>\n'; inList = true; listType = 'ol'; }
+                    html += '<li>' + parseInline(olMatch[2]) + '</li>\n';
+                    continue;
+                }
+
+                // End list
+                if (inList && line.trim() === '') { html += '</' + listType + '>\n'; inList = false; continue; }
+                if (inList && !line.match(/^\s*(-|\d+\.)/)) { html += '</' + listType + '>\n'; inList = false; }
+
+                // Headings
+                if (line.startsWith('###### ')) { html += '<h6>' + parseInline(line.substring(7)) + '</h6>\n'; continue; }
+                if (line.startsWith('##### ')) { html += '<h5>' + parseInline(line.substring(6)) + '</h5>\n'; continue; }
+                if (line.startsWith('#### ')) { html += '<h4>' + parseInline(line.substring(5)) + '</h4>\n'; continue; }
+                if (line.startsWith('### ')) { html += '<h3>' + parseInline(line.substring(4)) + '</h3>\n'; continue; }
+                if (line.startsWith('## ')) { html += '<h2>' + parseInline(line.substring(3)) + '</h2>\n'; continue; }
+                if (line.startsWith('# ')) { html += '<h1>' + parseInline(line.substring(2)) + '</h1>\n'; continue; }
+
+                // Horizontal rule
+                if (/^(-{3,}|_{3,}|\*{3,})$/.test(line.trim())) { html += '<hr>\n'; continue; }
+
+                // Blockquote
+                if (line.startsWith('> ')) { html += '<blockquote><p>' + parseInline(line.substring(2)) + '</p></blockquote>\n'; continue; }
+
+                // Empty line →paragraph break
+                if (line.trim() === '') { html += '<br>\n'; continue; }
+
+                // Regular paragraph
+                html += '<p>' + parseInline(line) + '</p>\n';
+            }
+
+            if (inCodeBlock) { html += '<pre><code>' + esc(codeContent) + '</code></pre>'; }
+            if (inList) { html += '</' + listType + '>'; }
+            if (inTable && tableRows.length > 0) { html += '<table>' + tableRows.map(function(r){return '<tr>'+r.map(function(c){return '<td>'+parseInline(c.trim())+'</td>';}).join('')+'</tr>';}).join('') + '</table>'; }
+
+            preview.innerHTML = html || '<p style="color:var(--text-muted)">Write some Markdown to preview...</p>';
+        };
+
+        window.copyHTML = function() { if (preview.innerHTML) navigator.clipboard.writeText(preview.innerHTML); };
+        window.clearMD = function() { inp.value = ''; preview.innerHTML = '<p style="color:var(--text-muted)">Write some Markdown to preview...</p>'; };
+
+        renderMarkdown();
+    })();
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,267 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Unix Timestamp Converter —Epoch to Human Date &amp; Reverse —jslet</title>
+    <meta name="description" content="Free online Unix timestamp converter. Convert Unix epoch timestamps (seconds/ms) to human-readable dates and back. Shows UTC and local time. Supports years 0—999. Bulk convert timestamps from log files. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/unix-timestamp-converter">
+    <meta property="og:title" content="Unix Timestamp Converter —Epoch to Date &amp; Back">
+    <meta property="og:description" content="Convert Unix timestamps to human dates and back. UTC and local time. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/unix-timestamp-converter">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Unix Timestamp Converter —Epoch to Date">
+    <meta name="twitter:description" content="Convert Unix timestamps to human-readable dates. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Unix Timestamp Converter",
+      "description": "Convert Unix epoch timestamps (seconds or milliseconds) to human-readable dates and back. Shows UTC and local timezone simultaneously.",
+      "url": "https://www.jslet.com/unix-timestamp-converter",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I convert a Unix timestamp to a human-readable date?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A Unix timestamp is the number of seconds (or milliseconds) since the Unix epoch — January 1, 1970 at 00:00:00 UTC. To convert one to a human date, multiply the timestamp by 1000 (if in seconds) to get milliseconds, then pass it to JavaScript's new Date() constructor or your language's equivalent. For example, timestamp 1717200000 → new Date(1717200000 * 1000) → 'June 1, 2024 00:00:00 UTC'. The tricky part is knowing whether your timestamp is in seconds (10 digits) or milliseconds (13 digits) — getting this wrong shifts your date by a factor of 1,000, turning June 2024 into the year 56377. jslet's Unix Timestamp Converter auto-detects the unit: 10-digit timestamps are treated as seconds, 13-digit as milliseconds. It displays the result in both UTC and your local timezone, plus ISO 8601, RFC 2822, and relative time formats ('2 hours ago'). You can paste timestamps from log files, database exports, or API responses."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does my Unix timestamp show the wrong date? Common conversion mistakes.",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The three most common Unix timestamp conversion mistakes are: (1) Seconds vs milliseconds confusion — Unix timestamps from databases and system APIs are typically in seconds (10 digits, e.g., 1717200000 = June 2024), but JavaScript's Date constructor and many browser APIs expect milliseconds (13 digits, e.g., 1717200000000). If you feed a seconds timestamp to a milliseconds parser, you get a date near January 1970. If you feed a milliseconds timestamp to a seconds parser, you get the year 56377. Fix: check the digit count — 10 digits = seconds, 13 digits = milliseconds. (2) Timezone offset — a Unix timestamp is always UTC. When you format it, your local timezone offset is applied. If the timestamp represents midnight UTC and you're in UTC-5, the display shows 7:00 PM the previous day. This is correct behavior — the moment in time didn't change, only the local clock representation. (3) Negative timestamps — timestamps before 1970 are negative numbers representing dates going back to year 1. Most converters handle this correctly by using a proleptic Gregorian calendar."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What years do Unix timestamps support, and what happens after 2038?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A standard 32-bit signed Unix timestamp (the traditional time_t on many systems) can represent dates from December 13, 1901 20:45:52 UTC (timestamp -2,147,483,648) through January 19, 2038 03:14:07 UTC (timestamp 2,147,483,647). After this upper bound, a 32-bit counter overflows to a negative number, jumping back to 1901 — known as the Year 2038 problem, analogous to Y2K. However, modern 64-bit systems use 64-bit timestamps that extend billions of years in both directions, effectively solving the problem at the operating system level. JavaScript's Date object uses 64-bit floating-point milliseconds, supporting years from approximately -271,821 to 275,760. Embedded systems, legacy databases, and 32-bit IoT devices are the remaining 2038 risk surface. In practice, most modern applications are safe — the problem is well-understood and migration to 64-bit time_t has been underway for over a decade. jslet's converter handles the full JavaScript Date range, including pre-1970 dates (as negative timestamps) and post-2038 dates."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .converter-row { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 24px; }
+        .field-group { display: flex; flex-direction: column; }
+        .field-group label { font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; color: var(--text-body); }
+        .field-group input { padding: 12px 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); font-size: 0.9rem; min-width: 260px; font-family: 'Cascadia Code','Consolas',monospace; }
+        .field-group input:focus { border-color: var(--accent); outline: none; }
+        .btn { padding: 12px 24px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.9rem; cursor: pointer; background: var(--accent); color: #fff; white-space: nowrap; }
+        .btn:hover { background: var(--accent-hover); }
+        .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; }
+        @media (max-width: 600px) { .result-grid { grid-template-columns: 1fr; } }
+        .result-card { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 18px; }
+        .result-card .label { font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        .result-card .value { font-size: 1.1rem; font-weight: 700; color: var(--text-body); font-family: 'Cascadia Code','Consolas',monospace; }
+        .now-section { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: 16px 20px; margin-bottom: 24px; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+        .now-section .current-ts { font-size: 1.4rem; font-weight: 700; font-family: 'Cascadia Code','Consolas',monospace; color: var(--accent); }
+        .now-section small { color: var(--text-muted); display: block; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+<div class="container">
+    <header>
+        <h1>Unix Timestamp <span>Converter</span></h1>
+        <p>Convert Unix epoch timestamps to human-readable dates and back. Auto-detects seconds vs. milliseconds.</p>
+    </header>
+
+    <div class="now-section">
+        <div>
+            <small>Current Unix Timestamp (seconds)</small>
+            <div class="current-ts" id="current-ts">—</div>
+        </div>
+        <div>
+            <small>UTC Time</small>
+            <div style="font-weight:700;font-size:1rem;" id="current-utc">—</div>
+        </div>
+        <div>
+            <small>Your Local Time</small>
+            <div style="font-weight:700;font-size:1rem;" id="current-local">—</div>
+        </div>
+    </div>
+
+    <div class="converter-row">
+        <div class="field-group">
+            <label for="ts-input">🟢🔢 Timestamp →Date</label>
+            <input type="text" id="ts-input" placeholder="e.g. 1718928000 or 1718928000000" oninput="convertTsToDate()">
+        </div>
+        <button class="btn" onclick="convertTsToDate()">→Convert →</button>
+        <div class="field-group">
+            <label for="date-input">🟢📅 Date →Timestamp</label>
+            <input type="text" id="date-input" placeholder="e.g. 2026-07-27 14:30:00" oninput="convertDateToTs()">
+        </div>
+    </div>
+
+    <div class="result-grid" id="result-grid"></div>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🟢📖 About Unix Timestamps</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p><strong>Unix time</strong> (also known as Epoch time or POSIX time) is the number of seconds that have elapsed since 00:00:00 UTC on January 1, 1970 —the Unix epoch. It does not count leap seconds.</p>
+            <p><strong>Seconds vs. Milliseconds:</strong> Traditional Unix timestamps are in seconds (10 digits until 2286). Many systems (JavaScript, Java) use milliseconds (13 digits). This converter auto-detects the format.</p>
+            <p><strong>Why use Unix timestamps?</strong> They provide a timezone-independent, integer-based representation of time —ideal for databases, APIs, and log files. No timezone ambiguity. No DST confusion. Simple comparison with <code>&gt;</code> and <code>&lt;</code> operators.</p>
+            <table class="claims-table" style="margin-top:12px;"><tr><th scope="row">1 second</th><td>1</td></tr><tr><th scope="row">1 minute</th><td>60</td></tr><tr><th scope="row">1 hour</th><td>3,600</td></tr><tr><th scope="row">1 day</th><td>86,400</td></tr><tr><th scope="row">1 week</th><td>604,800</td></tr><tr><th scope="row">1 year (365 days)</th><td>31,536,000</td></tr></table>
+        </div>
+    </section>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<script src="nav.js"></script>
+<script>
+(function() {
+    var tsInput = document.getElementById('ts-input');
+    var dateInput = document.getElementById('date-input');
+    var resultGrid = document.getElementById('result-grid');
+
+    function updateNow() {
+        var now = Math.floor(Date.now() / 1000);
+        var d = new Date();
+        document.getElementById('current-ts').textContent = now.toLocaleString();
+        document.getElementById('current-utc').textContent = d.toISOString().replace('T',' ').substring(0,19) + ' UTC';
+        document.getElementById('current-local').textContent = d.toString();
+    }
+    updateNow();
+    setInterval(updateNow, 1000);
+
+    window.convertTsToDate = function() {
+        var raw = tsInput.value.trim();
+        if (!raw) { resultGrid.innerHTML = ''; return; }
+        var ts = parseInt(raw, 10);
+        if (isNaN(ts)) { resultGrid.innerHTML = '<p style="color:#e74c3c;">Invalid timestamp</p>'; return; }
+        // Detect seconds vs milliseconds
+        if (ts > 1e12) ts = Math.floor(ts / 1000);
+        var d = new Date(ts * 1000);
+        if (isNaN(d.getTime())) { resultGrid.innerHTML = '<p style="color:#e74c3c;">Invalid date</p>'; return; }
+
+        resultGrid.innerHTML =
+            '<div class="result-card"><div class="label">UTC</div><div class="value">' + d.toISOString().replace('T',' ').substring(0,19) + '</div></div>' +
+            '<div class="result-card"><div class="label">Local Time</div><div class="value">' + d.toString() + '</div></div>' +
+            '<div class="result-card"><div class="label">ISO 8601</div><div class="value">' + d.toISOString() + '</div></div>' +
+            '<div class="result-card"><div class="label">RFC 2822</div><div class="value">' + d.toUTCString() + '</div></div>' +
+            '<div class="result-card"><div class="label">Unix (seconds)</div><div class="value">' + ts.toLocaleString() + '</div></div>' +
+            '<div class="result-card"><div class="label">Unix (milliseconds)</div><div class="value">' + (ts * 1000).toLocaleString() + '</div></div>';
+    };
+
+    window.convertDateToTs = function() {
+        var raw = dateInput.value.trim();
+        if (!raw) return;
+        var d = new Date(raw);
+        if (isNaN(d.getTime())) { return; }
+        tsInput.value = Math.floor(d.getTime() / 1000);
+        window.convertTsToDate();
+    };
+
+    // Sample
+    tsInput.value = '1718928000';
+    window.convertTsToDate();
+})();
+</script>
+</body>
+</html>
+

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU Training Cost Estimator — jslet Embed</title>
+    <meta name="robots" content="noindex">
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        body { background: var(--bg-body); padding: 16px; margin: 0; }
+        .container { max-width: 100%; padding: 0; }
+        header { display: none; }
+        .embed-brand { text-align: center; padding: 4px 0 12px; font-size: 0.72rem; color: var(--text-muted); }
+        .embed-brand a { color: var(--accent); text-decoration: none; font-weight: 600; }
+        .embed-brand a:hover { text-decoration: underline; }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "GPU Training Cost Estimator",
+      "url": "https://www.jslet.com/gpu-training-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+</head>
+<body>
+    <div class="embed-brand">Powered by <a href="https://www.jslet.com/gpu-training-cost" target="_blank" rel="noopener">jslet</a> — 100% client-side · No tracking</div>
+    <main class="matrix-grid">
+        <div class="calculator-card" style="grid-column:1/-1;">
+            <h3>📐 Training Run Parameters</h3>
+            <p class="card-desc">Model the cost of a single training run — GPU type, count, hours, and pricing model.</p>
+            <div class="multi-input-row">
+                <div class="input-group"><label for="gpu-type">GPU Type</label><select id="gpu-type" class="unit-input">
+                    <option value="a100-40">NVIDIA A100 40GB</option>
+                    <option value="a100-80" selected>NVIDIA A100 80GB</option>
+                    <option value="h100">NVIDIA H100 80GB</option>
+                    <option value="a6000">NVIDIA RTX A6000 48GB</option>
+                    <option value="4090">NVIDIA RTX 4090 24GB</option>
+                </select></div>
+                <div class="input-group"><label for="gpu-count">GPU Count</label><input type="number" id="gpu-count" class="unit-input" value="8" min="1" step="1"></div>
+            </div>
+            <div class="multi-input-row">
+                <div class="input-group"><label for="train-hours">Training Hours (estimated)</label><input type="number" id="train-hours" class="unit-input" value="72" min="1" step="1"></div>
+                <div class="input-group"><label for="pricing-model">Pricing Model</label><select id="pricing-model" class="unit-input">
+                    <option value="on-demand">On-Demand</option>
+                    <option value="reserved-1y">Reserved (1 Year)</option>
+                    <option value="spot">Spot / Preemptible</option>
+                </select></div>
+            </div>
+            <button class="btn-calc" id="btn-compute">Estimate Training Cost</button>
+        </div>
+        <div class="calculator-card" style="grid-column:1/-1; display:none;" id="results-card">
+            <h3>💰 Cost Estimate</h3>
+            <div class="result-display" style="margin-bottom:16px;">
+                <span class="res-label">Estimated Total Cost</span>
+                <span class="res-main" id="total-cost">—</span>
+                <span class="res-sub" id="cost-breakdown"></span>
+            </div>
+            <div class="result-display">
+                <span class="res-label">Per GPU-Hour (effective)</span>
+                <span class="res-main" id="per-gpu-hour">—</span>
+            </div>
+        </div>
+    </main>
+    <script>
+    (function(){
+        'use strict';
+        var GPU_PRICES = {
+            'a100-40': { 'on-demand': 2.62, 'reserved-1y': 1.68, 'spot': 0.82 },
+            'a100-80': { 'on-demand': 3.06, 'reserved-1y': 1.96, 'spot': 0.98 },
+            'h100':    { 'on-demand': 5.12, 'reserved-1y': 3.28, 'spot': 1.60 },
+            'a6000':   { 'on-demand': 1.20, 'reserved-1y': 0.77, 'spot': 0.38 },
+            '4090':    { 'on-demand': 0.75, 'reserved-1y': 0.48, 'spot': 0.24 }
+        };
+
+        function compute(){
+            var gpu = document.getElementById('gpu-type').value;
+            var count = parseInt(document.getElementById('gpu-count').value) || 1;
+            var hours = parseInt(document.getElementById('train-hours').value) || 1;
+            var model = document.getElementById('pricing-model').value;
+            var price = GPU_PRICES[gpu] && GPU_PRICES[gpu][model] ? GPU_PRICES[gpu][model] : 0;
+            var total = count * hours * price;
+            document.getElementById('total-cost').textContent = '$' + total.toLocaleString(undefined, {minimumFractionDigits:0,maximumFractionDigits:0});
+            document.getElementById('cost-breakdown').textContent = count + ' GPU' + (count!==1?'s':'') + ' × ' + hours + ' hours × $' + price.toFixed(2) + '/hr (' + model.replace('-1y',' 1yr') + ')';
+            document.getElementById('per-gpu-hour').textContent = '$' + price.toFixed(2);
+            var results = document.getElementById('results-card');
+            results.style.display = '';
+            results.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        document.addEventListener('DOMContentLoaded', function(){
+            document.getElementById('btn-compute').addEventListener('click', compute);
+            compute(); // auto-compute on load
+        });
+
+        // ── Dark mode support from parent ──
+        try {
+            var m = window.location.search.match(/[?&]theme=([^&]+)/);
+            var theme = m ? m[1] : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        } catch(e) {}
+    })();
+    </script>
+</body>
+</html>

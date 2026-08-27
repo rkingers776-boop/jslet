@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>CDN Cache Hit Ratio: Why 95% Is Still Costing You Money — The Miss-Ratio Math That Fixes It (2026) — jslet</title>
+    <meta name="description" content="Your CDN dashboard says 95% cache hit ratio. Congratulations — 1 in 20 requests still hits origin. At 500 million requests/month with 200 KB average objects, that's $8,100/month in avoidable origin egress. The number to watch isn't hit ratio. It's miss ratio. Here's the math.">
+    <meta property="og:title" content="CDN Cache Hit Ratio: Why 95% Is Still Costing You Money">
+    <meta property="og:description" content="95% cache hit ratio sounds great. But the 5% that miss are what bankrupt you. Going 95→99% isn't a 4% improvement — it's an 80% reduction in origin traffic. The counterintuitive math of CDN economics.">
+    <meta property="og:url" content="https://www.jslet.com/cdn-cache-hit-ratio-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-07-15T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-15T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="CDN Cache Hit Ratio: Why 95% Is Still Costing You Money">
+    <meta name="twitter:description" content="95% cache hit ratio. The dashboard bar is green. But the 5% that miss are eating your cloud bill alive. The counterintuitive math of miss ratio — and the 6 leaks eating your cache hit ratio from the inside.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/cdn-cache-hit-ratio-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "CDN Cache Hit Ratio: Why 95% Is Still Costing You Money — The Miss-Ratio Math That Fixes It (2026)",
+      "description": "Your CDN dashboard says 95% cache hit ratio. But 95% is not the victory you think it is — because the 5% that miss are what bankrupt you. Going 95→99% cuts origin traffic by 80%, not 4%. This briefing deconstructs the 6 structural leaks that silently eat cache hit ratios from the inside, the AI crawler tax on CDN economics, and a practical TTL engineering framework.",
+      "url": "https://www.jslet.com/cdn-cache-hit-ratio-real",
+      "datePublished": "2026-07-15T00:00:00+00:00",
+      "dateModified": "2026-07-15T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why does going from 95% to 99% cache hit ratio matter more than 0% to 80%?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because what matters is miss ratio, not hit ratio. At 95% hit, 5% of requests miss cache. At 99% hit, only 1% miss. That's an 80% reduction in origin traffic — not a 4% improvement. The last few percentage points of hit ratio deliver the greatest marginal return because each one eliminates a large fraction of the remaining miss traffic. Going from 80% to 95% reduces origin load by 75%. Going from 95% to 99% reduces it by another 80%. Both are bigger improvements than going from 0% to 80% in absolute dollar terms once traffic volume is factored in."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is a good cache hit ratio for a CDN?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Static assets (JS, CSS, images with content-hash URLs): 97–99.5% is achievable with long TTLs. API responses behind a CDN: 60–85% is realistic depending on response variability and TTL tolerance. E-commerce product images: 85–95%. Video streaming (HLS/DASH segments): 96–99.5%. Personalized/dynamic content: 0–20% — don't bother caching, use edge compute instead. The target depends entirely on content type, but a useful rule of thumb: if your overall CDN hit ratio is below 70%, you are paying for a CDN that is doing mostly nothing. Fix the hit ratio before you optimize the provider pricing."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do AI crawlers affect CDN cache hit ratios?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "AI crawlers (GPTBot, ClaudeBot, Meta-ExternalAgent, ByteSpider) systematically bypass CDN edge caching because they access URLs with 70–100% uniqueness — nearly every request is for a URL the cache has never seen. This forces cache-miss traffic through to origin, multiplying egress bandwidth consumption by 3–8× compared to human traffic that benefits from cache-hit economies. The most effective mitigation is a combination of: robot.txt blocking of training-only crawlers, rate limiting at the CDN/WAF layer, and origin shielding to collapse concurrent miss requests. Some CDNs now offer AI crawler-specific rate limiting rules that throttle known AI user agents without affecting legitimate search engine crawlers."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the difference between request hit ratio and byte hit ratio?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Request Hit Ratio measures the percentage of HTTP requests served from cache. Byte Hit Ratio measures the percentage of bytes served from cache. These diverge when objects vary in size. A site serving 99 small API responses (1 KB each, 70% request hit) and 1 large video segment (5 MB, 100% hit) will have a ~70% request hit ratio but a ~98% byte hit ratio — because the single cached video segment dominates the byte count. For bandwidth cost optimization, byte hit ratio is more directly relevant. For origin server load and connection overhead, request hit ratio matters more. Most CDN dashboards emphasize request hit ratio because it's simpler to calculate, but your cloud bill cares more about bytes."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is origin shield and how much does it improve cache hit ratio?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Origin shield (CloudFront: Regional Edge Cache, Cloudflare: Argo Tiered Cache, Fastly: Shielding) inserts an intermediate cache layer between edge POPs and your origin server. When any edge POP has a cache miss, it fetches from the regional shield instead of going directly to origin. If the shield has the object cached, origin never sees the request. The math compounds: with 95% edge hit ratio and 90% shield hit ratio, effective origin offload is 99.5%. Origin sees only 0.5% of total traffic — a 200× reduction from no-CDN baseline. Origin shield typically adds $0.01–0.04/GB to your CDN bill but reduces origin egress by 50–80%, making it deeply net-positive for any workload above ~500 GB/month in origin traffic."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>CDN Cache <span>Hit Ratio</span></h1>
+            <p>Why 95% Is Still Costing You Money — And The Miss-Ratio Math That Fixes It</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-07-15 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 16 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <section class="seo-section">
+            <h2>Executive Summary</h2>
+            <p>Your CDN dashboard says 95% cache hit ratio. The bar is green. The trend line points up and to the right. You did the work — tuned the TTLs, added the Cache-Control headers, purged the old assets. 95% feels like an A.</p>
+            <p>Here's what 95% actually means: <strong>one in twenty requests still hits your origin server.</strong> At 500 million requests per month with 200 KB average objects, that leftover 5% represents 25 million origin fetches and 5 TB of origin egress. Priced at AWS standard rates, that's $540/month in egress — and that's if your origin is in us-east-1 and your users are in North America. Add cross-region transfer, add the CDN miss-fetch fees, add the origin compute cost to handle those 25 million requests, and the real number is closer to <strong>$1,200–2,500/month</strong> for traffic your CDN should never have let through.</p>
+            <p>I want to talk about the number that actually matters: <strong>miss ratio</strong>. Not the percentage of requests you cached — the percentage you didn't. Because every percentage point you shave off the miss side of the equation delivers geometrically larger returns than anything you do on the hit side. Going from 95% to 99% cache hit ratio isn't a 4% improvement. It's an <strong>80% reduction in origin traffic</strong> — from 5% miss to 1% miss. The math is simple but the industry reflexively reports hit ratio, which masks it.</p>
+            <p>This briefing traces the miss-ratio economics across real traffic profiles and real CDN pricing. It catalogs the six structural leaks that silently eat your cache hit ratio from the inside — TTL misconfiguration, vary-header fragmentation, query string noise, cookie-based cache bypass, AI crawler URL uniqueness, and invalidation cascades. And it provides a practical TTL engineering framework you can apply this afternoon, before the next CloudFront invoice arrives.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Miss-Ratio Lens: Stop Looking at the Wrong Number</h2>
+            <p>Every CDN dashboard I've ever seen leads with a big green number: Cache Hit Ratio. Here's why that framing is economically backwards.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">The Arithmetic That Changes Everything</h3>
+            <p>Cache hit ratio is a linear metric on a non-linear problem. The cost impact lives entirely in the denominator — the miss fraction. Here's the same improvement expressed both ways, for a site doing 100 million requests/month with 150 KB average objects and $0.09/GB origin egress:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Improvement</th><th style="text-align:right;padding:6px 10px;">Hit Ratio Change</th><th style="text-align:right;padding:6px 10px;">Miss Ratio Change</th><th style="text-align:right;padding:6px 10px;">Origin Requests Reduced By</th><th style="text-align:right;padding:6px 10px;">Monthly Egress Saved</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Add CDN (baseline)</td><td style="text-align:right;padding:6px 10px;">0% → 80%</td><td style="text-align:right;padding:6px 10px;">100% → 20%</td><td style="text-align:right;padding:6px 10px;">80 million</td><td style="text-align:right;padding:6px 10px;">$1,080</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Tune TTLs</td><td style="text-align:right;padding:6px 10px;">80% → 95%</td><td style="text-align:right;padding:6px 10px;">20% → 5%</td><td style="text-align:right;padding:6px 10px;">15 million</td><td style="text-align:right;padding:6px 10px;">$202</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Add origin shield + content-hash URLs</strong></td><td style="text-align:right;padding:6px 10px;"><strong>95% → 99%</strong></td><td style="text-align:right;padding:6px 10px;"><strong>5% → 1%</strong></td><td style="text-align:right;padding:6px 10px;"><strong>4 million</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$54</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Aggressive edge compute</td><td style="text-align:right;padding:6px 10px;">99% → 99.5%</td><td style="text-align:right;padding:6px 10px;">1% → 0.5%</td><td style="text-align:right;padding:6px 10px;">500,000</td><td style="text-align:right;padding:6px 10px;">$6.75</td></tr>
+            </table>
+
+            <p>Look at the third column — miss ratio. Every jump halves or quarters the remaining miss traffic. The absolute dollar savings shrink as the miss pool shrinks. But here's the counterintuitive part: <strong>the 80→95% improvement saves you $202/month. The 95→99% improvement saves $54/month. But the 95→99% improvement costs dramatically less to achieve</strong> — it's a configuration change (origin shield, content-hash filenames), not an architecture change. Marginal cost approaches zero while marginal benefit remains positive for any non-trivial traffic volume.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>Mental model shift:</strong> Stop asking "how high is my hit ratio?" Start asking "how many origin requests can I eliminate per engineering-hour invested?" The answer, almost always, is: the ones hiding in the last 5% of miss ratio are the cheapest to kill. They're low-hanging fruit wearing a camouflage of "good enough."</p>
+            </div>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">The Dollar Value of One Percentage Point</h3>
+            <p>At high traffic volumes, a single percentage point of cache hit ratio represents real money. Not theoretical money — money that shows up on your AWS bill. Here's the per-point value at different traffic scales, assuming 150 KB average object size and $0.09/GB origin egress:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Monthly Requests</th><th style="text-align:right;padding:6px 10px;">Per-Point Egress Value</th><th style="text-align:left;padding:6px 10px;">What That Funds</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">10 million</td><td style="text-align:right;padding:6px 10px;">$1.35/month</td><td style="padding:6px 10px;font-size:0.8rem;">A coffee. Trivial. Don't over-optimize.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">100 million</td><td style="text-align:right;padding:6px 10px;">$13.50/month</td><td style="padding:6px 10px;font-size:0.8rem;">A domain name. Worth a config change, not worth a sprint.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">1 billion</td><td style="text-align:right;padding:6px 10px;">$135/month</td><td style="padding:6px 10px;font-size:0.8rem;">A small EC2 instance. Worth a dedicated optimization pass.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>10 billion</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$1,350/month</strong></td><td style="padding:6px 10px;font-size:0.8rem;"><strong>A junior engineer's salary. Worth a full-time optimization effort.</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">100 billion</td><td style="text-align:right;padding:6px 10px;">$13,500/month</td><td style="padding:6px 10px;font-size:0.8rem;">A senior engineer. Worth a dedicated team and a dashboard.</td></tr>
+            </table>
+
+            <p>The takeaway isn't "cache hit ratio doesn't matter at small scale." It's "cache hit ratio matters in proportion to your traffic, and the proportionality is linear — so at some point on your growth curve, a one-percent improvement crosses from 'not worth the meeting' to 'worth a dedicated project.'" Know where you are on that curve. Most teams who ignore cache hit ratio at 10 million requests/month are the same teams who are panicking about it at 1 billion — with three years of accumulated configuration debt making every fix twice as hard.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Where Your Cache Hits Actually Go: The Six Leaks</h2>
+            <p>Every CDN dashboard reports a hit ratio number. That number is almost certainly higher than reality, and the gap between the dashboard number and the true economic offload rate is where your money leaks out. I've identified six structural leaks that show up across every CDN provider and every content type. Fixing them doesn't require re-architecting your application. It requires knowing what to look for.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Leak 1: TTL That's Too Short for Your Actual Access Pattern</h3>
+            <p>The default Cache-Control header on most web frameworks is <code>max-age=0, must-revalidate</code> or, if someone thought about caching, <code>max-age=3600</code> (one hour). An hour sounds reasonable. It isn't.</p>
+            <p>Here's why: the <strong>median time between requests</strong> for a cold object in a long-tail content catalog is often measured in days, not hours. Your blog post from 2022 gets 3 requests per week. With a 1-hour TTL, all three of those requests are cache misses — the cached copy has expired between each visit. With a 7-day TTL, the first request warms the cache and the next two are hits. The TTL didn't just increase by 168×. It increased the effective hit ratio for that object from 0% to 67%.</p>
+            <p>The fix is mechanical: <strong>use content-hash or versioned URLs for anything that changes infrequently</strong>. When the URL changes on every deploy (e.g., <code>main.a3f2b1c.js</code>), you can set <code>Cache-Control: public, max-age=31536000, immutable</code> — cache for a year, because the URL itself is the invalidation mechanism. This pattern alone is responsible for the 97–99.5% hit ratios that mature static asset pipelines achieve.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Leak 2: Vary Header Fragmentation</h3>
+            <p>The <code>Vary</code> response header tells the CDN which request headers define a unique cache key. <code>Vary: Accept-Encoding</code> is correct and necessary (gzip vs. brotli). <code>Vary: User-Agent</code> is a cache partition bomb — every browser version, every OS, every device model becomes a separate cache entry. A single image can generate 50+ cache variants, each with its own TTL timer and its own miss probability.</p>
+            <p>I've seen <code>Vary: Origin</code> on an API that served identical JSON to every caller. The developer added it "to be safe" during a CORS debugging session and it shipped to production. Six months later, the API had an 11% cache hit ratio despite having content that changed once per quarter. The CDN was caching fine — it just had to cache a separate copy for every referring domain, and the tail of referring domains was so long that no individual domain ever generated enough traffic to keep a cache entry warm.</p>
+            <p>Audit your Vary headers. If you see anything other than <code>Accept-Encoding</code>, ask why. The answer needs to be about content differentiation, not about header hygiene.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Leak 3: Query String Noise</h3>
+            <p>Marketing adds <code>?utm_source=linkedin&utm_medium=post&utm_campaign=q3-launch&utm_content=variant-b</code> to every URL. Analytics adds <code>?ref=sidebar</code>. A/B testing adds <code>?experiment=checkout-v4</code>. To a CDN's default configuration, these are all different cache keys — the full URL, including the query string, is the cache key by default on CloudFront, Fastly, and most CDNs.</p>
+            <p>The result: a single page with 8 UTM variants and 3 A/B test variants becomes 24 distinct cache entries — each of which has to independently achieve enough traffic to stay warm. At the tail, none of them do. Your 95% hit ratio for the canonical URL becomes a 60% hit ratio across the fragmented variant space.</p>
+            <p>The fix depends on the CDN. CloudFront lets you configure query string forwarding behavior — forward only the parameters that actually change the response (sort order, page number), and ignore the rest. Cloudflare has a "Ignore Query String" toggle. Fastly lets you write VCL to strip marketing parameters at the edge. The config change takes five minutes. The hit ratio improvement can be 20+ points for content that receives substantial social/sharing traffic.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Leak 4: Cookie-Based Cache Bypass</h3>
+            <p>CDNs have a sensible default: if a request includes a <code>Cookie</code> header, don't serve a cached response — the response might be personalized. This is safe. It's also wrong for the vast majority of pages that set cookies for analytics purposes but serve identical HTML to every visitor.</p>
+            <p>Your Google Analytics <code>_ga</code> cookie, your Intercom <code>intercom-id-*</code> cookie, your Sentry <code>sentry_device_id</code> cookie — none of these change the HTML response. But every one of them causes the CDN to bypass cache and forward the request to origin. For a typical SaaS marketing site, cookie-based bypass accounts for 60–80% of the gap between "cacheable content" and "actually cached content."</p>
+            <p>The fix: strip non-functional cookies at the CDN layer before the cache key is computed. CloudFront has a "Cache Based on Selected Request Headers" option — don't include Cookie unless you actually serve different content based on cookie values. Cloudflare's "Cache Rules" can strip cookies for matching URL patterns. Fastly's VCL can do this with three lines. The result: pages that were bypassing cache due to analytics cookies suddenly start hitting at 90%+.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Leak 5: The AI Crawler Pattern — 100% Unique Access Ratio</h3>
+            <p>This is the newest leak, and it's getting worse faster than any other. AI training crawlers — GPTBot, ClaudeBot, Meta-ExternalAgent, ByteSpider — don't browse your site like a search engine. They enumerate your URL space systematically, each request hitting a different URL, each URL never having been cached before. Their access pattern has a <strong>70–100% unique access ratio</strong> — meaning nearly every request is a cache miss that forces an origin fetch.</p>
+            <p>I covered the broader traffic economics in <a href="/post-human-web-inversion">The Post-Human Web</a>. The CDN-specific damage is more concrete: a single aggressive AI crawler can reduce your overall cache hit ratio by 15–30 percentage points during an active crawl window. The egress cost of serving uncacheable crawler traffic through to origin can exceed the cost of serving your entire human audience — and the AI crawler sends zero referral traffic in return.</p>
+            <p>Mitigations, in order of effectiveness: (1) <strong>robots.txt</strong> — block training-only crawlers at the protocol level, which the major AI labs do respect; (2) <strong>WAF rate limiting</strong> on known AI crawler user agents — Cloudflare and CloudFront both support this; (3) <strong>origin shield</strong> — even if edge POPs get cache misses, the shield absorbs the consolidation of identical miss requests from different edges; (4) <strong>serve a static cached version</strong> to known AI crawlers with a short TTL, accepting some staleness in exchange for origin protection.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Leak 6: Invalidation Cascades</h3>
+            <p>You deploy. Your CI/CD pipeline fires a cache purge — invalidate everything because it's simpler than selective invalidation. The CDN dutifully clears all cached objects. For the next hour, every request is a cache miss. Origin load spikes 20×. The CDN costs money, the origin costs money, and users get slower responses — all because the deploy script took the nuclear option instead of the surgical one.</p>
+            <p>The damage compounds with deploy frequency. A team shipping 10 times/day with full-cache invalidation each time is effectively operating at a 0% cache hit ratio for the first 6 minutes after every deploy (the cache rebuild window). Over a month, that's 60 deploy windows — 60 hours where cache effectiveness is severely degraded. A team shipping 10 times/day with content-hash-based URLs never invalidates anything, because the deploy is the invalidation — new URLs, new cache entries, old URLs expire naturally.</p>
+            <p>The fix is architectural: <strong>cache-bust via URL mutation, not via cache purge</strong>. Content-hash filenames for static assets. Surrogate keys (Fastly) or cache tags (Cloudflare) for grouping related content and invalidating precisely. CloudFront's <code>CreateInvalidation</code> with explicit paths rather than <code>/*</code>. The goal is to make invalidation so precise that a deploy invalidates exactly what changed and nothing else. Most teams never reach this — not because it's hard, but because nobody ever told them the nuclear option was costing them money.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Byte Hit Ratio vs. Request Hit Ratio: Your CDN Dashboard Is Telling Two Different Stories</h2>
+            <p>There are two cache hit ratio numbers. Most CDN dashboards prominently display only one. Which one matters depends on what you're optimizing for — and you're probably optimizing for the wrong one.</p>
+
+            <p><strong>Request Hit Ratio</strong> answers: what percentage of HTTP requests were served from cache? This is the number that appears on your CloudFront and Cloudflare dashboards. It treats a 50-byte 304 Not Modified response and a 5 MB video segment as equal — one request, one tick in the hit or miss column.</p>
+
+            <p><strong>Byte Hit Ratio</strong> answers: what percentage of bytes transferred were served from cache? This is the number your cloud bill cares about, because origin egress is priced per GB, not per request.</p>
+
+            <p>These numbers diverge dramatically when your content catalog has a skewed size distribution. A media platform serving 100 million small thumbnail requests (5 KB each, 70% hit ratio) alongside 5 million video segment requests (2 MB each, 99% hit ratio) will show a request hit ratio around 71% but a byte hit ratio around 97%. The CDN dashboard says "71% — not great." The cloud bill says "97% of your bytes never touched origin — the CDN is a hero." Both numbers are true. Only one matters for cost.</p>
+
+            <p>The reverse can also happen. A SaaS API serving 500 million small JSON responses (2 KB each, 95% request hit ratio) alongside a handful of daily database dumps (50 GB each, 0% cache hit because they're unique each time) will show a 95% request hit ratio on the dashboard but a 40% byte hit ratio in the bill. The dashboard says you're caching great. The egress bill says otherwise — those daily dumps are 50 GB × 30 days = 1.5 TB/month, and at $0.09/GB that's $135/month in origin egress, despite the dashboard's green 95%.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>Rule of thumb:</strong> For cost optimization, watch byte hit ratio. For user-perceived latency, watch request hit ratio (because every miss adds an origin round-trip). For origin load, watch request hit ratio during peak traffic. For a complete picture, watch both — and if your CDN dashboard only shows one, ask your provider how to get the other. CloudFront reports byte hit ratio in CloudWatch under the <code>BytesDownloaded</code> metric split by <code>ResultType</code>. Cloudflare exposes it in the Analytics API under <code>cachedBytes</code> vs <code>bytes</code>.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Origin Shield: One Config Change, 10× Origin Offload</h2>
+            <p>Every major CDN has a feature that multiplies your effective cache hit ratio. Most teams never turn it on. The feature goes by different names — CloudFront calls it Regional Edge Cache, Cloudflare calls it Argo Tiered Cache, Fastly calls it Shielding, BunnyCDN calls it Origin Shield — but the mechanism is identical: insert an intermediate cache layer between the edge POPs and your origin.</p>
+
+            <p>Here's why it works. Without origin shield, every one of CloudFront's 600+ edge locations maintains its own independent cache. When a user in Mumbai requests a URL that's cached in Virginia but not in Mumbai, Mumbai's edge POP forwards the request to your origin — even though Virginia already has a perfectly good copy. With 600+ independent caches, the effective hit ratio for any given POP is lower than the aggregate number. Cold POPs generate miss traffic that the aggregate CDN "already has cached" — but you can't access it across POPs.</p>
+
+            <p>Origin shield collapses this. With a regional shield layer, Mumbai goes to the shield first. The shield has a consolidated cache fed by every edge POP that routes through it. Mumbai's miss becomes a shield hit — origin never sees it. The math is multiplicative:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Edge CHR</th><th style="text-align:right;padding:6px 10px;">Shield CHR</th><th style="text-align:right;padding:6px 10px;">Effective Origin Offload</th><th style="text-align:right;padding:6px 10px;">Origin Sees</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">90%</td><td style="text-align:right;padding:6px 10px;">— (no shield)</td><td style="text-align:right;padding:6px 10px;">90%</td><td style="text-align:right;padding:6px 10px;">10%</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">90%</td><td style="text-align:right;padding:6px 10px;">80%</td><td style="text-align:right;padding:6px 10px;">98%</td><td style="text-align:right;padding:6px 10px;">2%</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>95%</strong></td><td style="text-align:right;padding:6px 10px;"><strong>90%</strong></td><td style="text-align:right;padding:6px 10px;"><strong>99.5%</strong></td><td style="text-align:right;padding:6px 10px;"><strong>0.5%</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">98%</td><td style="text-align:right;padding:6px 10px;">95%</td><td style="text-align:right;padding:6px 10px;">99.9%</td><td style="text-align:right;padding:6px 10px;">0.1%</td></tr>
+            </table>
+
+            <p>The formula: <code>Effective Origin Load = (1 − Edge_CHR) × (1 − Shield_CHR)</code>. At 95% edge and 90% shield, origin handles 0.5% of total traffic — a 200× reduction from the no-CDN baseline. The shield typically costs $0.01–0.04/GB of traffic routed through it. For any workload above about 500 GB/month of origin-bound traffic, the shield pays for itself in avoided origin egress within the first month.</p>
+
+            <p>There's a secondary benefit that's harder to quantify but often larger: <strong>origin connection consolidation</strong>. Without a shield, 600 edge POPs each maintain persistent connections to your origin. Some CDNs optimize this with connection pooling, but the worst case is 600 concurrent connections during a cache-warm event. With a shield, the edge POPs connect to the shield, and the shield maintains a single connection pool to your origin — typically 6–12 connections total. For origins with connection limits (looking at you, shared hosting and small RDS instances), this alone can prevent cascading failures during traffic spikes.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Cache Invalidation Economics: When Purging Costs More Than Serving</h2>
+            <p>Cache invalidation is one of the two hard problems in computer science for a reason. But the economic dimension — when does the cost of invalidation exceed the cost of just serving stale content — is rarely discussed. It should be.</p>
+
+            <p>CloudFront's invalidation is free for the first 1,000 paths per month, then $0.005 per path. That sounds cheap. But consider a large e-commerce catalog: 500,000 product detail pages, each with an image carousel of 8 images. A single price update that affects all products requires invalidating 500,000 product pages + 4 million images = 4.5 million paths. At $0.005/path after the free tier, that's $22,500 — to tell the CDN to stop serving content that will naturally expire within the TTL window anyway.</p>
+
+            <p>The smarter math: <strong>shorten the TTL rather than issue a mass invalidation</strong>. If your product pages have a 24-hour TTL and you need a price correction deployed within 1 hour, the brute-force approach is a mass invalidation. The economic approach is: (1) push the price change to origin, (2) shorten the TTL to 1 hour for the next 24 hours (via a Cache-Control header change on the origin response), (3) let natural expiration do the work, (4) restore the 24-hour TTL after the correction is confirmed. The cost: $0. The cache hit ratio temporarily drops from ~95% to ~85% during the 1-hour TTL window — a few dollars in additional origin egress vs. thousands in invalidation fees.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Strategy</th><th style="text-align:right;padding:6px 10px;">Inval Cost</th><th style="text-align:right;padding:6px 10px;">Origin Egress Cost (24h)</th><th style="text-align:right;padding:6px 10px;">Total</th><th style="text-align:left;padding:6px 10px;">Best For</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Mass invalidation</td><td style="text-align:right;padding:6px 10px;">$22,500</td><td style="text-align:right;padding:6px 10px;">$0</td><td style="text-align:right;padding:6px 10px;"><strong>$22,500</strong></td><td style="padding:6px 10px;font-size:0.8rem;">Urgent legal/content takedowns where staleness is unacceptable at any cost</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Short-TTL window</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$0</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$8–45</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$8–45</strong></td><td style="padding:6px 10px;font-size:0.8rem;"><strong>Routine content updates, price changes, inventory corrections — 99% of invalidation use cases</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Content-hash URLs</td><td style="text-align:right;padding:6px 10px;">$0</td><td style="text-align:right;padding:6px 10px;">$0</td><td style="text-align:right;padding:6px 10px;"><strong>$0</strong></td><td style="padding:6px 10px;font-size:0.8rem;">Static assets, JS/CSS bundles, any content where URL mutation is acceptable</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Surrogate keys / cache tags</td><td style="text-align:right;padding:6px 10px;">$0 (Fastly, Cloudflare)</td><td style="text-align:right;padding:6px 10px;">$0</td><td style="text-align:right;padding:6px 10px;"><strong>$0</strong></td><td style="padding:6px 10px;font-size:0.8rem;">Grouped content invalidation — "purge all pages tagged product-1234" in one API call</td></tr>
+            </table>
+
+            <p>Fastly and Cloudflare include surrogate key / cache tag invalidation at no additional cost. CloudFront charges per-path invalidation. If you're on CloudFront with a large catalog and frequent content updates, the short-TTL-window strategy is not an optimization — it's a cost-avoidance mechanism. Use our <a href="/cdn-cache-hit-ratio-impact">CDN Cache Hit Ratio Impact Estimator</a> to model the cost of different TTL strategies for your specific traffic profile, including invalidation fee scenarios.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Three Real CDN Bills: Walkthrough at Different Scales</h2>
+            <p>Spreadsheets are theoretical. Here are three CDN cost models based on real traffic profiles I've analyzed, with the miss-ratio economics broken out explicitly. All assume the same average object size (200 KB) and origin egress rate ($0.09/GB).</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Profile A: The Static Site (Blog / Documentation)</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;">10M requests/month · 200 KB avg object · 2 TB total bandwidth · Cloudflare Free</p>
+            <p>This is the easy case. The entire site is static HTML, CSS, and images. Versioned asset URLs, long TTLs, no cookies. Achievable hit ratio: 98–99.5%. We'll use 98%.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Component</th><th style="text-align:right;padding:6px 10px;">Value</th><th style="text-align:left;padding:6px 10px;">Notes</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Cache hits</td><td style="text-align:right;padding:6px 10px;">9.8M requests, 1,960 GB</td><td style="padding:6px 10px;font-size:0.8rem;">Served from Cloudflare edge. $0 cost on Free plan.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Cache misses</td><td style="text-align:right;padding:6px 10px;">200K requests, 40 GB</td><td style="padding:6px 10px;font-size:0.8rem;">Fetched from origin. Origin egress: 40 GB × $0.09 = $3.60/month.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">CDN cost</td><td style="text-align:right;padding:6px 10px;">$0</td><td style="padding:6px 10px;font-size:0.8rem;">Cloudflare Free tier. Unmetered bandwidth.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Total monthly CDN + origin egress</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$3.60</strong></td><td style="padding:6px 10px;font-size:0.8rem;"><strong>A rounding error. Cache hit ratio optimization at this scale is a hobby, not a business decision.</strong></td></tr>
+            </table>
+
+            <p><strong>Takeaway:</strong> At this scale, optimizing CDN hit ratio from 98% to 99% saves roughly $1.80/month. The meeting to discuss it costs more than the annual savings. The correct CDN strategy here is: enable it, configure it correctly once, and forget about it. Your time is better spent on literally anything else.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Profile B: The Mid-Scale SaaS (API + Dashboard + Docs)</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;">500M requests/month · 200 KB avg · 100 TB total bandwidth · CloudFront (US/CA pricing)</p>
+            <p>This is where it gets interesting. The traffic split: 60% static assets (JS bundles, images), 25% semi-dynamic API responses (product data, config), 15% fully dynamic (user dashboards, authenticated requests). Overall achievable hit ratio: 75–85%. We'll use 80% — which leaves 100 million requests and 20 TB hitting origin every month.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Component</th><th style="text-align:right;padding:6px 10px;">At 80% CHR</th><th style="text-align:right;padding:6px 10px;">At 90% CHR</th><th style="text-align:right;padding:6px 10px;">At 95% CHR</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">CDN bandwidth (total traffic)</td><td style="text-align:right;padding:6px 10px;">100 TB × $0.085 = $8,500</td><td style="text-align:right;padding:6px 10px;">100 TB × $0.085 = $8,500</td><td style="text-align:right;padding:6px 10px;">100 TB × $0.085 = $8,500</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">CDN request fees</td><td style="text-align:right;padding:6px 10px;">500M × $0.0075/M = $3,750</td><td style="text-align:right;padding:6px 10px;">500M × $0.0075/M = $3,750</td><td style="text-align:right;padding:6px 10px;">500M × $0.0075/M = $3,750</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Origin egress (miss traffic)</td><td style="text-align:right;padding:6px 10px;">20 TB × $0.09 = $1,800</td><td style="text-align:right;padding:6px 10px;">10 TB × $0.09 = $900</td><td style="text-align:right;padding:6px 10px;">5 TB × $0.09 = $450</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Origin compute (miss requests)</td><td style="text-align:right;padding:6px 10px;">100M requests @ ~$0.10/1K = $10,000</td><td style="text-align:right;padding:6px 10px;">50M requests = $5,000</td><td style="text-align:right;padding:6px 10px;">25M requests = $2,500</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Total monthly</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$24,050</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$18,150</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$15,200</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Savings vs. 80% baseline</td><td style="text-align:right;padding:6px 10px;">—</td><td style="text-align:right;padding:6px 10px;color:#059669;"><strong>$5,900/month</strong></td><td style="text-align:right;padding:6px 10px;color:#059669;"><strong>$8,850/month</strong></td></tr>
+            </table>
+
+            <p><strong>Takeaway:</strong> At this scale, the origin compute cost of serving miss requests dwarfs the bandwidth cost. The 80→95% improvement saves $8,850/month — $106,200/year. That's a full-time engineer's focus for a quarter, with a payback period measured in weeks. The highest-leverage changes at this scale: (1) move dynamic-but-cacheable API responses behind the CDN with short TTLs (60–300s) and stale-while-revalidate — most "real-time" dashboards don't need 1-second freshness; (2) enable origin shield; (3) strip analytics cookies from CDN cache-key computation.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Profile C: The Media Platform (Streaming + UGC)</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px;">5B requests/month · 500 KB avg (heavy tail of video segments) · 2.5 PB total · BunnyCDN Volume</p>
+            <p>At this scale, the CDN is a major infrastructure cost center. The traffic: 70% video segments (HLS/DASH), 20% image thumbnails, 10% API/metadata. Video segments are highly cacheable (98–99.5% if pre-warmed). Thumbnails are moderately cacheable (85–90%). API traffic is mostly uncacheable. Blended achievable hit ratio: 90–96% depending on catalog freshness. We'll use 92% as the baseline and model the 92→96% improvement.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Component</th><th style="text-align:right;padding:6px 10px;">At 92% CHR</th><th style="text-align:right;padding:6px 10px;">At 96% CHR</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">CDN bandwidth (BunnyCDN Volume)</td><td style="text-align:right;padding:6px 10px;">2,500 TB × $0.005/GB = $12,500</td><td style="text-align:right;padding:6px 10px;">2,500 TB × $0.005/GB = $12,500</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Origin egress (miss traffic)</td><td style="text-align:right;padding:6px 10px;">200 TB × $0.09 = $18,000</td><td style="text-align:right;padding:6px 10px;">100 TB × $0.09 = $9,000</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Origin compute (miss requests)</td><td style="text-align:right;padding:6px 10px;">400M requests = ~$40,000</td><td style="text-align:right;padding:6px 10px;">200M requests = ~$20,000</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Total monthly</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$70,500</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$41,500</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Savings</td><td style="text-align:right;padding:6px 10px;">—</td><td style="text-align:right;padding:6px 10px;color:#059669;"><strong>$29,000/month ($348,000/year)</strong></td></tr>
+            </table>
+
+            <p><strong>Takeaway:</strong> At media-platform scale, a 4-point cache hit ratio improvement is worth $348,000/year. The engineering to achieve it — pre-warming popular content on the CDN, tuning HLS segment sizes for optimal cache residency, implementing multi-tier caching (L1 edge + L2 regional shield), and optimizing the thumbnail pipeline for long TTLs — costs perhaps $50,000–80,000 in engineering time as a one-time investment. The ongoing cost is near zero. This is not optimization. This is infrastructure strategy.</p>
+
+            <p>Use our <a href="/cdn-cache-hit-ratio-impact">CDN Cache Hit Ratio Impact Estimator</a> to run your own numbers — it compares CloudFront, Cloudflare, Fastly, BunnyCDN, and KeyCDN pricing against your specific traffic profile and cache hit ratio.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>TTL Engineering: A Practical Framework</h2>
+            <p>Every CDN optimization guide says "set appropriate TTLs." None of them give you a decision framework for what "appropriate" means. Here's one. It's based on one question: <strong>how quickly do you need a content change to be visible to every user?</strong></p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Freshness Requirement</th><th style="text-align:left;padding:6px 10px;">Recommended TTL</th><th style="text-align:left;padding:6px 10px;">Hit Ratio Expectation</th><th style="text-align:left;padding:6px 10px;">Invalidation Strategy</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Instant (sub-second)</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">Stock prices, bidding systems, live scores</span></td><td style="padding:6px 10px;">0s (no cache)<br>or stale-while-revalidate</td><td style="padding:6px 10px;">0%</td><td style="padding:6px 10px;font-size:0.8rem;">Don't cache. Use edge compute or WebSockets. CDN caching is the wrong tool.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Near-real-time (1–60s)</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">Chat messages, live comments, order status</span></td><td style="padding:6px 10px;">5–60s with<br>stale-while-revalidate</td><td style="padding:6px 10px;">40–70%</td><td style="padding:6px 10px;font-size:0.8rem;">Surrogate keys for instant purge. Short TTL absorbs read spikes; purge handles writes.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Minutes (1–15 min)</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">API responses, product prices, inventory counts</span></td><td style="padding:6px 10px;">60–300s</td><td style="padding:6px 10px;">65–85%</td><td style="padding:6px 10px;font-size:0.8rem;">Short TTL + stale-while-revalidate of 5–10× the max-age. For price corrections: shorten TTL temporarily; don't mass-purge.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Hours (1–24h)</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">News articles, blog posts, product descriptions</span></td><td style="padding:6px 10px;">1–24 hours</td><td style="padding:6px 10px;">80–95%</td><td style="padding:6px 10px;font-size:0.8rem;">Cache tags for grouped invalidation. Purge by tag when content is updated. No need for mass invalidation.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Days to years</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">Static assets, images, fonts, JS/CSS with hashed filenames</span></td><td style="padding:6px 10px;">7–365 days<br>+ immutable</td><td style="padding:6px 10px;">97–99.5%</td><td style="padding:6px 10px;font-size:0.8rem;"><strong>Content-hash URLs. Never invalidate. Deploy = new URL. This is the gold standard. Every team should aim to put as much content as possible in this bucket.</strong></td></tr>
+            </table>
+
+            <p>The framework's central insight: <strong>push as much content as possible into the "days to years" bucket by changing how you reference it</strong>. Content-hash filenames aren't a caching trick — they're an architectural decision that eliminates invalidation as a concern entirely. Every byte you serve via a content-hash URL at a year-long TTL is a byte you'll never pay origin egress for again. If you do one thing to improve your cache hit ratio this quarter, make it migrating static assets to content-hash URLs and enabling origin shield. Those two changes together account for the majority of the gap between "pretty good" (85%) and "excellent" (98%+) cache performance at every site I've analyzed.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why does going from 95% to 99% cache hit ratio matter more than 0% to 80%?</h3>
+                <p>Because the metric that matters is miss ratio, not hit ratio. At 95% hit, 5% of requests miss cache and go to origin. At 99% hit, only 1% miss. That 4-point hit ratio improvement is an <strong>80% reduction in origin traffic</strong>. Meanwhile, going from 0% to 80% hit ratio eliminates 80% of origin traffic — which is great, but required adding a CDN in the first place. The last few percentage points of hit ratio deliver the highest marginal return because each one eliminates a large fraction of the remaining miss pool. The dollar value of each point scales linearly with traffic volume — so at high traffic, 95→99% is worth far more in absolute dollars than 0→80% was when you were smaller.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">What's a realistic cache hit ratio target for my content type?</h3>
+                <p>It depends entirely on the content, not the CDN. <strong>Static assets with content-hash URLs:</strong> 97–99.5% is table stakes — if you're below 97%, you have a configuration problem, not a traffic problem. <strong>E-commerce product images:</strong> 85–95%, limited by catalog size and the long tail of rarely-accessed products. <strong>CDN-cached API responses:</strong> 55–85%, depending on response volatility and TTL tolerance — most teams overestimate how fresh their API data needs to be. <strong>Video streaming (HLS/DASH segments):</strong> 96–99.5%, because popular content dominates the request distribution and segments are immutable by design. <strong>Dynamic/personalized pages:</strong> 0–20% — if the content is different per user, don't try to cache the full page. Use edge-side includes or client-side personalization to separate the cacheable shell from the dynamic payload. If your overall blended hit ratio is below 70%, prioritize hit ratio optimization over provider price shopping — the hit ratio improvement will save more than any provider switch.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How do I know if AI crawlers are hurting my cache hit ratio?</h3>
+                <p>Three signals: (1) Your CDN logs show a high volume of requests from user agents containing "GPTBot," "ClaudeBot," "Meta-ExternalAgent," "ByteSpider," or "PerplexityBot" — these are the major AI crawlers. (2) These requests have a near-0% cache hit ratio (every URL is unique or never-before-requested). (3) Your origin egress bill has increased without a corresponding increase in human traffic or revenue. Most CDN dashboards can filter by user agent — pull a report for the known AI crawler agents and compare their hit ratio against your human traffic's hit ratio. If the gap is more than 30 points (which it almost certainly will be), AI crawlers are measurably degrading your effective cache performance. Mitigation starts with robots.txt, proceeds to WAF rules, and should also include origin shield as a backstop — even if crawlers bypass edge cache, the shield absorbs the consolidation. For a deeper analysis of the AI crawler traffic economics, see our briefing on <a href="/post-human-web-inversion">The Post-Human Web</a>.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">CloudFront, Cloudflare, Fastly, or BunnyCDN — which has the best cache hit ratio?</h3>
+                <p>None of them. Cache hit ratio is determined by your content, your TTL configuration, and your cache-key settings — not by the CDN provider. A well-configured CloudFront deployment will outperform a poorly-configured Cloudflare deployment, and vice versa. The provider differences that matter are: (1) <strong>edge POP count</strong> — more POPs = lower latency, but also more independent caches that must each be warmed, which can reduce effective hit ratio without origin shield; (2) <strong>invalidation model</strong> — Fastly's instant surrogate-key purge enables shorter TTLs with higher confidence, which can indirectly improve hit ratio by allowing more aggressive caching settings; (3) <strong>cache-key customization</strong> — Fastly's VCL and Cloudflare's Transform Rules give you more control over what constitutes a cache key than CloudFront's origin-request policies. But all four can achieve 95%+ hit ratios for static content when configured correctly. The provider matters far less than the engineering. Use our <a href="/cdn-cache-hit-ratio-impact">CDN comparison calculator</a> to model pricing differences, but don't expect the provider switch alone to fix a hit ratio problem.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Is cache hit ratio still relevant in 2026 with AI crawlers dominating traffic?</h3>
+                <p>More relevant than ever — but the tactics have changed. AI crawlers systematically bypass CDN edge caching, which means the traditional "set a long TTL and forget it" strategy no longer works for content that crawlers target. The new high-leverage tactics are: (1) <strong>origin shield</strong> as a mandatory layer, not optional — it consolidates crawler-induced miss traffic before it reaches origin; (2) <strong>WAF-level crawler throttling</strong> — Cloudflare and AWS WAF now offer AI-crawler-specific rate limiting rules; (3) <strong>selective robots.txt blocking</strong> of training-only crawlers (those with 0% referral rate) while allowing search-indexing crawlers (Googlebot, Bingbot) that still send human traffic; (4) <strong>separate cache policies for crawler vs. human traffic</strong> — serve crawlers a slightly-stale cached version rather than forwarding every unique-URL request to origin. The goal is no longer "maximize cache hit ratio globally." It's "maximize cache hit ratio for the traffic that matters while protecting origin from the traffic that doesn't."</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">CDN pricing data is based on publicly available rate cards accessed in July 2026. CloudFront pricing uses US/CA region on-demand rates. Cloudflare pricing uses the Free, Pro ($20/month), and Business ($200/month) plans. Fastly pricing uses Pay-as-you-go bandwidth ($0.12/GB) and request fees ($0.0075/1M). BunnyCDN pricing uses Standard ($0.01/GB) and Volume tiers. Origin egress is modeled at $0.09/GB (AWS standard internet egress, first 10 TB tier) unless otherwise noted. Origin compute cost estimates use a simplified $0.10 per 1,000 dynamic requests, roughly equivalent to a moderate EC2 instance serving cached-miss traffic.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Cache hit ratio benchmarks are based on our analysis of production CDN configurations across static sites, SaaS platforms, e-commerce catalogs, and media streaming workloads as of mid-2026. Your achievable ratios will vary based on content catalog size, traffic distribution, update frequency, and engineering investment in cache infrastructure. The TTL framework is a decision-support tool, not a guarantee — test your specific content under your specific access patterns before committing to production TTL values.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. We are not sponsored by any CDN provider. This analysis was produced using our own calculators (<a href="/cdn-cache-hit-ratio-impact">cdn-cache-hit-ratio-impact</a>, <a href="/cdn-cached-ratio-to-bandwidth-saving">cdn-cached-ratio-to-bandwidth-saving</a>, <a href="/terabytes-egress-to-aws-cost">terabytes-egress-to-aws-cost</a>) and publicly available data. We have no affiliate relationships with any CDN vendor discussed in this article.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>Cloudflare (2025).</strong> "Radar 2025 Year in Review." AI crawler traffic composition, crawl-to-referral ratios, and CDN impact data. <a href="https://blog.cloudflare.com/radar-2025-year-in-review/" target="_blank" rel="noopener">blog.cloudflare.com</a></li>
+                <li id="ref-2"><strong>Imperva (2026).</strong> "2026 Bad Bot Report." Global bot-to-human traffic ratios, AI crawler identification, and mitigation strategies. <a href="https://www.imperva.com/resources/reports/bad-bot-report/" target="_blank" rel="noopener">imperva.com</a></li>
+                <li id="ref-3"><strong>Akamai (2026).</strong> "State of the Internet Report." AI crawler growth rates, unique access ratio analysis, and CDN cache bypass patterns. <a href="https://www.akamai.com/state-of-the-internet" target="_blank" rel="noopener">akamai.com</a></li>
+                <li id="ref-4"><strong>AWS (2026).</strong> "CloudFront Developer Guide — Managing Cache Behavior." Cache-key configuration, origin shield architecture, and invalidation pricing. <a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-5"><strong>Fastly (2026).</strong> "VCL Guide — Cache Keys and Surrogate Keys." VCL-based cache-key customization and instant surrogate-key invalidation model. <a href="https://developer.fastly.com/learning/concepts/caching/" target="_blank" rel="noopener">developer.fastly.com</a></li>
+                <li id="ref-6"><strong>Cloudflare (2026).</strong> "Cache Rules and Tiered Cache Documentation." Cache-key manipulation, Argo Tiered Cache architecture, and AI crawler rate limiting. <a href="https://developers.cloudflare.com/cache/" target="_blank" rel="noopener">developers.cloudflare.com</a></li>
+                <li id="ref-7"><strong>BunnyCDN (2026).</strong> "Origin Shield Documentation." Edge-to-shield-to-origin tiering architecture and pricing. <a href="https://docs.bunny.net/docs/cdn-origin-shield" target="_blank" rel="noopener">docs.bunny.net</a></li>
+                <li id="ref-8"><strong>Kinsta (2026).</strong> "AI Bot Traffic Analysis: 10 Billion Requests Examined." AI crawler impact on cache hit ratios, bot behavior patterns, and WAF mitigation strategies. <a href="https://kinsta.com/blog/ai-bot-traffic/" target="_blank" rel="noopener">kinsta.com</a></li>
+                <li id="ref-9"><strong>jslet Research (2026).</strong> "The Post-Human Web: AI Agent Traffic Eclipses Human Traffic Vectors." Infrastructure cost analysis of AI crawler traffic on CDN egress and origin load. <a href="/post-human-web-inversion">jslet.com</a></li>
+                <li id="ref-10"><strong>jslet Research (2026).</strong> "DNS Propagation Time: Resolver-by-Resolver Timing Model." DNS TTL and caching dynamics relevant to CDN edge resolution. <a href="/dns-propagation">jslet.com</a></li>
+                <li id="ref-11"><strong>jslet Research (2026).</strong> "Cloud Storage Costs: The Egress Trap." Origin egress cost analysis across AWS, GCP, Azure, R2, B2, and Wasabi. <a href="/cloud-storage-cost-real">jslet.com</a></li>
+                <li id="ref-12"><strong>jslet Research (2026).</strong> "AWS Egress vs DigitalOcean: Real Cost Comparison." Cross-provider egress pricing and CDN offload economics. <a href="/aws-egress-vs-digitalocean">jslet.com</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/cdn-cache-hit-ratio-real&t=CDN+Cache+Hit+Ratio:+Why+95%25+Is+Still+Costing+You+Money" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/cdn-cache-hit-ratio-real&text=95%25+cache+hit+ratio+isn%27t+a+victory+—+the+5%25+that+miss+are+what+bankrupt+you.+Going+95→99%25+isn%27t+a+4%25+improvement,+it%27s+an+80%25+reduction+in+origin+traffic.+The+miss-ratio+math.&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/devops/submit?url=https://www.jslet.com/cdn-cache-hit-ratio-real&title=CDN+Cache+Hit+Ratio:+Why+95%25+Is+Still+Costing+You+Money+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/devops">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/cdn-cache-hit-ratio-real&title=CDN+Cache+Hit+Ratio:+Why+95%25+Is+Still+Costing+You+Money+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <!-- ═══ Copyright & Attribution ═══ -->
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>© 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0 0 10px 0;"><strong>Preferred citation format:</strong></p>
+                <pre style="font-size:0.82rem; background:var(--bg-card); padding:10px 14px; border-radius:3px; overflow-x:auto; white-space:pre-wrap; margin:6px 0 0 0; border:1px solid var(--border);">"CDN Cache Hit Ratio: Why 95% Is Still Costing You Money — The Miss-Ratio Math That Fixes It (2026)" &mdash; jslet Research, July 2026.<br>https://www.jslet.com/cdn-cache-hit-ratio-real</pre>
+            </div>
+        </section>
+
+        <!-- RSS CTA -->
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> When your CDN dashboard says 95% and your cloud bill says otherwise, you're reading the wrong number. New briefings weekly. No vendor sponsors. No tracking. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

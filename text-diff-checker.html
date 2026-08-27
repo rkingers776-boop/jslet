@@ -1,0 +1,384 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Text Diff Checker —Compare Two Text Blocks Line by Line —jslet</title>
+    <meta name="description" content="Compare two text blocks line by line. See lines added, removed, and unchanged with color-coded output. Side-by-side input. Copy diff results. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/text-diff-checker">
+    <meta property="og:title" content="Text Diff Checker —Compare Two Text Blocks Line by Line">
+    <meta property="og:description" content="Compare two text blocks side by side. Color-coded diff shows added, removed, and unchanged lines. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/text-diff-checker">
+    <meta property="og:type" content="website"><meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Text Diff Checker —Compare Text Line by Line">
+    <meta name="twitter:description" content="Compare two text blocks. Color-coded diff output. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Text Diff Checker","description":"Compare two text blocks line by line with a color-coded diff output showing added, removed, and unchanged lines. Includes stats (lines added/removed/unchanged) and copy-to-clipboard. 100% client-side.","url":"https://www.jslet.com/text-diff-checker","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <style>
+        .diff-layout { display: flex; gap: 16px; margin-bottom: 16px; }
+        @media (max-width: 768px) { .diff-layout { flex-direction: column; } }
+        .diff-panel { flex: 1; display: flex; flex-direction: column; }
+        .diff-panel label { font-weight: 700; font-size: 0.85rem; margin-bottom: 4px; color: var(--text-body); }
+        .diff-panel textarea { min-height: 280px; font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.82rem; padding: 12px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); resize: vertical; line-height: 1.5; tab-size: 2; }
+        .diff-panel textarea:focus { border-color: var(--accent); outline: none; }
+        .diff-output { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px 20px; min-height: 80px; font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.82rem; line-height: 1.8; max-height: 600px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+        .diff-line { display: block; padding: 1px 8px; margin: 0 -8px; border-radius: 2px; }
+        .diff-added { background: #d4edda; color: #155724; }
+        .diff-removed { background: #f8d7da; color: #721c24; }
+        .diff-unchanged { color: var(--text-muted); }
+        .btn-row { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
+        .btn { padding: 9px 20px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.85rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+        .stats-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.78rem; font-weight: 700; margin-right: 8px; }
+        .stats-row { margin-bottom: 12px; min-height: 24px; }
+        .line-prefix { display: inline-block; width: 12px; margin-right: 6px; font-weight: 700; user-select: none; }
+    </style>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What does the text diff checker compare?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It compares two text blocks line by line and color-codes added, removed, and unchanged lines in a side-by-side view. Paste both versions, see exactly what changed, and copy the diff result. It is built for reviewing config changes, generated code, or API response snapshots."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does the diff algorithm work?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The tool aligns the two texts line by line and marks lines present in one but not the other as additions/removals, with unchanged lines grouped in between. The explanation section covers why line-based diff is the right granularity for configs and code, versus character diff for prose."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is the text diff computed locally?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes — both inputs stay in your browser. That makes it safe to diff internal configs, private code, or anything you would not want to paste into a third-party diff service. No upload, no account, no limits."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+    <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container">
+    <header>
+        <h1>Text <span>Diff Checker</span></h1>
+        <p>Compare two text blocks line by line. See exactly what was added, removed, or left unchanged with instant color-coded results.</p>
+    </header>
+
+    <div class="btn-row">
+        <button class="btn btn-primary" onclick="runTextDiff()">🟢🔍 Compare</button>
+        <button class="btn btn-outline" onclick="swapTextDiff()">🟢🔄 Swap</button>
+        <button class="btn btn-outline" onclick="copyTextDiff()">🟢📋 Copy Diff</button>
+        <button class="btn btn-outline" onclick="clearTextDiff()">🗑 Clear</button>
+    </div>
+
+    <div class="stats-row" id="diff-stats"></div>
+
+    <div class="diff-layout">
+        <div class="diff-panel">
+            <label for="text-a">🟢📥 Original Text</label>
+            <textarea id="text-a" placeholder="Paste original text here..."></textarea>
+        </div>
+        <div class="diff-panel">
+            <label for="text-b">🟢📤 Modified Text</label>
+            <textarea id="text-b" placeholder="Paste modified text here..."></textarea>
+        </div>
+    </div>
+
+    <h3 style="font-weight: 700; font-size: 0.85rem; color: var(--text-body); display: block; margin-bottom: 4px;">🟢📊 Diff Result</h3>
+    <div class="diff-output" id="diff-output"><span style="color:var(--text-muted)">Paste two text blocks and click Compare to see the line-by-line diff...</span></div>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🟢📖 How Text Diff Works</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p>This tool uses a <strong>line-based diff algorithm</strong> to compare two text blocks. It splits each input into lines and computes the longest common subsequence (LCS) to identify:</p>
+            <ul>
+                <li><span class="diff-added" style="display:inline;padding:1px 6px;">Added lines</span> —lines present in the modified text but not in the original.</li>
+                <li><span class="diff-removed" style="display:inline;padding:1px 6px;">Removed lines</span> —lines present in the original but removed in the modified text.</li>
+                <li><span style="color:var(--text-muted)">Unchanged lines</span> —lines identical in both texts.</li>
+            </ul>
+            <p>The algorithm finds the minimal set of additions and removals to transform the original text into the modified text. This is the same fundamental approach used by tools like <code>diff</code> and <code>git diff</code>, simplified for readability.</p>
+            <p>See also: <a href="/json-diff">JSON Diff</a> · <a href="/char-counter">Character Counter</a> · <a href="/json-formatter">JSON Formatter</a></p>
+        </div>
+    </section>
+
+    <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+</div>
+
+<script src="nav.js"></script>
+<script>
+(function() {
+    var inpA = document.getElementById('text-a');
+    var inpB = document.getElementById('text-b');
+    var out = document.getElementById('diff-output');
+    var stats = document.getElementById('diff-stats');
+
+    // Longest Common Subsequence for two arrays
+    function computeLCS(a, b) {
+        var m = a.length;
+        var n = b.length;
+        // Build DP table
+        var dp = [];
+        for (var i = 0; i <= m; i++) {
+            dp[i] = [];
+            for (var j = 0; j <= n; j++) {
+                if (i === 0 || j === 0) {
+                    dp[i][j] = 0;
+                } else if (a[i - 1] === b[j - 1]) {
+                    dp[i][j] = dp[i - 1][j - 1] + 1;
+                } else {
+                    dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                }
+            }
+        }
+        return dp;
+    }
+
+    // Backtrack through DP table to produce diff operations
+    function backtrackDiff(dp, a, b, i, j) {
+        if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+            var result = backtrackDiff(dp, a, b, i - 1, j - 1);
+            result.push({ type: 'unchanged', line: a[i - 1] });
+            return result;
+        }
+        if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+            var result = backtrackDiff(dp, a, b, i, j - 1);
+            result.push({ type: 'added', line: b[j - 1] });
+            return result;
+        }
+        if (i > 0 && (j === 0 || dp[i][j - 1] < dp[i - 1][j])) {
+            var result = backtrackDiff(dp, a, b, i - 1, j);
+            result.push({ type: 'removed', line: a[i - 1] });
+            return result;
+        }
+        return [];
+    }
+
+    function esc(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function runTextDiff() {
+        var rawA = inpA.value;
+        var rawB = inpB.value;
+
+        if (!rawA && !rawB) {
+            out.innerHTML = '<span style="color:var(--text-muted)">Paste two text blocks and click Compare to see the line-by-line diff...</span>';
+            stats.innerHTML = '';
+            return;
+        }
+
+        var linesA = rawA.split('\n');
+        var linesB = rawB.split('\n');
+
+        // Remove trailing empty line from split
+        if (linesA.length > 0 && linesA[linesA.length - 1] === '' && rawA !== '') {
+            // Keep it as a real empty line only if the input ends with newline
+        }
+
+        var dp = computeLCS(linesA, linesB);
+        var diff = backtrackDiff(dp, linesA, linesB, linesA.length, linesB.length);
+
+        var addedCount = 0;
+        var removedCount = 0;
+        var unchangedCount = 0;
+
+        for (var k = 0; k < diff.length; k++) {
+            if (diff[k].type === 'added') addedCount++;
+            else if (diff[k].type === 'removed') removedCount++;
+            else unchangedCount++;
+        }
+
+        stats.innerHTML =
+            '<span class="stats-badge" style="background:#d4edda;color:#155724;">+' + addedCount + ' added</span>' +
+            '<span class="stats-badge" style="background:#f8d7da;color:#721c24;">-' + removedCount + ' removed</span>' +
+            '<span class="stats-badge" style="background:var(--border);color:var(--text-body);">=' + unchangedCount + ' unchanged</span>';
+
+        if (diff.length === 0) {
+            out.innerHTML = '<span style="color:var(--text-muted)">Both texts are empty.</span>';
+            return;
+        }
+
+        if (addedCount === 0 && removedCount === 0) {
+            out.innerHTML = '<span style="color:var(--success);font-weight:700;">✕?Identical! No differences found.</span>';
+            return;
+        }
+
+        var html = '';
+        for (var k = 0; k < diff.length; k++) {
+            var d = diff[k];
+            var prefix = '';
+            var cls = '';
+            if (d.type === 'added') {
+                prefix = '+';
+                cls = 'diff-added';
+            } else if (d.type === 'removed') {
+                prefix = '-';
+                cls = 'diff-removed';
+            } else {
+                prefix = ' ';
+                cls = 'diff-unchanged';
+            }
+            html += '<span class="diff-line ' + cls + '"><span class="line-prefix">' + prefix + '</span>' + esc(d.line) + '</span>\n';
+        }
+
+        out.innerHTML = html;
+    }
+
+    window.runTextDiff = runTextDiff;
+
+    window.swapTextDiff = function() {
+        var tmp = inpA.value;
+        inpA.value = inpB.value;
+        inpB.value = tmp;
+        runTextDiff();
+    };
+
+    window.copyTextDiff = function() {
+        // Copy plain-text diff
+        var rawA = inpA.value;
+        var rawB = inpB.value;
+        var linesA = rawA.split('\n');
+        var linesB = rawB.split('\n');
+        var dp = computeLCS(linesA, linesB);
+        var diff = backtrackDiff(dp, linesA, linesB, linesA.length, linesB.length);
+
+        var text = '';
+        for (var k = 0; k < diff.length; k++) {
+            var d = diff[k];
+            if (d.type === 'added') text += '+ ' + d.line + '\n';
+            else if (d.type === 'removed') text += '- ' + d.line + '\n';
+            else text += '  ' + d.line + '\n';
+        }
+
+        if (text) {
+            navigator.clipboard.writeText(text).then(function() {
+                var btn = document.querySelector('.btn-outline');
+                // Actually find the copy button
+                var btns = document.querySelectorAll('.btn-outline');
+                for (var b = 0; b < btns.length; b++) {
+                    if (btns[b].textContent.indexOf('Copy') !== -1) {
+                        var orig = btns[b].textContent;
+                        btns[b].textContent = '✕?Copied!';
+                        setTimeout(function() { btns[b].textContent = orig; }, 1500);
+                        break;
+                    }
+                }
+            });
+        }
+    };
+
+    window.clearTextDiff = function() {
+        inpA.value = '';
+        inpB.value = '';
+        out.innerHTML = '<span style="color:var(--text-muted)">Paste two text blocks and click Compare to see the line-by-line diff...</span>';
+        stats.innerHTML = '';
+    };
+
+    // Pre-loaded sample and auto-run
+    inpA.value = 'function greet(name) {\n  return "Hello, " + name;\n}\n\nfunction add(a, b) {\n  return a + b;\n}\n\nvar colors = ["red", "green", "blue"];\n\n// Old API endpoint\nvar API_URL = "https://api.example.com/v1";';
+    inpB.value = 'function greet(name) {\n  return "Hello, " + name + "!";\n}\n\nfunction add(a, b) {\n  return a + b;\n}\n\nfunction multiply(a, b) {\n  return a * b;\n}\n\nvar colors = ["red", "green", "blue", "yellow"];\n\n// New API endpoint\nvar API_URL = "https://api.example.com/v2";';
+    runTextDiff();
+})();
+</script>
+</body>
+</html>

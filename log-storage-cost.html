@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Log Storage &amp; Retention Cost Estimator — ELK / Loki / Datadog / Splunk TCO — jslet</title>
+    <meta name="description" content="500 GB/day logs, 30-day retention = 15 TB. SaaS SIEM: $30K/month. Self-hosted Loki+S3: $1.5K/month. Order of magnitude difference. Model log rate, retention, compression, and 1/3/5-year TCO.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .strategy-card {
+            border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 24px;
+            margin-bottom: 14px; background: var(--bg-card); transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .strategy-card:hover { border-color: rgba(37,99,235,0.4); box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+        .strategy-card.best { border-color: var(--success); border-width: 2px; background: var(--success-bg); }
+        .strategy-card h4 { font-size: 1rem; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+        .cost-breakdown { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px; font-size: 0.82rem; }
+        @media (max-width: 500px) { .cost-breakdown { grid-template-columns: 1fr; } }
+        .cost-item { text-align: center; padding: 10px; background: var(--bg-input); border-radius: var(--radius-sm); }
+        .cost-item .val { font-size: 1.1rem; font-weight: 700; color: var(--text-heading); }
+        .cost-item .lbl { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
+        .bar-chart { display: flex; gap: 8px; align-items: flex-end; height: 180px; margin-top: 16px; padding-top: 8px; border-top: 1px solid var(--border); }
+        .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+        .bar-fill { width: 100%; max-width: 80px; border-radius: 4px 4px 0 0; transition: height 0.5s ease; min-height: 4px; }
+        .bar-fill.self { background: var(--accent); }
+        .bar-fill.saas { background: var(--gold); }
+        .bar-label { font-size: 0.68rem; color: var(--text-secondary); text-align: center; font-weight: 600; }
+        .bar-value { font-size: 0.72rem; color: var(--text-heading); font-weight: 700; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .volume-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+        @media (max-width: 600px) { .volume-summary { grid-template-columns: 1fr 1fr; } }
+        .volume-tile { text-align: center; padding: 14px 10px; background: var(--bg-input); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+        .volume-tile .big { font-size: 1.3rem; font-weight: 700; color: var(--accent); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .volume-tile .tag { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 2px; }
+        .tier-badge {
+            display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 3px; margin-right: 4px;
+        }
+        .tier-self { background: var(--accent-soft); color: var(--accent); }
+        .tier-saas { background: var(--gold-soft); color: var(--gold); }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Log Storage Cost",
+      "description": "Calculate total log storage costs and compare self-built ELK/Loki vs SaaS (Datadog, Splunk, Grafana Cloud). Model log rate, retention, compression, and replication to project 1/3/5-year TCO across sto",
+      "url": "https://www.jslet.com/log-storage-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <link rel="canonical" href="https://www.jslet.com/log-storage-cost">
+    <meta property="og:title" content="Log Storage &amp; Retention Cost Estimator — ELK / Loki / Datadog / Splunk TCO — jslet">
+    <meta property="og:description" content="Calculate total log storage costs and compare self-built ELK/Loki vs SaaS (Datadog, Splunk, Grafana Cloud). Model log rate, retention, compression, and replication to project 1/3/5-year TCO across storage tiers.">
+    <meta property="og:url" content="https://www.jslet.com/log-storage-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Log Storage &amp; Retention Cost Estimator — ELK / Loki / Datadog / Splunk TCO — jslet">
+    <meta name="twitter:description" content="Calculate total log storage costs and compare self-built ELK/Loki vs SaaS (Datadog, Splunk, Grafana Cloud). Model log rate, retention, compression, and replication to project 1/3/5-year TCO across sto">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why does log retention cost spiral out of control?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Log volume compounds: 500 GB/day with 30-day retention is 15 TB stored — before compression and replication. SaaS SIEM pricing can hit $30K/month for that volume, while self-hosted Loki + S3 runs ~$1.5K/month. The calculator models ingestion rate, retention, compression, and replication across 1/3/5-year TCO so the spike is predictable."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the real trade-off between self-managed and SaaS logging?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "SaaS SIEMs charge per GB ingested and per user, with retention tiers that escalate; self-hosted (Loki, Elasticsearch, ClickHouse) trades engineering time for a fraction of the cost and full control. The calculator shows both paths with your volume, so the decision is a TCO comparison rather than a features argument."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much does compression reduce log storage?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Typical log text compresses 5-10×, which is why columnar/compressed storage wins: a 500 GB/day raw stream becomes ~60-100 GB stored. The calculator applies a configurable compression ratio to your ingestion rate, showing the stored volume and the cost difference that compression alone creates."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>Log Storage <span>&amp; Retention TCO</span></h1>
+            <p>500 GB/day logs, 30-day retention = 15 TB stored. SaaS SIEM pricing: $30K/month. Self-hosted Loki + S3: $1.5K/month. That is a 20× difference — an order of magnitude. Model your log rate, retention, compression, and replication to project 1/3/5-year TCO across self-managed (ELK, Loki) and SaaS (Datadog, Splunk, Grafana Cloud).</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Log Ingestion Profile</h3>
+                <p class="card-desc">Set log rate (events/sec), avg event size, retention days, replication factor, and compression ratio. The engine computes daily ingest volume, total stored TB, and 1/3/5-year TCO across self-managed and SaaS stacks.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="log-rate">Log Rate (events / second)</label>
+                        <input type="number" class="unit-input" id="log-rate" value="10000" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="log-size">Average Log Size (bytes per event)</label>
+                        <input type="number" class="unit-input" id="log-size" value="512" step="any" min="1">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="retention-days">Retention Period (days)</label>
+                        <input type="number" class="unit-input" id="retention-days" value="30" step="1" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="replicas">Replication Factor</label>
+                        <select class="unit-input" id="replicas">
+                            <option value="1" selected>1× (No replication — dev / staging)</option>
+                            <option value="2">2× (Standard production redundancy)</option>
+                            <option value="3">3× (High durability — compliance)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="compression">Compression Ratio</label>
+                        <select class="unit-input" id="compression">
+                            <option value="6">~6:1 (Typical gzip / LZ4 on text logs)</option>
+                            <option value="10" selected>~10:1 (zstd / Brotli — structured JSON)</option>
+                            <option value="15">~15:1 (Dedupe + compression — ELK/Loki tuned)</option>
+                            <option value="3">~3:1 (Minimal — binary / already-compressed)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="storage-tier">Storage Tier</label>
+                        <select class="unit-input" id="storage-tier">
+                            <option value="ssd">SSD / NVMe (Hot tier — fast queries)</option>
+                            <option value="hdd">HDD (Warm tier — balanced)</option>
+                            <option value="object" selected>Object Storage (Cold tier — S3 / GCS / Blob)</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Run TCO Comparison</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Volume Summary</h3>
+                <div class="volume-summary" id="volume-summary"></div>
+                <h3 style="margin-top: 24px;">💰 Solution TCO Comparison</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div id="strategy-results"></div>
+                <div style="margin-top:20px;" id="bar-viz"></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>Log Storage Economics: Why Retention Costs Spiral</h2>
+            <p>Observability data — logs, metrics, and traces — is now the <strong>fastest-growing storage category</strong> in most cloud infrastructures. A mid-size SaaS platform generating 10,000 log events per second at 512 bytes each produces <strong>~442 GB of raw logs per day</strong>. Over a 30-day retention window, that's 13 TB of data <em>before compression and replication</em>. The decisions you make about retention, compression, and storage tier directly translate to thousands of dollars per month in infrastructure spend.</p>
+            <h3>Self-Managed vs. SaaS: The Real Trade-Off</h3>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Solution</th><th>Ingest Cost Model</th><th>Storage Cost Model</th><th>Operational Overhead</th><th>Best For</th></tr></thead>
+                <tbody>
+                    <tr><td>Self-Built ELK (Elasticsearch)</td><td>Compute nodes (~$300/node/mo)</td><td>SSD/HDD (~$0.03–0.10/GB/mo)</td><td>High — cluster tuning, shard management, upgrades</td><td>Teams with dedicated infra engineers; predictable workloads</td></tr>
+                    <tr><td>Self-Built Loki + Grafana</td><td>Compute (~$200/node/mo)</td><td>Object storage (~$0.02/GB/mo)</td><td>Medium — simpler than ELK, no index management</td><td>Kubernetes-native stacks; cost-sensitive teams</td></tr>
+                    <tr><td>Datadog Log Management</td><td>~$0.10/GB ingested</td><td>Included retention (7–30d); extended retention extra</td><td>Low — fully managed</td><td>Teams that value turnkey UX and unified observability</td></tr>
+                    <tr><td>Splunk Cloud</td><td>~$2.50/GB indexed volume</td><td>Bundled with ingest; archive to S3 extra</td><td>Low — fully managed</td><td>Security/SIEM use cases; enterprises with existing Splunk investment</td></tr>
+                    <tr><td>Grafana Cloud Logs</td><td>~$0.50/GB ingested</td><td>Included retention (13–30d); custom retention available</td><td>Low — managed Loki under the hood</td><td>Teams already in the Grafana ecosystem; balanced cost/features</td></tr>
+                </tbody>
+            </table>
+</div>
+            <h3>Compression: The Hidden Multiplier</h3>
+            <p>Text logs are highly compressible. A typical JSON-structured log line compresses at <strong>8–12:1</strong> with modern algorithms (zstd, Brotli). That means your 13 TB of raw logs becomes ~1.3 TB on disk. But not all solutions leverage compression equally — self-managed stacks let you control compression settings; SaaS vendors often charge by <em>uncompressed</em> ingested volume, which can swing costs by an order of magnitude.</p>
+            <h3>Replication: Durability Has a Price</h3>
+            <p>Running 3× replication for production-grade durability triples your storage footprint. For compliance use cases (SOC 2, HIPAA) where logs must survive a two-node failure, replication is non-negotiable. But for dev/staging environments, 1× (no replication) or relying on cloud object storage durability (11 9's for S3) can cut storage costs by 50–66%.</p>
+            <p style="margin-top:16px;"><strong>Why this tool matters:</strong> Every observability vendor publishes a pricing page, but none let you compare across self-built and SaaS solutions with your actual workload parameters. This estimator models the full TCO — compute, storage, and operational overhead — so you can make a defensible build-vs-buy decision.</p>
+        </section>
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/observability-cost-real">📰 The Observability Tax (Full Briefing) →</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/backup-cost">Backup Strategy Cost &rarr;</a>
+            </div>
+        </div>
+
+
+                <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Storage cost per GB per month by tier ──
+    var STORAGE_COST = {
+        'ssd': 0.10,    // $/GB/mo — enterprise SSD / NVMe
+        'hdd': 0.03,    // $/GB/mo — spinning disk
+        'object': 0.02  // $/GB/mo — S3 Standard / GCS Standard / Blob Hot
+    };
+
+    // ── Compute node models (monthly) ──
+    var COMPUTE_UNIT = {
+        'elk': { costPerNode: 300, nodesPer50GB: 1, label: 'ELK Data Node (r6g.xlarge equiv)' },
+        'loki': { costPerNode: 200, nodesPer100GB: 1, label: 'Loki Ingester + Querier (c6g.xlarge equiv)' }
+    };
+
+    // ── SaaS pricing models (per GB ingested, approximate) ──
+    var SAAS_PRICING = {
+        'datadog': { ingestPerGB: 0.10, retentionIncludedDays: 15, extraRetentionPerGB: 1.70, label: 'Datadog Log Management' },
+        'splunk': { ingestPerGB: 2.50, retentionIncludedDays: 90, extraRetentionPerGB: 0.02, label: 'Splunk Cloud (indexed volume)' },
+        'grafana': { ingestPerGB: 0.50, retentionIncludedDays: 13, extraRetentionPerGB: 0.50, label: 'Grafana Cloud Logs' }
+    };
+
+    function computeLogCost() {
+        var logRate = parseFloat(document.getElementById('log-rate').value) || 0;
+        var logSize = parseFloat(document.getElementById('log-size').value) || 0;
+        var retentionDays = parseInt(document.getElementById('retention-days').value) || 0;
+        var replicas = parseInt(document.getElementById('replicas').value);
+        var compressionRatio = parseFloat(document.getElementById('compression').value);
+        var storageTier = document.getElementById('storage-tier').value;
+
+        // Daily raw volume (GB)
+        var secondsPerDay = 86400;
+        var dailyRawGB = (logRate * logSize * secondsPerDay) / (1024 * 1024 * 1024);
+        var dailyCompressedGB = dailyRawGB / compressionRatio;
+
+        // Total stored footprint (GB)
+        var totalStoredGB = dailyCompressedGB * retentionDays * replicas;
+
+        // Storage cost per GB/mo
+        var storageCostPerGB = STORAGE_COST[storageTier] || STORAGE_COST['object'];
+
+        // Self-built ELK
+        var elkNodes = Math.max(1, Math.ceil(dailyRawGB / 50)); // 1 node per ~50 GB/day raw ingest
+        var elkComputeMonthly = elkNodes * COMPUTE_UNIT.elk.costPerNode;
+        var elkStorageMonthly = totalStoredGB * storageCostPerGB;
+        var elkOpsOverhead = elkComputeMonthly * 0.3; // ~30% ops overhead
+        var elkTotalMonthly = elkComputeMonthly + elkStorageMonthly + elkOpsOverhead;
+
+        // Self-built Loki
+        var lokiNodes = Math.max(1, Math.ceil(dailyRawGB / 100)); // 1 node per ~100 GB/day raw ingest
+        var lokiComputeMonthly = lokiNodes * COMPUTE_UNIT.loki.costPerNode;
+        var lokiStorageMonthly = totalStoredGB * STORAGE_COST['object']; // Loki always targets object storage
+        var lokiOpsOverhead = lokiComputeMonthly * 0.2;
+        var lokiTotalMonthly = lokiComputeMonthly + lokiStorageMonthly + lokiOpsOverhead;
+
+        // SaaS solutions
+        function saasCost(pricing) {
+            var ingestMonthly = dailyRawGB * 30 * pricing.ingestPerGB;
+            var retentionCost = 0;
+            if (retentionDays > pricing.retentionIncludedDays) {
+                var extraDays = retentionDays - pricing.retentionIncludedDays;
+                var storedBeyondIncluded = dailyCompressedGB * extraDays * replicas;
+                retentionCost = storedBeyondIncluded * pricing.extraRetentionPerGB;
+            }
+            return ingestMonthly + retentionCost;
+        }
+
+        var datadogMonthly = saasCost(SAAS_PRICING.datadog);
+        var splunkMonthly = saasCost(SAAS_PRICING.splunk);
+        var grafanaMonthly = saasCost(SAAS_PRICING.grafana);
+
+        // Solutions array
+        var solutions = [
+            {
+                name: 'Self-Built ELK (Elasticsearch)',
+                desc: `${elkNodes}× data node(s) + ${storageTier.toUpperCase()} storage. Elastic Stack self-managed.`,
+                tier: 'self',
+                monthlyTotal: elkTotalMonthly,
+                breakdown: { compute: elkComputeMonthly, storage: elkStorageMonthly, ops: elkOpsOverhead }
+            },
+            {
+                name: 'Self-Built Loki + Grafana',
+                desc: `${lokiNodes}× ingester/querier node(s) + Object Storage backend. Grafana Loki self-managed.`,
+                tier: 'self',
+                monthlyTotal: lokiTotalMonthly,
+                breakdown: { compute: lokiComputeMonthly, storage: lokiStorageMonthly, ops: lokiOpsOverhead }
+            },
+            {
+                name: 'Datadog Log Management',
+                desc: `Fully managed. ${SAAS_PRICING.datadog.retentionIncludedDays}d retention included; $${SAAS_PRICING.datadog.ingestPerGB}/GB ingested.`,
+                tier: 'saas',
+                monthlyTotal: datadogMonthly,
+                breakdown: { ingest: datadogMonthly, storage: 0, ops: 0 }
+            },
+            {
+                name: 'Splunk Cloud',
+                desc: `Fully managed. Indexed volume pricing. ${SAAS_PRICING.splunk.retentionIncludedDays}d retention included.`,
+                tier: 'saas',
+                monthlyTotal: splunkMonthly,
+                breakdown: { ingest: splunkMonthly, storage: 0, ops: 0 }
+            },
+            {
+                name: 'Grafana Cloud Logs',
+                desc: `Managed Loki. ${SAAS_PRICING.grafana.retentionIncludedDays}d retention included; $${SAAS_PRICING.grafana.ingestPerGB}/GB ingested.`,
+                tier: 'saas',
+                monthlyTotal: grafanaMonthly,
+                breakdown: { ingest: grafanaMonthly, storage: 0, ops: 0 }
+            }
+        ];
+
+        // Find best (lowest 3yr TCO)
+        var bestSolution = solutions.reduce((best, s) =>
+            s.monthlyTotal < best.monthlyTotal ? s : best
+        , solutions[0]);
+
+        // Volume summary
+        document.getElementById('volume-summary').innerHTML = `
+            <div class="volume-tile">
+                <div class="big">${dailyRawGB.toFixed(1)}</div>
+                <div class="tag">GB/Day Raw</div>
+            </div>
+            <div class="volume-tile">
+                <div class="big">${dailyCompressedGB.toFixed(1)}</div>
+                <div class="tag">GB/Day Compressed</div>
+            </div>
+            <div class="volume-tile">
+                <div class="big">${(dailyCompressedGB * 30).toFixed(1)}</div>
+                <div class="tag">GB/Month Stored</div>
+            </div>
+            <div class="volume-tile">
+                <div class="big">${totalStoredGB >= 1024 ? (totalStoredGB/1024).toFixed(1) + ' TB' : totalStoredGB.toFixed(0) + ' GB'}</div>
+                <div class="tag">Total Footprint</div>
+            </div>
+        `;
+
+        document.getElementById('results-params').innerText =
+            `${logRate.toLocaleString()} events/s · ${logSize} B/event · ${retentionDays}d retention · ${replicas}× replication · ${compressionRatio}:1 compression · ${storageTier.toUpperCase()} tier`;
+
+        // Strategy cards
+        var stratDiv = document.getElementById('strategy-results');
+        stratDiv.innerHTML = solutions.map(s => {
+            var isBest = s === bestSolution;
+            var yr3 = s.monthlyTotal * 36;
+            var yr5 = s.monthlyTotal * 60;
+            return `<div class="strategy-card${isBest ? ' best' : ''}">
+                <h4>
+                    ${isBest ? '🏆 ' : ''}${s.name} ${isBest ? '— Lowest 3-Year TCO' : ''}
+                    <span class="tier-badge tier-${s.tier}">${s.tier === 'self' ? 'Self-Managed' : 'SaaS'}</span>
+                </h4>
+                <p style="font-size:0.85rem;color:var(--text-secondary);">${s.desc}</p>
+                <div class="cost-breakdown">
+                    <div class="cost-item">
+                        <div class="val">$${s.monthlyTotal.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+                        <div class="lbl">Monthly Total</div>
+                    </div>
+                    <div class="cost-item">
+                        <div class="val">$${(s.monthlyTotal * 12).toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+                        <div class="lbl">Annual</div>
+                    </div>
+                    <div class="cost-item">
+                        <div class="val">$${yr3.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+                        <div class="lbl">3-Year TCO</div>
+                    </div>
+                </div>
+                ${s.breakdown.compute ? `<p style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">Compute: $${s.breakdown.compute.toFixed(0)}/mo · Storage: $${s.breakdown.storage.toFixed(0)}/mo · Ops: $${s.breakdown.ops.toFixed(0)}/mo</p>` : `<p style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">Ingest: $${s.breakdown.ingest.toFixed(0)}/mo (fully managed)</p>`}
+                <p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;">5-Year Cumulative: $${yr5.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})}</p>
+            </div>`;
+        }).join('');
+
+        // Bar chart visualization
+        var maxCost = Math.max(...solutions.map(s => s.monthlyTotal), 1);
+        var barDiv = document.getElementById('bar-viz');
+        barDiv.innerHTML = `
+            <h4 style="margin-bottom:8px;">📊 Monthly Cost Comparison (USD)</h4>
+            <div class="bar-chart">
+                ${solutions.map(s => {
+                    var heightPct = (s.monthlyTotal / maxCost) * 100;
+                    return `<div class="bar-col">
+                        <div class="bar-value">$${s.monthlyTotal.toLocaleString(undefined, {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+                        <div class="bar-fill ${s.tier}" style="height:${Math.max(heightPct, 2)}%;"></div>
+                        <div class="bar-label">${s.name.split(' ').slice(0, 2).join('<br>')}</div>
+                    </div>`;
+                }).join('')}
+            </div>
+        `;
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { computeLogCost(); });
+    document.querySelector('.btn-calc').addEventListener('click', computeLogCost);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

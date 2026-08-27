@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>GPU Training Costs: The arXiv-to-Bill Gap — What Cloud GPU Pricing Pages Don't Tell You (2026) — jslet</title>
+    <meta name="description" content="The paper says 72 GPU-hours on 8×A100. Your cloud bill says 90. Spot preemption, checkpoint I/O, Xid errors — the gap between methodology-section math and actual invoices is 20–50%. We modeled the full cost of training a 70B model across 6 providers, factoring in utilization, egress, storage, and the failure modes that pricing calculators ignore.">
+    <meta property="og:title" content="GPU Training Costs: The arXiv-to-Bill Gap">
+    <meta property="og:description" content="The paper says 72 GPU-hours on 8×A100. Real cost is 20–50% higher. Full analysis across 6 providers with spot preemption risk, checkpoint overhead, and the failure modes nobody budgets for.">
+    <meta property="og:url" content="https://www.jslet.com/gpu-training-cost-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-06-27T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-06-27T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="GPU Training Costs: The arXiv-to-Bill Gap">
+    <meta name="twitter:description" content="The paper says 72 GPU-hours on 8×A100. Real cost: 20–50% more. Spot preemption, Xid errors, checkpoint I/O — the gap is structural, not incidental.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/gpu-training-cost-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "GPU Training Costs: The arXiv-to-Bill Gap — What Cloud GPU Pricing Pages Don't Tell You (2026)",
+      "description": "The paper says 72 GPU-hours on 8×A100. Your cloud bill says 90. Spot preemption, checkpoint I/O, Xid errors — the gap between methodology-section math and actual invoices is 20–50%. Full cost analysis across 6 providers for real training workloads.",
+      "url": "https://www.jslet.com/gpu-training-cost-real",
+      "datePublished": "2026-06-27T00:00:00+00:00",
+      "dateModified": "2026-06-27T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How much does it actually cost to train a 70B parameter LLM?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A 70B model like Llama-3 trained from scratch on 15T tokens with 8×H100 requires roughly 3,842 H100-hours. At on-demand pricing ($2.49–5.10/hr depending on provider), the compute subtotal is $9,568–19,594. But the real number — including checkpoint storage, network egress, hyperparameter sweeps (3× multiplier), failed runs (15% overhead), and GPU utilization losses (85% is typical) — lands between $17,000 and $43,000. The spread between Lambda Labs on-demand ($17K) and AWS on-demand ($38K) is over 2× for identical hardware. Using spot instances where available can cut this to $7,000–11,000, but requires checkpoint-resumable training loops. Fine-tuning the same model (not training from scratch) costs $200–800 per run on 8×A100."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why is there a gap between paper GPU-hours and actual cloud bills?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The gap has five structural causes. (1) Utilization loss: even GPU-bound training rarely exceeds 85% utilization due to checkpoint I/O, data loading stalls, and NCCL communication overhead — a 15% hit. (2) Failed runs: Xid errors, NCCL timeouts, and OOM kills consume 10–20% of total GPU-hours in a typical research environment. (3) Hyperparameter sweeps: the paper reports the best run; the team ran 3–10× more GPU-hours to find those hyperparameters. (4) Checkpoint storage: hourly snapshots of a 70B model in FP16 consume ~140 GB each; over a multi-day run with retention, storage costs add 5–10% on top of compute. (5) Idle GPU time: spot instance reclaims, debugging sessions, and waiting for data preprocessing all burn billable hours without advancing training. Combined, these factors inflate the paper's reported GPU-hours by 20–50% for an experienced team and 2–3× for a team doing this for the first time."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which cloud provider is cheapest for GPU training?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Vast.ai consistently offers the lowest on-demand pricing — $0.95/hr for A100-80GB, $1.80/hr for H100 — but with a caveat: they are a marketplace of individual GPU providers, not a managed cloud. Instance availability fluctuates, network quality varies between hosts, and support is community-driven. Lambda Labs ($1.29/hr A100-80GB, $2.49/hr H100) is the pragmatic default for teams that want predictable pricing without the variability of a marketplace. Their Instances boot fast, the InfiniBand interconnect is consistent, and the pricing is transparent in a way AWS/GCP/Azure GPU pricing is not. RunPod ($1.49/hr A100-80GB, $2.69/hr H100) splits the difference between Lambda and Vast.ai — better availability than Vast, more flexible instance types than Lambda, serverless GPU inference as a bonus. For the hyperscalers (AWS/GCP/Azure at $2.75–5.10/hr for H100), the value proposition is not cost — it's the ecosystem. If your training data already lives in S3 and your team uses SageMaker, the AWS GPU premium is the price of not re-architecting your data pipeline."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Should I use spot instances for GPU training?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Spot/preemptible instances cost 50–70% less than on-demand, which for a $10,000 training run is the difference between $10K and $3–4K. But the decision hinges entirely on your training infrastructure. If your training loop supports resumable checkpoints that save to object storage (S3/GCS) every N steps — and you've tested the resume path, not just the save path — spot is the correct economic choice for any run longer than 4 hours. If your training script restarts from step 0 when interrupted, spot will cost you more than on-demand because every preemption wastes all progress. The preemption frequency varies by provider and GPU type: H100 spots on AWS are reclaimed roughly every 6–12 hours on average, A100 spots on GCP can last 24+ hours, and Lambda Labs' equivalent of spot (they call it 'market-rate') has much lower preemption rates because they don't oversubscribe their clusters. For multi-node distributed training, the calculus changes — a single-node preemption kills the entire NCCL communicator. Multi-node spot training is viable only with Elastic PyTorch or similar frameworks that can dynamically resize the training topology."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much GPU memory do I need for training vs fine-tuning?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Full training (all parameters, gradients, optimizer states in FP32/FP16 mixed precision) requires roughly 6× the model's parameter count in VRAM: 2 bytes per parameter for FP16 weights, 2 bytes for gradients, and 8 bytes for Adam optimizer states (FP32 momentum + variance). A 70B model needs ~420 GB of VRAM, which means at least 6×A100-80GB or 5×H100-80GB with ZeRO-3 sharding. LoRA fine-tuning reduces this drastically — only the low-rank adapter matrices and their optimizer states live in VRAM, plus the frozen base model in FP16. A 70B model can be LoRA fine-tuned on a single A100-80GB with careful batch sizing. QLoRA (4-bit frozen model + FP16 adapters) brings this down to a single RTX 4090 (24 GB). The tradeoff: QLoRA training is roughly 30% slower per step than full FP16 fine-tuning due to quantization/dequantization overhead, but the hardware cost difference can be 10×. Use our VRAM estimators to model your specific configuration: FP16 and INT4."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>GPU Training <span>Costs</span></h1>
+            <p>The arXiv-to-bill gap: what cloud GPU pricing pages don't tell you about actual training economics.</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-06-27 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 16 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <!-- ═══ Table of Contents ═══ -->
+        <nav class="toc" aria-label="Table of Contents" style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:20px 24px; margin-bottom:24px;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+            <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+                <li><a href="#paper-vs-invoice" style="color:var(--accent); text-decoration:none;">The Paper vs. The Invoice</a></li>
+                <li><a href="#provider-pricing" style="color:var(--accent); text-decoration:none;">Provider Pricing: Raw Numbers</a></li>
+                <li><a href="#five-leaks" style="color:var(--accent); text-decoration:none;">The Five Leaks (Why GPU-Hours Drift)</a></li>
+                <li><a href="#spot-question" style="color:var(--accent); text-decoration:none;">The Spot Question</a></li>
+                <li><a href="#real-workloads" style="color:var(--accent); text-decoration:none;">Real Workload Cost Models</a></li>
+                <li><a href="#vram-ceiling" style="color:var(--accent); text-decoration:none;">VRAM: The Hard Ceiling</a></li>
+                <li><a href="#budget-recipe" style="color:var(--accent); text-decoration:none;">The Napkin Math Budget Recipe</a></li>
+                <li><a href="#faq" style="color:var(--accent); text-decoration:none;">FAQ</a></li>
+            </ol>
+        </nav>
+
+        <section class="seo-section">
+            <h2 id="paper-vs-invoice">The Number on the Paper Isn't the Number on Your Invoice</h2>
+            <p>Every ML paper published on arXiv in the last two years has a methodology section that reads something like this: <em>"We trained on 8×A100-80GB for 72 hours using PyTorch FSDP with mixed precision."</em></p>
+
+            <p>Multiply it out: 8 × 72 = 576 GPU-hours. Lambda Labs lists A100-80GB at $1.29/hr on-demand. 576 × $1.29 = $743. Seems reasonable. The grant proposal writes itself.</p>
+
+            <p>Then the invoices arrive and it's $2,100. Not because anyone lied — $743 is right there on the pricing page — but because a training run is not a car on a highway traveling at a constant speed. It's a machine with moving parts that break, and every time something breaks, the GPU clock keeps ticking. A training run at scale has more in common with operating a chemical plant than renting a server: uptime is a percentage, not an assumption, and the cost of downtime is billed by the minute.</p>
+
+            <p>This article is about the gap. The things that happen between "we rented 8 GPUs" and "the model converged" that nobody budgets for, because nobody wrote them down. I built a <a href="/gpu-training-cost">GPU training cost estimator</a> to model this stuff because I got tired of explaining it from scratch every time a friend emailed me "how much should I budget for this run?" — and I want the numbers here to hold up when your CFO asks the same question.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="provider-pricing">Provider Pricing: The Raw Numbers</h2>
+            <p>First, the baseline. Here is what public cloud GPU pricing looks like right now, on-demand, for the two GPUs that matter for most training workloads. These are list prices — enterprise commits and long-term reservations can reduce them, but for independent teams, this is what you'll actually pay.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Provider</th><th style="text-align:right;padding:6px 10px;">A100-80GB ($/hr)</th><th style="text-align:right;padding:6px 10px;">H100-80GB ($/hr)</th><th style="text-align:left;padding:6px 10px;">Notes</th></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Vast.ai</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$0.95</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$1.80</strong></td><td style="padding:6px 10px;font-size:0.8rem;">Peer-to-peer GPU marketplace. Prices fluctuate by host. Network quality varies — fine for single-node, risky for multi-node NCCL.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Lambda Labs</strong></td><td style="text-align:right;padding:6px 10px;">$1.29</td><td style="text-align:right;padding:6px 10px;">$2.49</td><td style="padding:6px 10px;font-size:0.8rem;">Reservation-free cloud. InfiniBand fabric between nodes. Predictable pricing — the default for independent teams.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>RunPod</strong></td><td style="text-align:right;padding:6px 10px;">$1.49</td><td style="text-align:right;padding:6px 10px;">$2.69</td><td style="padding:6px 10px;font-size:0.8rem;">Secure + community cloud. Serverless GPU inference also available. Good instance type variety.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>GCP</strong></td><td style="text-align:right;padding:6px 10px;">$2.75</td><td style="text-align:right;padding:6px 10px;">$4.50</td><td style="padding:6px 10px;font-size:0.8rem;">Strong TPU alternative for JAX workloads. Committed use discounts available.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>AWS</strong></td><td style="text-align:right;padding:6px 10px;">$3.06</td><td style="text-align:right;padding:6px 10px;">$4.96</td><td style="padding:6px 10px;font-size:0.8rem;">Ecosystem breadth if data lives in S3. SageMaker managed training adds service fees on top.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Azure</strong></td><td style="text-align:right;padding:6px 10px;">$3.20</td><td style="text-align:right;padding:6px 10px;">$5.10</td><td style="padding:6px 10px;font-size:0.8rem;">Deep integration with OpenAI/Cohere APIs. ND-series VMs include InfiniBand.</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">Sources: Provider pricing pages and community benchmarks, June 2026. Vast.ai prices are spot-market averages. Lambda Labs, RunPod, and Vast.ai pricing is significantly more transparent than hyperscaler GPU pricing, which often requires contacting sales for committed-use discounts.</p>
+
+            <p>At first glance, the spread is straightforward: Vast.ai is cheapest, Lambda is the best value for reliability, the hyperscalers charge a premium that ranges from 2× (GCP) to 5× (Azure H100) over the market rate. If this were the whole story, the decision would take 30 seconds. It isn't.</p>
+
+            <p>These rates are for <em>compute only</em>. No storage. No network egress. No checkpoint retention. No data preprocessing instances. Just the GPU sitting in a server with its fans on. To get from a per-hour rate to an actual training budget, you need to model everything around the GPU.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="five-leaks">The Five Leaks: Why Real GPU-Hours Always Exceed Paper GPU-Hours</h2>
+            <p>I've talked to enough ML teams to notice a pattern: when you ask them to estimate their actual GPU spend for a training run, they take the paper's number and add 30–50%. No spreadsheet. No formal model. Just scar tissue.</p>
+
+            <p>The gap comes from five structural sources. Each one is individually modest. Together, they turn "576 GPU-hours" into 900–1,200.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">1. GPU Utilization: No One Gets 100%</h3>
+            <p>A GPU at 100% utilization means every Streaming Multiprocessor is occupied every clock cycle — compute-bound, no idle bubbles, no memory stalls. Real training never hits this. The best-case scenario for an optimized training loop with large matrix multiplications and high arithmetic intensity (a 70B model with batch size 4M tokens on H100) is about <strong>85% utilization</strong>. The remaining 15% goes to checkpoint writes to disk, NCCL all-reduce communication between gradient accumulation steps, data loading from network-attached storage, and the brief moments when the CPU is preparing the next batch and the GPU is waiting.</p>
+
+            <p>For I/O-bound workloads — training on data stored in S3, or working with image/video datasets where decoding is a non-trivial cost — utilization drops to <strong>60–70%</strong>. For debugging runs with small batch sizes (which under-utilize the GPU's parallelism), you'll see 40–50%.</p>
+
+            <p>This means 576 paper GPU-hours at 85% utilization = <strong>678 billed GPU-hours</strong>. You paid for 102 hours of idle GPU time that the paper never mentioned. Our <a href="/gpu-training-cost">GPU training cost estimator</a> includes a utilization slider that models this directly — set it to 70% for an I/O-heavy pipeline and watch the total jump 40%.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">2. Xid Errors, NCCL Timeouts, and the Failure Budget</h3>
+            <p>The NVIDIA driver reports hardware errors using codes called Xids. Xid 48 is a double-bit ECC error — the GPU detected an uncorrectable memory error and will reset itself. Xid 64 is a "GPU has fallen off the bus" — the PCIe link dropped and the device is unreachable until the node reboots. Xid 79 is a thermal shutdown. These codes are not hypothetical. At any scale beyond a single 8-GPU node, you will encounter them.</p>
+
+            <p>How frequently? Meta's public infrastructure talks suggest a <strong>GPU failure rate of roughly 1–2% per week</strong> for large-scale training clusters. That means on a 64-GPU training run (8 nodes × 8 GPUs), you should expect roughly one GPU to fail every week. If your training framework can't handle a single GPU failure without restarting the entire job, that's one full restart per week, wiping out however many GPU-hours had been accumulated since the last checkpoint.</p>
+
+            <p>Even on single-node training runs, transient NCCL timeouts (NCCL is NVIDIA's communication library for multi-GPU coordination) and CUDA OOM errors from memory fragmentation add an empirical <strong>10–15% overhead</strong> to the total GPU-hours consumed. This is the failure budget. If your budget doesn't include it, your run will overrun it.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">3. Hyperparameter Search: The Paper's Hidden Multiplier</h3>
+            <p>The methodology section says "we trained with learning rate 3e-4 and batch size 4M tokens." It does not say "we tried learning rates {1e-4, 3e-4, 1e-3}, batch sizes {1M, 2M, 4M}, and three optimizer configurations before converging on this one."</p>
+
+            <p>The paper reports the final, converged, cherry-picked run. The team ran 3–10× more GPU-hours as exploratory sweeps to find the hyperparameters that produced that run. At a minimum, budget <strong>3× the reported GPU-hours</strong> for hyperparameter search. If you're training a novel architecture where no prior art exists, budget 5×. The people who published the Llama papers are not guessing — they have institutional knowledge from training Llama-1 and Llama-2. You don't.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">4. Checkpoint Storage: The Cost That Compounds</h3>
+            <p>An FP16 70B-parameter model checkpoint is ~140 GB. With optimizer states (Adam momentum + variance in FP32), a full training state checkpoint is ~420 GB. If your script saves every 1,000 steps and you're training for 100,000 steps, that's 100 checkpoints × 420 GB = <strong>42 TB</strong> of writes. On AWS EBS gp3 at $0.08/GB-month, retaining those checkpoints for 30 days costs ~$3,360/month in storage — which for a one-month training run adds 8–15% to the compute bill. On Lambda Labs, included local NVMe storage is free up to the instance's drive capacity, but object storage for long-term retention costs extra.</p>
+
+            <p>Most teams I've talked to don't include checkpoint storage in their GPU training budget because it's a "storage" line item, not a "compute" one. The cloud provider doesn't care how you categorize it. You're paying either way. Use our <a href="/cloud-storage-cost">Cloud Storage Cost Comparison</a> to model this separately — the numbers will surprise you.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">5. Data Egress: The Thing No arXiv Paper Mentions</h3>
+            <p>If your training data lives in AWS S3 and you're renting GPUs on Lambda Labs, every byte of training data crosses a network boundary. At ~$0.05–0.09/GB for cross-cloud egress, a 1 TB dataset costs $50–90 just to move to the GPU instance. Most training datasets compress well (text is highly redundant), and a 10:1 compressed transfer cuts this to manageable levels. But image and video datasets don't compress nearly as well, and multi-terabyte multimodal datasets can generate four-figure egress bills before a single training step runs.</p>
+
+            <p>The simplest mitigation: keep your training data in the same cloud as your GPUs. If your pipeline is already in AWS, the AWS GPU premium doesn't look as bad once you factor in zero egress between S3 and the training instance. The <a href="/terabytes-egress-to-aws-cost">AWS Egress Cost Calculator</a> and <a href="/gpu-training-cost">GPU training cost estimator</a> together will give you the full picture.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="spot-question">The Spot Question</h2>
+            <p>Spot instances are the closest thing the GPU cloud market has to a free lunch: 50–70% discount for the same hardware, in exchange for the provider's right to reclaim the instance with short notice. For a 72-hour training run that costs $743 on Lambda Labs on-demand, the spot equivalent is around $297–371. The savings are not marginal — they're the difference between "we can afford to experiment" and "we can't."</p>
+
+            <p>But spot economics have a structure, and if you don't understand it, you'll make one of two mistakes: overpaying on on-demand because you're scared of preemptions, or losing entire training runs to preemptions because you convinced yourself "it probably won't happen."</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Preemption Frequency: What the Data Says</h3>
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Provider</th><th style="text-align:left;padding:6px 10px;">GPU</th><th style="text-align:left;padding:6px 10px;">Typical Preemption Interval</th><th style="text-align:left;padding:6px 10px;">Real-World Observation</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">AWS</td><td style="padding:6px 10px;">H100</td><td style="padding:6px 10px;">6–12 hours</td><td style="padding:6px 10px;font-size:0.8rem;">H100 spot is aggressively reclaimed during US business hours. A100 spots last longer — 12–24 hours typical.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">GCP</td><td style="padding:6px 10px;">A100</td><td style="padding:6px 10px;">12–24 hours</td><td style="padding:6px 10px;font-size:0.8rem;">GCP preemptibles are the most predictable: fixed 24-hour max, then terminated. Good for scheduled training windows.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Lambda Labs</strong></td><td style="padding:6px 10px;">A100/H100</td><td style="padding:6px 10px;"><strong>Rare (days+)</strong></td><td style="padding:6px 10px;font-size:0.8rem;">Lambda doesn't have traditional spot — they have 'market-rate' pricing that offers lower rates without formal preemption. Availability is the constraint, not preemption.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">RunPod</td><td style="padding:6px 10px;">A100/H100</td><td style="padding:6px 10px;">Variable</td><td style="padding:6px 10px;font-size:0.8rem;">Community cloud with spot options. Preemption rates depend on community demand. Less predictable than Lambda.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Vast.ai</td><td style="padding:6px 10px;">A100/H100</td><td style="padding:6px 10px;">Varies by host</td><td style="padding:6px 10px;font-size:0.8rem;">Vast.ai spot is host-level — if the host needs the GPU back, you lose it. Reliability varies enormously between hosts. Check host uptime stats before committing a long run.</td></tr>
+            </table>
+
+            <p>The decision tree is simpler than most people make it:</p>
+            <ul style="line-height:1.9; margin-left:20px;">
+                <li><strong>Single-node, resumable checkpoints, run under 24 hours:</strong> Use spot. The preemption probability is low enough over a 24-hour window (on GCP: ~50% if you're unlucky, ~20% on a good day) that the expected cost — including wasted GPU-hours from restarts — is still well below on-demand. With 15-minute checkpoint intervals and a tested resume path, a preemption costs you 15 minutes of progress and 30 minutes of re-provisioning. Over a 24-hour run with one preemption, you lose 45 minutes out of 24 hours — a 3% overhead. The 60% spot discount demolishes that.</li>
+                <li><strong>Multi-node (4+ GPUs), any duration:</strong> Think hard. A single-node preemption in a multi-node NCCL topology brings down the entire communicator. All nodes restart from the last checkpoint. The overhead is proportional to the number of nodes. For an 8-node, 64-GPU training run with one preemption every 12 hours, you're restarting the entire cluster twice a day — and the wasted GPU-hours from those restarts (all 64 GPUs idle during re-provisioning and NCCL re-initialization) can exceed the spot savings. Elastic PyTorch and TorchElastic can mitigate this by dynamically resizing the topology, but most teams aren't running them in production. For multi-node, Lambda Labs on-demand or reserved is the pragmatic choice.</li>
+                <li><strong>Run over 72 hours without checkpointing infrastructure:</strong> On-demand. Period. A preemption at hour 67 of a 72-hour run without resumable checkpoints wipes the entire $3,000+ you've spent. You will not be refunded. The cloud provider's SREs will not feel bad about it. They reclaimed a GPU because someone else paid full price for it, and their job is to maximize utilization, not to protect your training progress.</li>
+            </ul>
+
+            <p>For teams doing ongoing research with predictable GPU needs, <strong>1-year reserved instances</strong> on AWS/GCP (~40% discount) can make sense. The math on 1-year reserved vs. spot depends on your annual GPU-hour volume. Model it with our <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven Calculator</a> — the crossover point varies by provider and GPU type, but a common threshold is around 3,000 GPU-hours/year. Below that, on-demand is simpler. Above it, the reserved discount pays back the commitment.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="real-workloads">Real Workload Cost Models</h2>
+            <p>Here are three realistic training scenarios, end-to-end, with all five leaks modeled. Prices use on-demand Lambda Labs rates (the pragmatic default for independent teams) with 85% utilization, 15% failure overhead, and checkpoint storage included.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Scenario A: Fine-Tuning Llama-3-70B with LoRA</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); margin-bottom: 16px;">Single-node 8×A100-80GB · ~20 hours · Hyperparameter factor: 3× · Low I/O overhead</p>
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Component</th><th style="text-align:right;padding:6px 10px;">Cost</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Compute: 8 GPUs × 20 hrs × 3 sweeps × 85% util × $1.29/hr</td><td style="text-align:right;padding:6px 10px;">$527</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Failure budget: 15% overhead</td><td style="text-align:right;padding:6px 10px;">$79</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Checkpoint storage: ~1 TB retained × 30 days</td><td style="text-align:right;padding:6px 10px;">$30</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Total (Lambda Labs on-demand)</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$636</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Total (Lambda Labs spot, ~60% off)</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$254</strong></td></tr>
+            </table>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--accent); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">💰 Bottom Line</p>
+                <p style="margin:0; font-size:1.5rem; font-weight:800; color:var(--text-heading); font-family:'SF Mono','Cascadia Code',Consolas,monospace;">$636 <span style="font-size:0.9rem; font-weight:400; color:var(--text-secondary);">on-demand</span> &nbsp;→&nbsp; <strong style="color:var(--success);">$254 spot</strong></p>
+                <p style="margin:6px 0 0 0; font-size:0.85rem; color:var(--text-body);">LoRA fine-tuning a 70B model costs less than your monthly AWS bill. A 60% spot discount drops this below $300 — cheaper than the GPU depreciation on a single RTX 4090 build.</p>
+            </div>
+
+            <p>Fine-tuning a 70B model with LoRA costs less than a monthly AWS bill for a mid-size SaaS application. This is why everyone is fine-tuning — the cost floor is low enough that experimentation isn't prohibitive. QLoRA on RTX 4090s (Vast.ai ~$0.25/hr) would push this under $150 total, with training ~30% slower per step.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Scenario B: Training a 7B Model From Scratch</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); margin-bottom: 16px;">8×H100-80GB · ~480 GPU-hours · Hyperparameter factor: 5× · 1 TB dataset</p>
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Component</th><th style="text-align:right;padding:6px 10px;">Cost</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Compute: 8 GPUs × 60 hrs × 5 sweeps × 85% util × $2.49/hr</td><td style="text-align:right;padding:6px 10px;">$5,081</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Failure budget: 15% overhead</td><td style="text-align:right;padding:6px 10px;">$762</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Checkpoint storage: ~5 TB × 30 days</td><td style="text-align:right;padding:6px 10px;">$120</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Dataset egress (if data not co-located): ~1 TB uncompressed</td><td style="text-align:right;padding:6px 10px;">$50–90</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Total (Lambda Labs on-demand)</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$6,013–6,053</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>Total (AWS on-demand, worst case)</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$12,000+</strong></td></tr>
+            </table>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--accent); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">💰 Bottom Line</p>
+                <p style="margin:0; font-size:1.5rem; font-weight:800; color:var(--text-heading); font-family:'SF Mono','Cascadia Code',Consolas,monospace;">~$6,000 <span style="font-size:0.9rem; font-weight:400; color:var(--text-secondary);">Lambda Labs on-demand</span></p>
+                <p style="margin:6px 0 0 0; font-size:0.85rem; color:var(--text-body);">The same run on AWS costs <strong style="color:var(--error);">$12,000+</strong> — more than 2× the price for identical A100 hardware. The provider premium alone funds an entire second training run.</p>
+            </div>
+
+            <p>Training a 7B model from scratch costs roughly $6,000 on Lambda Labs — the annual GPU budget for a small research lab. On AWS, the same run costs more than double, which is a strong argument for keeping your training pipeline cloud-agnostic. The difference between Lambda and AWS is not marginal — it's the cost of an entire second training run.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Scenario C: The Full 70B Pretraining Run</h3>
+            <p style="font-family: monospace; font-size: 0.78rem; color: var(--accent); margin-bottom: 16px;">64×H100 · ~3,840 GPU-hours · 15T tokens · Hyperparameter factor: 3× · 10 TB dataset</p>
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Component</th><th style="text-align:right;padding:6px 10px;">Cost</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Compute: 64 GPUs × 360 hrs × 3 sweeps × 75% util × $2.49/hr<sup>*</sup></td><td style="text-align:right;padding:6px 10px;">$129,100</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Failure budget: 20% overhead (multi-node failures compound)</td><td style="text-align:right;padding:6px 10px;">$25,820</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Checkpoint storage: ~50 TB × 60 days retention</td><td style="text-align:right;padding:6px 10px;">$2,400</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Inter-node network + InfiniBand fabric overhead (included in util)</td><td style="text-align:right;padding:6px 10px;">—</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Total (Lambda Labs on-demand, 1 month wall-clock)</strong></td><td style="text-align:right;padding:6px 10px;"><strong>$157,320</strong></td></tr>
+            </table>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--error); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">⚠️ Bottom Line</p>
+                <p style="margin:0; font-size:1.5rem; font-weight:800; color:var(--error); font-family:'SF Mono','Cascadia Code',Consolas,monospace;">$157,320 <span style="font-size:0.9rem; font-weight:400; color:var(--text-secondary);">Lambda Labs on-demand</span></p>
+                <p style="margin:6px 0 0 0; font-size:0.85rem; color:var(--text-body);">That's roughly the fully-loaded annual cost of a senior ML engineer. This is the point where "hire someone to fine-tune an existing model" becomes the rational choice over training from scratch.</p>
+            </div>
+
+            <p style="font-size:0.8rem;color:var(--text-muted);"><sup>*</sup> Lambda Labs on-demand H100 rate. Lower utilization (75%) reflects NCCL all-reduce overhead at 64-GPU scale. At this scale, reserved pricing or direct cluster contracts bring the effective rate down substantially — the on-demand number is a worst-case ceiling, not what you'd actually pay. Budget $80K–160K for the compute depending on provider and commitment level.</p>
+
+            <p>Full pretraining of a 70B model from scratch costs roughly what a senior ML engineer costs fully loaded for a year. This is not a coincidence — it's roughly the scale where it makes more sense to hire someone to fine-tune an existing model than to train from scratch. The crossover between "train" and "fine-tune" is the most important economic decision in applied ML right now.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="vram-ceiling">VRAM: The Hard Ceiling on What You Can Train</h2>
+            <p>Cost is one axis. The other is whether the model even fits. GPU VRAM determines the maximum model size you can train, and the relationship between parameter count and VRAM is well-understood but not always well-communicated.</p>
+
+            <p>The rule of thumb for full training in mixed precision (FP16 forward/backward, FP32 optimizer states):</p>
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:16px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0; font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size: 0.85rem; line-height:1.9;">
+                VRAM = params × (2B FP16 weights + 2B FP16 gradients + 8B FP32 Adam) ≈ <strong>params × 12 bytes</strong>
+            </div>
+
+            <p>A 7B model needs ~84 GB. A 70B model needs ~840 GB. On 80 GB GPUs with ZeRO-3 sharding (DeepSpeed / FSDP), that's 11×A100 for 7B or 11×A100 for 70B — except ZeRO-3 adds communication overhead, so round up to 12 or 16 for headroom. Use our <a href="/parameters-to-vram-fp16">FP16 VRAM Estimator</a> to plug in your exact numbers.</p>
+
+            <p>LoRA changes this equation entirely: only the low-rank adapter matrices and their optimizer states need VRAM. The frozen base model stays in FP16 with no gradients. A 70B model can be LoRA fine-tuned on a single A100-80GB. QLoRA — which quantizes the frozen model to 4-bit — brings the threshold down to a single RTX 4090 with 24 GB. The <a href="/parameters-to-vram-int4">INT4 VRAM Estimator</a> models the quantized side of this tradeoff. The general principle: if you are not Google, you should be fine-tuning, not pretraining. The VRAM math alone tells you this.</p>
+
+            <p>And if your application involves long-context inference or training with large context windows, the <a href="/context-window-vram-inflation">KV Cache VRAM Estimator</a> will tell you how much extra memory those attention blocks consume as you go from 4K to 128K token contexts.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="budget-recipe">How to Budget a Training Run: The Napkin Math Recipe</h2>
+            <p>Here is the formula. Use it before you rent a single GPU:</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:16px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0; font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size: 0.85rem; line-height:1.9;">
+                <strong>Total Cost</strong> = GPU_count × hours × sweeps × rate × (1/util) × (1+fail%) + storage + egress
+            </div>
+
+            <p>Where:</p>
+            <ul style="line-height:1.9; margin-left:20px;">
+                <li><strong>GPU_count</strong>: The number of GPUs your model needs to fit in VRAM. Not "what you want" — <em>what fits.</em></li>
+                <li><strong>hours</strong>: Estimated wall-clock time for a single converged run. If you don't know, benchmark a small-scale run and extrapolate.</li>
+                <li><strong>sweeps</strong>: Hyperparameter search multiplier. 3× if you know what you're doing. 5× if the architecture is new.</li>
+                <li><strong>rate</strong>: The on-demand or spot $/GPU-hr for your chosen provider. Use actual pricing from our <a href="/gpu-training-cost">GPU training cost estimator</a>, not the headline number from a blog post.</li>
+                <li><strong>util</strong>: Fractional utilization. 0.85 if you're GPU-bound and optimized. 0.70 for I/O-heavy pipelines. 0.50 if you're still debugging.</li>
+                <li><strong>fail%</strong>: Failure overhead. 0.15 for a single-node run with resumable checkpoints. 0.20–0.30 for multi-node. 0.50 if you've never run this pipeline at scale before.</li>
+                <li><strong>storage + egress</strong>: Use our <a href="/cloud-storage-cost">Cloud Storage Cost</a> and <a href="/terabytes-egress-to-aws-cost">Egress Calculator</a> for these.</li>
+            </ul>
+
+            <p>Plug these numbers into the <a href="/gpu-training-cost">GPU training cost estimator</a>) and compare providers side by side. The tool computes the full cost — not just GPU-hours — across 6 providers simultaneously.</p>
+
+            <p><strong>One more thing:</strong> multiply the final number by 1.5 if this is your team's first training run at this scale. The first one always costs more. The second one costs what the first one should have. The third one costs what you budgeted for the first. This is not unique to ML — it's true of any engineering project where the failure modes are unfamiliar — but GPU training extracts the penalty at $100+ per hour, which concentrates the mind wonderfully on getting it right the third time.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="faq">Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How much does it actually cost to train a 70B parameter LLM?</h3>
+                <p>A 70B model like Llama-3 trained from scratch on 15T tokens with 64×H100 requires roughly 3,840 H100-hours for the converged run. At on-demand pricing ($2.49–5.10/hr depending on provider), the compute subtotal is $9,568–19,594. But the real number — including checkpoint storage, network egress, hyperparameter sweeps (3× multiplier), failed runs (15% overhead), and GPU utilization losses (75–85% is typical) — lands between $80,000 and $160,000 for a full pretraining project. The spread between Lambda Labs on-demand and AWS on-demand is over 2× for identical hardware. Fine-tuning the same model with LoRA costs $200–800 per run on 8×A100.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why is there a gap between paper GPU-hours and actual cloud bills?</h3>
+                <p>Five structural causes. (1) GPU utilization rarely exceeds 85% — checkpoint I/O, data loading, and NCCL communication consume the rest. (2) Xid errors, NCCL timeouts, and OOM kills add 10–20% overhead. (3) Hyperparameter sweeps multiply the paper's final-run GPU-hours by 3–5×. (4) Checkpoint storage costs — 42 TB of writes for a 70B model's full training run — compound with retention. (5) Cross-cloud data egress for training datasets costs $50–90 per TB. Combined, these inflate the paper's reported GPU-hours by 20–50% for experienced teams and 2–3× for first-timers. Use the <a href="/gpu-training-cost">GPU training cost estimator</a> to model all five factors simultaneously.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Which cloud provider is cheapest for GPU training?</h3>
+                <p>Vast.ai offers the lowest on-demand pricing ($0.95/hr for A100-80GB, $1.80/hr for H100) but is a peer-to-peer marketplace with variable network quality — fine for single-node, risky for multi-node NCCL. Lambda Labs ($1.29/hr A100, $2.49/hr H100) is the pragmatic default: transparent pricing, InfiniBand interconnects, and reservation-free access. RunPod ($1.49/hr A100, $2.69/hr H100) splits the difference with better instance type variety. AWS/GCP/Azure ($2.75–5.10/hr) charge a premium for ecosystem breadth — justified if your data already lives there and your team is on SageMaker/Vertex AI. The gap between cheapest (Vast.ai) and most expensive (Azure H100) is over 5× for identical hardware. Model your specific configuration with our estimator.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Should I use spot instances for GPU training?</h3>
+                <p>Spot instances cost 50–70% less than on-demand — $1,000 becomes $300–400. The decision hinges entirely on whether your training loop supports resumable checkpoints. If it does: use spot for any single-node run under 24 hours. A preemption costs you 15–45 minutes of progress. The 60% discount far outweighs the overhead. For multi-node distributed training, spot is risky — one node's preemption kills the entire NCCL communicator, and the wasted GPU-hours from cluster-level restarts can exceed the spot savings. Lambda Labs' equivalent of spot ('market rate') has much lower preemption rates than AWS/GCP because they don't oversubscribe their clusters. Use the <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven Calculator</a> to model your specific workload.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How much GPU memory do I need for training vs fine-tuning?</h3>
+                <p>Full training requires roughly 12 bytes per parameter in VRAM: 2B FP16 weights + 2B FP16 gradients + 8B FP32 Adam optimizer states. A 7B model needs ~84 GB (2+ A100-80GB with ZeRO-3). A 70B model needs ~840 GB (11+ A100-80GB). LoRA fine-tuning dramatically reduces this — only the low-rank adapters and their optimizer states live in VRAM, allowing a 70B model to be fine-tuned on a single A100-80GB or even an RTX 4090 (24 GB) with QLoRA. The tradeoff: QLoRA training is ~30% slower per step due to quantization overhead. Use our <a href="/parameters-to-vram-fp16">FP16 VRAM Estimator</a> and <a href="/parameters-to-vram-int4">INT4 VRAM Estimator</a> to model your exact configuration.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Pricing data is based on publicly available provider rate cards accessed June 2026. Lambda Labs, RunPod, Vast.ai pricing is sourced from their respective public dashboards. AWS/GCP/Azure GPU pricing is sourced from on-demand list rates (us-east regions for AWS, us-central for GCP, East US for Azure). Enterprise negotiated discounts and long-term reserved-instance commitments can reduce hyperscaler rates significantly — the prices shown here are the ceiling, not what a committed enterprise customer pays.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">GPU utilization estimates (85% best case, 70% I/O-bound, 50% debugging) are based on community benchmarks and operational experience. Failure overhead estimates (15% single-node, 20–30% multi-node) are drawn from community reports of training infrastructure operations at scale; they are not based on formal studies and should be treated as empirical heuristics. Checkpoint storage costs assume 30-day retention on object storage; actual costs vary with retention policy and storage tier. The VRAM estimation formula (params × 12 bytes for full training) reflects mixed-precision training with AdamW optimizer and is consistent with Hugging Face and DeepSpeed documentation.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. We are not sponsored by any cloud provider, GPU vendor, or ML infrastructure company. The GPU training cost estimator on this site was built because the author spent too long manually computing training budgets in spreadsheets and decided to automate it. No affiliate links, no referral codes.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>Lambda Labs (2026).</strong> "GPU Cloud Pricing — On-Demand Instances." Public pricing dashboard for A100, H100, and H200 instances. <a href="https://lambdalabs.com/service/gpu-cloud/pricing" target="_blank" rel="noopener">lambdalabs.com</a></li>
+                <li id="ref-2"><strong>RunPod (2026).</strong> "GPU Cloud — Secure and Community Cloud Pricing." <a href="https://www.runpod.io/pricing" target="_blank" rel="noopener">runpod.io</a></li>
+                <li id="ref-3"><strong>Vast.ai (2026).</strong> "GPU Instance Marketplace — Live Pricing." <a href="https://vast.ai/" target="_blank" rel="noopener">vast.ai</a></li>
+                <li id="ref-4"><strong>NVIDIA (2026).</strong> "H100 Tensor Core GPU Datasheet." Specifications for H100 SXM with 80 GB HBM3, 990 FP16 TFLOPS. <a href="https://www.nvidia.com/en-us/data-center/h100/" target="_blank" rel="noopener">nvidia.com</a></li>
+                <li id="ref-5"><strong>NVIDIA (2026).</strong> "A100 Tensor Core GPU Datasheet." Specifications for A100 SXM with 80 GB HBM2e, 312 FP16 TFLOPS. <a href="https://www.nvidia.com/en-us/data-center/a100/" target="_blank" rel="noopener">nvidia.com</a></li>
+                <li id="ref-6"><strong>Meta AI Research (2024).</strong> "The Llama 3 Herd of Models." Training infrastructure appendix detailing GPU failure modes at scale and mitigation strategies. <a href="https://arxiv.org/abs/2407.21783" target="_blank" rel="noopener">arxiv.org</a></li>
+                <li id="ref-7"><strong>Hugging Face (2026).</strong> "Model Memory Calculator — How Much VRAM Do You Need?" <a href="https://huggingface.co/docs/accelerate/en/usage_guides/model_size_estimator" target="_blank" rel="noopener">huggingface.co</a></li>
+                <li id="ref-8"><strong>DeepSpeed (2026).</strong> "ZeRO-3: Memory Efficient Training." Microsoft Research's ZeRO optimization stages for sharding optimizer states, gradients, and parameters across GPUs. <a href="https://www.deepspeed.ai/tutorials/zero/" target="_blank" rel="noopener">deepspeed.ai</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/gpu-training-cost-real&t=GPU+Training+Costs:+The+arXiv-to-Bill+Gap" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/gpu-training-cost-real&text=The+paper+says+72+GPU-hours+on+8%C3%97A100.+Real+cost+is+20-50%25+more.+Full+breakdown+across+6+providers+with+spot+risk,+checkpoint+overhead,+and+Xid+errors.&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/MachineLearning/submit?url=https://www.jslet.com/gpu-training-cost-real&title=GPU+Training+Costs:+The+arXiv-to-Bill+Gap" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/MachineLearning">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/gpu-training-cost-real&title=GPU+Training+Costs:+The+arXiv-to-Bill+Gap+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <!-- ═══ Copyright & Attribution ═══ -->
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>© 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0 0 10px 0;"><strong>Preferred citation format:</strong></p>
+                <pre style="font-size:0.82rem; background:var(--bg-card); padding:10px 14px; border-radius:3px; overflow-x:auto; white-space:pre-wrap; margin:6px 0 0 0; border:1px solid var(--border);">"GPU Training Costs: The arXiv-to-Bill Gap — What Cloud GPU Pricing Pages Don't Tell You (2026)" &mdash; jslet Research, June 2026.<br>https://www.jslet.com/gpu-training-cost-real</pre>
+            </div>
+        </section>
+
+        <!-- RSS CTA -->
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> The arXiv paper forgot to mention the 47 failed training runs. RSS covers one hidden cost of doing infrastructure at scale, every week. Straight from engineers who've paid that bill. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

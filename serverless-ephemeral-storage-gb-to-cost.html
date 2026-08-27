@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Serverless Ephemeral Storage Calculator — jslet</title>
+    <meta name="description" content="Lambda ephemeral storage: 512 MB free. 50 functions across 3 environments with 2 GB /tmp each — that's $260/month you didn't plan for. Model the silent cost before it compounds.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Serverless Ephemeral Storage Calculator — jslet">
+    <meta property="og:description" content="Map execution environment transient directory storage variables over invocation burst matrices. Calculate Lambda /tmp storage costs beyond 512 MB.">
+    <meta property="og:url" content="https://www.jslet.com/serverless-ephemeral-storage-gb-to-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Serverless Ephemeral Storage Calculator — jslet">
+    <meta name="twitter:description" content="Map execution environment transient directory storage variables over invocation burst matrices. Lambda /tmp costs beyond 512 MB.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/serverless-ephemeral-storage-gb-to-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Serverless Ephemeral Storage Calculator",
+      "description": "Maps execution environment transient directory storage variables over invocation burst matrices. Calculate AWS Lambda /tmp storage costs beyond the free 512 MB tier.",
+      "url": "https://www.jslet.com/serverless-ephemeral-storage-gb-to-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "When does Lambda ephemeral storage start costing money?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Every Lambda function gets 512 MB of /tmp free; storage above that is billed per GB-second. 50 functions across 3 environments using 2 GB each adds roughly $260/month that nobody planned for. The calculator models the silent cost from your function count, /tmp usage, and invocation volume."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why is /tmp usage easy to overlook in serverless budgets?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Because /tmp is invisible in the function code — it fills up during execution for temp files, downloads, and model caching, and the billing line only appears when you cross 512 MB. The calculator surfaces the per-function cost so you can audit which functions are actually using ephemeral storage."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I monitor /tmp usage in production?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Check the function's ephemeral storage metrics and set CloudWatch alarms near the 512 MB free threshold, then look for functions writing large temp files. The calculator's monitoring section explains the practical pattern so you catch the cost before the bill spikes."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>💿 Serverless <span>Ephemeral Storage</span> Calculator</h1>
+            <p>Lambda ephemeral storage pricing: 512 MB free per invocation. Sounds generous. Across 50 functions in 3 environments, each allocating 2 GB /tmp for log pre-processing — that adds up silently. Model GB-seconds, invocations, duration, and the bill before AWS sends it.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Ephemeral Storage Profile</h3>
+                <p class="card-desc">Set your function's /tmp allocation, avg duration, and monthly invocation volume. 512 MB is free. Every GB beyond that costs $0.0000000309/GB-second — small unit, large multiplier.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="eph">/tmp Storage Allocated (GB)</label>
+                        <input type="number" class="unit-input" id="eph" value="10" step="any" min="0.5">
+                    </div>
+                    <div class="input-group">
+                        <label for="dur">Average Duration (sec)</label>
+                        <input type="number" class="unit-input" id="dur" value="1" step="any" min="0.001">
+                    </div>
+                </div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="inv">Monthly Invocations (Millions)</label>
+                        <input type="number" class="unit-input" id="inv" value="5" step="any" min="0.01">
+                    </div>
+                    <div class="input-group">
+                        <label for="tier">Pricing Tier</label>
+                        <select class="unit-input" id="tier" disabled style="opacity:0.6;">
+                            <option value="above-512" selected>Above 512 MB — $0.0000000309/GB-s</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Run Calculation</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Storage Cost Breakdown</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-gb-sec">—</div><div class="metric-label">GB-Seconds</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-cost">—</div><div class="metric-label">Storage Cost /mo</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-per-mil">—</div><div class="metric-label">Cost Per Million</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>Lambda Ephemeral Storage: /tmp Beyond 512 MB Costs Extra</h2>
+            <p>AWS Lambda provides each execution environment with <strong>ephemeral storage</strong> mounted at <code>/tmp</code>. This writable directory persists for the lifetime of the execution environment (a "warm" container reused across invocations) and is the only local storage surface available to Lambda functions. The first <strong>512 MB is free</strong> across all architectures (x86_64 and arm64/Graviton). Any allocation beyond 512 MB is billed at <strong>$0.0000000309 per GB-second</strong> — an extremely small per-unit cost that can compound dramatically at scale with large storage allocations or high invocation volumes.</p>
+
+            <h3>How This Calculator Works</h3>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Component</th><th>Formula</th><th>Rate</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>GB-Seconds</strong></td><td><code>Invocations × Duration(s) × Storage(GB)</code></td><td>Total ephemeral storage consumption across all invocations</td></tr>
+                    <tr><td><strong>Storage Cost</strong></td><td><code>GB-Seconds × $0.0000000309</code></td><td>$0.0000000309 per GB-second (beyond 512 MB free tier)</td></tr>
+                    <tr><td><strong>Cost Per Million</strong></td><td><code>Total Storage Cost ÷ Monthly Invocations (Millions)</code></td><td>Normalized per-million invocation storage cost</td></tr>
+                </tbody>
+            </table>
+</div>
+
+            <h3>When Ephemeral Storage Costs Become Material</h3>
+            <p>At 10 GB of /tmp with 1-second average duration and 5 million monthly invocations, total GB-seconds = 5,000,000 × 1 × 10 = 50,000,000 GB-seconds. Cost = 50,000,000 × $0.0000000309 = $1.55/month — negligible. But at 10 GB /tmp with 60-second duration (common for video processing or ML inference) and 50 million invocations, costs climb to ~$927/month. The calculator helps identify the inflection point where optimizing /tmp usage — by streaming data to S3 instead of buffering locally, or by reducing allocated storage to the minimum needed — yields meaningful savings.</p>
+
+            <h3>Monitoring /tmp Usage in Production</h3>
+            <p>Lambda does not emit a native CloudWatch metric for /tmp utilization. You must instrument your function code to track <code>os.statvfs('/tmp')</code> and emit a custom metric or structured log. Functions that silently fill /tmp beyond the allocated limit will receive <code>ENOSPC</code> (No space left on device) errors — which manifest as cryptic 500 responses. The <code>df -h /tmp</code> command run inside a Lambda execution environment is the quickest diagnostic, but it requires an active execution context. For production observability, emit a gauge metric at the end of each invocation and alert when utilization exceeds 80% of the configured limit.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var e = v('eph'), d = v('dur'), i = v('inv') * 1e6;
+        var gbs = i * d * e;
+        var cost = gbs * 0.0000000309;
+
+        document.getElementById('val-gb-sec').textContent = (gbs / 1e9).toFixed(2) + ' M GB-s';
+        document.getElementById('val-cost').textContent = '$' + cost.toFixed(2) + '/mo';
+        document.getElementById('val-per-mil').textContent = '$' + (cost / v('inv')).toFixed(4);
+
+        document.getElementById('results-params').innerText =
+            v('eph') + ' GB /tmp × ' + v('dur') + 's avg duration × ' + v('inv') + 'M invocations — ' + (gbs / 1e9).toFixed(2) + ' million GB-seconds';
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', compute);
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

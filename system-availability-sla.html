@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>System Availability SLA Calculator — jslet</title>
+    <meta name="description" content="99.9% uptime = 8.76 hours downtime/year. 99.99% = 52 minutes. 99.999% = 5 minutes 15 seconds — less than your last database failover. The nines are an engineering budget with a dollar value.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <meta property="og:title" content="System Availability SLA Calculator — jslet">
+    <meta property="og:description" content="Translate SLA percentages into real downtime budgets. Compute allowed downtime per day, month, and year for 99% to 99.9999% availability targets.">
+    <meta property="og:url" content="https://www.jslet.com/system-availability-sla">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="System Availability SLA Calculator — jslet">
+    <meta name="twitter:description" content="Translate SLA percentages into real downtime budgets for SRE teams.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/system-availability-sla">
+    <style>
+        select.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono","Cascadia Code",Consolas,monospace; transition: border-color 0.2s,box-shadow 0.2s; appearance: none; cursor: pointer; }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .nines-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.85rem; }
+        .nines-table th, .nines-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); text-align: left; }
+        .nines-table th { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .nines-table td { font-family: "SF Mono","Cascadia Code",Consolas,monospace; color: var(--text-heading); }
+        .nines-table .highlight-row { background: var(--accent-glow); }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "System Availability SLA Calculator",
+      "description": "Translate SLA percentages into real downtime budgets. Compute allowed downtime per day, month, and year for 99% to 99.9999% availability targets.",
+      "url": "https://www.jslet.com/system-availability-sla",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much downtime does each \"nine\" allow?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "99.9% = 8.76 hours/year, 99.99% = 52 minutes, 99.999% = 5 minutes 15 seconds. Each additional nine costs exponentially more to engineer. The calculator converts any SLA percentage into the allowed downtime budget per year, month, week, and day, so the SLA is an engineering budget, not a marketing number."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the error budget concept from Google SRE?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The error budget is 100% minus the SLA — the acceptable failure budget you can spend on releases, experiments, and maintenance without violating the contract. When the budget is exhausted, releases freeze. The calculator shows the budget for your SLA target, which turns availability from an abstract promise into a measurable operational tool."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What SLA targets are realistic for different service tiers?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Internal tools often target 99.5-99.9%, customer-facing APIs 99.9%, and payments/infra 99.99%+ — the reference table maps common tiers to their downtime budgets so you pick a target you can actually staff and test for, instead of promising 99.999% and failing it."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>System <span>Availability SLA</span> Calculator</h1>
+            <p>99.9% uptime = 8.76 hours downtime/year. 99.99% = 52 minutes. 99.999% = 5 minutes 15 seconds — less time than your last database failover took. The nines are an engineering budget with a dollar value. Too many nines and your infrastructure cost exceeds the revenue loss you're preventing. Quantify the trade-off.</p>
+        </header>
+        <main class="matrix-grid">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🎯 SLA Configuration</h3>
+                <p class="card-desc">Select SLA target (90% to 99.9999%). The engine computes allowed downtime per day/month/year. Compare against common incident durations — a typical DB failover alone eats 2-5 minutes.</p>
+                <div class="input-group">
+                    <label for="sla">Availability SLA</label>
+                    <select class="unit-input" id="sla">
+                        <option value="90">90% (One Nine)</option>
+                        <option value="99">99% (Two Nines)</option>
+                        <option value="99.5">99.5%</option>
+                        <option value="99.9" selected>99.9% (Three Nines)</option>
+                        <option value="99.95">99.95%</option>
+                        <option value="99.99">99.99% (Four Nines)</option>
+                        <option value="99.995">99.995%</option>
+                        <option value="99.999">99.999% (Five Nines)</option>
+                        <option value="99.9999">99.9999% (Six Nines)</option>
+                    </select>
+                </div>
+                <button class="btn-calc">Calculate Downtime Budget</button>
+            </div>
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>⏱ Allowed Downtime Budget</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-year"></div><div class="metric-label">Per Year</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-month"></div><div class="metric-label">Per Month (30d)</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-week"></div><div class="metric-label">Per Week</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-day"></div><div class="metric-label">Per Day</div></div>
+                </div>
+                <div class="metric-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                    <div class="metric-tile"><div class="metric-val" id="val-uptime"></div><div class="metric-label">Uptime Required</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-budget"></div><div class="metric-label">Error Budget / Year</div></div>
+                </div>
+            </div>
+        </main>
+        <section style="margin-top: 30px;">
+            <h2 style="font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 16px;">📋 SLA Downtime Reference Table</h2>
+            <div style="overflow-x: auto;">
+                <table class="nines-table" id="nines-table-body"></table>
+            </div>
+        </section>
+        <section class="seo-section">
+            <h2>The Mathematics of Availability: Why Every 9 Costs Exponentially More</h2>
+            <p>System availability is measured in <strong>"nines"</strong> — the percentage of time a service is operational. The difference between 99% and 99.999% may seem small on a dashboard, but in downtime terms it's the difference between <strong>3.65 days per year</strong> and <strong>5.26 minutes per year</strong>. Each additional nine roughly doubles the engineering investment required — redundancy, failover automation, chaos engineering, and on-call staffing all scale with the number of nines you promise.</p>
+            <h3>The Error Budget Concept (Google SRE)</h3>
+            <p>Google's Site Reliability Engineering framework introduces the <strong>error budget</strong>: the inverse of your uptime SLA. If your SLO is 99.9%, your error budget is 0.1% of the time — about <strong>43.8 minutes per month</strong>. This budget is deliberately consumed by planned maintenance, feature rollouts, and acceptable failures. When the budget is exhausted, all feature launches freeze until reliability is restored. The error budget transforms the adversarial relationship between dev and ops into a data-driven negotiation.</p>
+            <h3>Realistic SLA Targets by Service Tier</h3>
+            <p><strong>99% (Two Nines)</strong> — 3.65 days/year downtime. Appropriate for internal tools and batch processing. <strong>99.9% (Three Nines)</strong> — 8.76 hours/year. Typical for SaaS APIs and business applications. <strong>99.99% (Four Nines)</strong> — 52.6 minutes/year. Required for payment processing and critical infrastructure. <strong>99.999% (Five Nines)</strong> — 5.26 minutes/year. Carrier-grade telecom and life-critical systems. Each tier requires approximately an order of magnitude more in infrastructure spend than the previous one.</p>
+        </section>
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/system-availability-sla-economics">📰 SLA Economics: How Much Does Each Extra 9 Cost? (Full Briefing) →</a>
+                <a href="/latency-budget-calculator">Latency Budget Calculator &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-load-balancer-rules-to-latency-overhead">LB Rules Latency &rarr;</a>
+            </div>
+        </div>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script>
+    function fmtDuration(seconds) {
+        if (seconds < 1) return (seconds * 1000).toFixed(0) + ' ms';
+        if (seconds < 60) return seconds.toFixed(2) + ' sec';
+        if (seconds < 3600) return (seconds / 60).toFixed(2) + ' min';
+        return (seconds / 3600).toFixed(2) + ' hours';
+    }
+
+    function compute() {
+        var pct = parseFloat(document.getElementById('sla').value);
+        var downtimeRatio = 1 - (pct / 100);
+
+        var secPerYear = 365.25 * 86400;
+        var secPerMonth = 30 * 86400;
+        var secPerWeek = 7 * 86400;
+        var secPerDay = 86400;
+
+        var yearDT = secPerYear * downtimeRatio;
+        var monthDT = secPerMonth * downtimeRatio;
+        var weekDT = secPerWeek * downtimeRatio;
+        var dayDT = secPerDay * downtimeRatio;
+        var uptime = secPerYear - yearDT;
+
+        var n = -Math.log10(downtimeRatio || 1e-15);
+        var nines = Math.floor(n);
+        var extra = n - nines;
+
+        document.getElementById('results-params').innerText = pct + '% availability (' + nines + '.' + extra.toFixed(1).replace('0.','') + ' nines equivalent)';
+
+        document.getElementById('val-year').innerText = fmtDuration(yearDT);
+        document.getElementById('val-month').innerText = fmtDuration(monthDT);
+        document.getElementById('val-week').innerText = fmtDuration(weekDT);
+        document.getElementById('val-day').innerText = fmtDuration(dayDT);
+        document.getElementById('val-uptime').innerText = (pct).toFixed(4) + '%';
+        document.getElementById('val-budget').innerText = fmtDuration(yearDT);
+
+        // Nines table
+        var slas = [
+            ['90%', 90], ['99%', 99], ['99.5%', 99.5], ['99.9%', 99.9],
+            ['99.95%', 99.95], ['99.99%', 99.99], ['99.995%', 99.995],
+            ['99.999%', 99.999], ['99.9999%', 99.9999]
+        ];
+        var tbody = '<tr><th>SLA</th><th>Nines</th><th>Per Year</th><th>Per Month</th><th>Per Week</th><th>Per Day</th></tr>';
+        slas.forEach(s => {
+            var ratio = 1 - (s[1] / 100);
+            var y = secPerYear * ratio;
+            var m = secPerMonth * ratio;
+            var w = secPerWeek * ratio;
+            var d = secPerDay * ratio;
+            var cls = (s[1] === pct) ? ' class="highlight-row"' : '';
+            tbody += '<tr' + cls + '><td><strong>' + s[0] + '</strong></td><td>' + (-Math.log10(Math.max(ratio, 1e-15))).toFixed(1) + '</td><td>' + fmtDuration(y) + '</td><td>' + fmtDuration(m) + '</td><td>' + fmtDuration(w) + '</td><td>' + fmtDuration(d) + '</td></tr>';
+        });
+        document.getElementById('nines-table-body').innerHTML = tbody;
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+    <script src="nav.js"></script>
+</body>
+</html>

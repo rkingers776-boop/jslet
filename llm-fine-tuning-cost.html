@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>LLM Fine-tuning Cost Estimator — Bedrock vs Vertex AI vs Azure vs Self-Hosted GPU | jslet</title>
+    <meta name="description" content="Compare LLM fine-tuning costs across AWS Bedrock, Google Vertex AI, Azure OpenAI, and self-hosted GPU. Full fine-tuning vs LoRA vs QLoRA. Training, inference, and hosting costs with 2026 pricing.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "LLM Fine-tuning Cost Estimator",
+      "description": "Compare LLM fine-tuning costs across Bedrock, Vertex AI, Azure OpenAI, and self-hosted GPU. Full fine-tuning, LoRA, and QLoRA comparison. Training, inference, and hosting costs. 2026 pricing.",
+      "url": "https://www.jslet.com/llm-fine-tuning-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+    <link rel="canonical" href="https://www.jslet.com/llm-fine-tuning-cost">
+    <meta property="og:title" content="LLM Fine-tuning Cost Estimator — Bedrock vs Vertex AI vs Azure | jslet">
+    <meta property="og:description" content="Compare LLM fine-tuning: Bedrock, Vertex AI, Azure OpenAI, self-hosted GPU. Full FT vs LoRA vs QLoRA. Training + inference + hosting TCO.">
+    <meta property="og:url" content="https://www.jslet.com/llm-fine-tuning-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="LLM Fine-tuning Cost Estimator — jslet">
+    <meta name="twitter:description" content="Fine-tuning TCO: Bedrock PTU mandatory ($170/day), Azure hosting ($1,224/mo idle), Vertex no surcharge, self-hosted from $0.50/run.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 650px) { .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; } }
+        select.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono","Cascadia Code",Consolas,monospace; transition: border-color 0.2s,box-shadow 0.2s; appearance: none; cursor: pointer; }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .method-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 14px; }
+        .method-card { padding: 12px 14px; border: 2px solid var(--border); border-radius: var(--radius); cursor: pointer; transition: border-color 0.2s,background 0.2s; text-align: center; background: var(--bg-input); }
+        .method-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+        .method-card.active { border-color: var(--accent); background: var(--accent-soft); }
+        .method-card .meth-name { font-weight: 700; color: var(--text-heading); display: block; font-size: 0.90rem; }
+        .method-card .meth-desc { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+        .cost-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin-top: 14px; }
+        .cost-table th { background: var(--bg-input); text-align: left; padding: 10px 14px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); border-bottom: 2px solid var(--border); }
+        .cost-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+        .cost-table .num { text-align: right; font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-weight: 700; }
+        .cost-table tr.best-row { background: rgba(13,148,136,0.08); }
+        [data-theme="dark"] .cost-table tr.best-row { background: rgba(77,182,172,0.10); }
+        .cost-table tr.best-row td { border-bottom: 2px solid var(--success); font-weight: 700; }
+        .cost-table tr.best-row td:first-child::before { content: "★ "; color: var(--success); }
+        .callout { background: var(--accent-soft); border-left: 3px solid var(--accent); padding: 12px 16px; margin: 14px 0; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 0.85rem; line-height: 1.55; }
+        .callout.warn { border-left-color: #e67e22; background: rgba(230,126,34,0.06); }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 1.35rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .provider-tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.7rem; font-weight: 700; margin-right: 4px; }
+        .tag-aws { background: #ff990022; color: #ff9900; } .tag-gcp { background: #4285f422; color: #4285f4; } .tag-azure { background: #0078d422; color: #0078d4; } .tag-self { background: var(--accent-soft); color: var(--accent); }
+    </style>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much does fine-tuning an LLM cost across platforms?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It varies by method and platform: full fine-tuning charges for all parameters across training tokens, while LoRA and QLoRA update far fewer parameters and cut GPU-hours dramatically. The calculator compares AWS Bedrock, Google Vertex AI, Azure OpenAI, and self-hosted GPU across training, inference, and hosting costs with 2026 pricing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the difference between full fine-tuning, LoRA, and QLoRA?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Full fine-tuning updates every weight and is the most expensive; LoRA adds small trainable adapter matrices, cutting trainable parameters by orders of magnitude; QLoRA combines LoRA with 4-bit quantization of the base model for the lowest memory and cost. The calculator shows all three methods per platform, so the accuracy-vs-cost trade-off is explicit."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which fine-tuning pricing traps should I watch for?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Per-token training prices that look small but compound over millions of samples, storage charges for the base model copies, and inference hosting that costs more than the training run. The calculator's platform traps section surfaces these line items so the annual TCO — not the training demo — is the decision number."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <nav class="nav-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a> <span class="breadcrumb-sep">›</span> <a href="/ai-gpu-compute">AI &amp; GPU Compute</a> <span class="breadcrumb-sep">›</span> LLM Fine-tuning Cost Estimator</nav>
+        <header>
+            <h1>LLM Fine-tuning <span>→ Cost Estimator</span></h1>
+            <p>Compare fine-tuning costs across AWS Bedrock, Google Vertex AI, Azure OpenAI, and self-hosted GPU. Full fine-tuning vs LoRA vs QLoRA. Training cost, inference pricing, and hidden hosting/idle fees — all in one place with 2026 pricing.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Fine-tuning Workload Profile</h3>
+                <p class="card-desc">Configure model size, dataset, and method. The engine estimates training cost, GPU hours for self-hosted, and monthly inference TCO across all platforms.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group"><label for="model-size">Base Model</label><select class="unit-input" id="model-size"><option value="7b">Llama 3.1 8B / Mistral 7B</option><option value="13b">Llama 2/3 13B</option><option value="34b">Code Llama 34B / Mixtral 8×7B</option><option value="70b" selected>Llama 3.1/3.3 70B</option><option value="405b">Llama 3.1 405B</option></select></div>
+                    <div class="input-group"><label for="dataset-tokens">Dataset Size (tokens)</label><input type="number" class="unit-input" id="dataset-tokens" value="500000" step="100000" min="10000"></div>
+                    <div class="input-group"><label for="epochs">Epochs</label><select class="unit-input" id="epochs"><option value="1">1 epoch</option><option value="3" selected>3 epochs</option><option value="5">5 epochs</option><option value="10">10 epochs</option></select></div>
+                </div>
+                <div class="multi-input-row-3" style="margin-top:14px;">
+                    <div class="input-group"><label for="ft-method">Fine-tuning Method</label><select class="unit-input" id="ft-method"><option value="lora">LoRA (0.1-1% params, 1 GPU)</option><option value="qlora" selected>QLoRA (4-bit quantized, cheapest)</option><option value="full">Full Fine-tuning (100% params, multi-GPU)</option></select></div>
+                    <div class="input-group"><label for="infer-tokens">Monthly Inference (M tokens)</label><input type="number" class="unit-input" id="infer-tokens" value="100" step="10" min="0"><span style="font-size:0.72rem;color:var(--text-muted);">Millions of tokens served per month</span></div>
+                    <div class="input-group"><label for="gpu-provider">Self-Hosted GPU Provider</label><select class="unit-input" id="gpu-provider"><option value="vast">Vast.ai (cheapest marketplace)</option><option value="runpod" selected>RunPod (per-second billing)</option><option value="lambda">Lambda Labs (research-grade)</option></select></div>
+                </div>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>🎯 Fine-Tuning Method Comparison</h3>
+                <p class="card-desc">QLoRA fits 70B models on a single A100 80GB. Full fine-tuning needs 4-8 H100s. Click to compare costs across methods.</p>
+                <div class="method-grid">
+                    <div class="method-card active" id="meth-qlora" onclick="selectMethod('qlora')"><span class="meth-name">QLoRA (4-bit)</span><span class="meth-desc">1×A100 80GB or 1×RTX 4090 · 5–50¢/run · MB-sized adapters</span></div>
+                    <div class="method-card" id="meth-lora" onclick="selectMethod('lora')"><span class="meth-name">LoRA (16-bit)</span><span class="meth-desc">1-2×A100 80GB · $3-50/run · Multi-tenant adapter serving</span></div>
+                    <div class="method-card" id="meth-full" onclick="selectMethod('full')"><span class="meth-name">Full Fine-Tuning</span><span class="meth-desc">4-8×H100 · $50-500/run · Highest quality · GPU-obsolete risk</span></div>
+                </div>
+                <div id="gpu-estimate" style="margin-top:14px; font-size:0.85rem;"></div>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📊 Training Cost — Per Platform</h3>
+                <div class="table-scroll">
+                    <table class="cost-table">
+                        <thead><tr><th>Platform</th><th>Training Cost</th><th>Method / Notes</th><th>Model Storage</th></tr></thead>
+                        <tbody id="training-tbody"></tbody>
+                    </table>
+                </div>
+                <div class="callout warn" id="warn-azure-host" style="display:none;"></div>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>💰 Monthly Inference Cost + Annual TCO</h3>
+                <div class="table-scroll">
+                    <table class="cost-table">
+                        <thead><tr><th>Platform</th><th>Inference Rate</th><th>Monthly Inference</th><th>Monthly Hosting</th><th>Monthly Total</th><th>Annual TCO</th></tr></thead>
+                        <tbody id="infer-tbody"></tbody>
+                    </table>
+                </div>
+                <div class="callout" style="margin-top:14px;" id="best-recommend"></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>Fine-Tuning Platform Pricing Traps</h2>
+            <p><strong>AWS Bedrock:</strong> Fine-tuned models require Provisioned Throughput (PTU) — a 24/7 hourly commitment with no scale-to-zero. At $7.10/hr for Titan Text Lite PTU (no commitment), the monthly floor is $5,183 before a single inference token. With 1-month commitment: $4,672/month. Even a 6-month commitment leaves you at $3,723/month. Bedrock fine-tuning is not for low-volume inference. It's for production workloads serving millions of tokens daily where the per-token PTU rate beats on-demand pricing.</p>
+            <p><strong>Azure OpenAI:</strong> The training cost is modest ($5-25 for a typical fine-tuning run on GPT-4o-mini). The trap is hosting: $1.70/hour, 24/7, no idle discount. An idle deployment burns $1,224/month serving zero requests. Training cost is irrelevant — hosting is the entire cost decision.</p>
+            <p><strong>Vertex AI:</strong> Gemini fine-tuning uses LoRA under the hood. Inference on tuned models runs at the base model's standard per-token rate with zero tuning surcharge and zero hosting fee. At $0.30/1M tokens input for Gemini Flash: 100M tokens/month inference = $30/month total. Vertex is the only platform where fine-tuning doesn't create a recurring cost obligation.</p>
+            <p><strong>Self-hosted:</strong> QLoRA on an RTX 4090 via RunPod runs ~30 minutes for a 10K-sample 7B dataset at ~$0.50 total. Inference on the same GPU costs ~$0.39/hr. At 100M tokens/month with 8GB VRAM inference: $285/month GPU rental. No hosting fee, no minimum commitment, no surcharge. Self-hosted is cheaper than any managed platform at any inference volume — the trade is operational expertise.</p>
+        </section>
+
+        <div class="related-tools" style="margin-top:0;">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/gpu-training-cost">GPU Training Cost →</a>
+                <a href="/gpu-training-cost-real">📰 GPU Training arXiv-to-Bill Gap (Full Briefing) →</a>
+                <a href="/llm-api-pricing-calculator">LLM API Pricing Calculator →</a>
+                <a href="/llm-api-pricing-real">📰 Token Economics (Full Briefing) →</a>
+                <a href="/parameters-to-vram-fp16">Parameters → VRAM (FP16) →</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    (function() {
+        'use strict';
+
+        // ── Model GPU requirements ──
+        var MODEL_GPU = {
+            '7b': { params: 8, fullGPU: '2×A100 40GB', fullHours: 3, loraGPU: '1×A100 80GB', loraHours: 1, qloraGPU: '1×RTX 4090 24GB', qloraHours: 0.5 },
+            '13b': { params: 13, fullGPU: '4×A100 80GB', fullHours: 4, loraGPU: '1×A100 80GB', loraHours: 1.2, qloraGPU: '1×RTX 4090 24GB', qloraHours: 0.7 },
+            '34b': { params: 34, fullGPU: '4×H100 80GB', fullHours: 4, loraGPU: '1×A100 80GB', loraHours: 1.5, qloraGPU: '1×A100 80GB', qloraHours: 1 },
+            '70b': { params: 70, fullGPU: '8×H100 80GB', fullHours: 6, loraGPU: '2×A100 80GB', loraHours: 3.5, qloraGPU: '1×A100 80GB', qloraHours: 3.5 },
+            '405b': { params: 405, fullGPU: '32×H100 80GB', fullHours: 24, loraGPU: '4×H100 80GB', loraHours: 8, qloraGPU: '2×H100 80GB', qloraHours: 6 }
+        };
+
+        // ── GPU Hourly Rates ──
+        var GPU_RATES = {
+            'vast': { 'RTX 4090': 0.55, 'A100 40GB': 1.50, 'A100 80GB': 2.00, 'H100 80GB': 2.50 },
+            'runpod': { 'RTX 4090': 0.69, 'A100 40GB': 1.09, 'A100 80GB': 1.69, 'H100 80GB': 2.39 },
+            'lambda': { 'RTX 4090': 0.80, 'A100 40GB': 1.10, 'A100 80GB': 1.99, 'H100 80GB': 3.29 }
+        };
+
+        var activeMethod = 'qlora';
+
+        function fmt(n) { return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+        function fmtInt(n) { return n.toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+
+        function getGPUKey(gpuDesc) {
+            if (gpuDesc.indexOf('RTX 4090') >= 0) return 'RTX 4090';
+            if (gpuDesc.indexOf('A100 40GB') >= 0) return 'A100 40GB';
+            if (gpuDesc.indexOf('A100 80GB') >= 0) return 'A100 80GB';
+            return 'H100 80GB';
+        }
+
+        function countGPUs(gpuDesc) {
+            var m = gpuDesc.match(/(\d+)×/);
+            return m ? parseInt(m[1]) : 1;
+        }
+
+        function compute() {
+            var modelKey = document.getElementById('model-size').value;
+            var datasetTokens = parseInt(document.getElementById('dataset-tokens').value) || 500000;
+            var epochs = parseInt(document.getElementById('epochs').value) || 3;
+            var ftMethod = activeMethod; // qlora, lora, full
+            var inferTokensM = parseFloat(document.getElementById('infer-tokens').value) || 100;
+            var gpuProv = document.getElementById('gpu-provider').value;
+
+            var totalTokens = datasetTokens * epochs;
+            var model = MODEL_GPU[modelKey];
+            var rates = GPU_RATES[gpuProv];
+
+            // Self-hosted GPU estimate
+            var gpuDesc, gpuHours;
+            if (ftMethod === 'full') { gpuDesc = model.fullGPU; gpuHours = model.fullHours; }
+            else if (ftMethod === 'lora') { gpuDesc = model.loraGPU; gpuHours = model.loraHours; }
+            else { gpuDesc = model.qloraGPU; gpuHours = model.qloraHours; }
+
+            var gpuKey = getGPUKey(gpuDesc);
+            var gpuCount = countGPUs(gpuDesc);
+            var gpuRate = rates[gpuKey] || 2.00;
+            var selfHostedTrainingCost = gpuHours * gpuCount * gpuRate;
+
+            // Est GPU estimate
+            document.getElementById('gpu-estimate').innerHTML = '<strong>GPU required:</strong> ' + gpuDesc + ' · <strong>Estimated time:</strong> ~' + gpuHours + ' hrs · <strong>GPU cost:</strong> ' + fmt(selfHostedTrainingCost) + ' on ' + (gpuProv === 'vast' ? 'Vast.ai' : gpuProv === 'runpod' ? 'RunPod' : 'Lambda Labs') + ' (@' + fmt(gpuRate) + '/GPU-hr)';
+
+            // ── Training cost per platform ──
+            var bedrockRate = 0.0004; // Titan Text Lite per 1K tokens
+            var bedrockCost = totalTokens / 1000 * bedrockRate;
+            if (modelKey === '70b' || modelKey === '405b') bedrockCost = totalTokens / 1000 * 0.008; // larger model
+
+            var vertexCost = totalTokens / 1000000 * 5.00; // $5/M tokens
+
+            var azureRate = modelKey === '405b' ? 0.025 : 0.0033; // GPT-4o vs GPT-4o-mini
+            var azureTrainCost = totalTokens / 1000 * azureRate;
+            var azureHostingMonthly = 1.70 * 730; // $1.70/hr × 730h = $1,241/mo
+            var azureHostingAnnual = azureHostingMonthly * 12;
+
+            // ── Inference costs (monthly) ──
+            var inferTokens = inferTokensM * 1000000;
+
+            // Bedrock: PTU mandatory — Titan Text Lite $7.10/hr no-commitment
+            var bedrockPTU = 7.10 * 730;
+            // Per-token inference through PTU: roughly $0.0004/1K input + $0.0016/1K output (assume 1:1 ratio)
+            var bedrockInfer = inferTokens / 1000 * 0.0004 + inferTokens / 1000 * 0.0016;
+
+            // Vertex: base model rates for Gemini Flash
+            var vertexInferInput = inferTokens / 1000000 * 0.30; // $0.30/M input
+            var vertexInferOutput = inferTokens / 1000000 * 2.50; // $2.50/M output
+            var vertexInfer = vertexInferInput + vertexInferOutput;
+
+            // Azure: fine-tuned rates
+            var azureInferInput = inferTokens / 1000000 * 0.165; // $0.165/M input for FT GPT-4o-mini
+            var azureInferOutput = inferTokens / 1000000 * 0.666; // $0.666/M output
+            var azureInfer = azureInferInput + azureInferOutput;
+
+            // Self-hosted inference
+            var inferGPURate = rates['A100 40GB'] || 1.09;
+            var inferGPUHours = inferTokens / 1000000 / 500; // rough: 500 tokens/sec on A100 for 7B, ~125 for 70B
+            if (modelKey === '70b') inferGPUHours = inferTokens / 1000000 / 125;
+            if (modelKey === '405b') inferGPUHours = inferTokens / 1000000 / 50;
+            var selfHostedInfer = Math.max(inferGPUHours, 730) * inferGPURate; // min 1 GPU 24/7
+
+            // ── Build training table ──
+            var platforms = [
+                { name: 'AWS Bedrock', tag: 'tag-aws', trainCost: bedrockCost, method: 'Per-token training, PTU inference required', storage: '$1.95/mo per custom model' },
+                { name: 'Google Vertex AI', tag: 'tag-gcp', trainCost: vertexCost, method: 'LoRA-based · $5.00/1M tokens', storage: 'Included, no storage fee' },
+                { name: 'Azure OpenAI', tag: 'tag-azure', trainCost: azureTrainCost, method: '$0.0033/1K tokens (GPT-4o-mini) · Hosting $1.70/hr', storage: 'Free with deployment' },
+                { name: 'Self-Hosted GPU', tag: 'tag-self', trainCost: selfHostedTrainingCost, method: gpuDesc + ' · ~' + gpuHours + ' hrs · ' + gpuProv, storage: 'S3: $0.023/GB/mo' }
+            ];
+
+            var minTrain = Infinity;
+            platforms.forEach(function(p) { if (p.trainCost < minTrain) minTrain = p.trainCost; });
+
+            document.getElementById('training-tbody').innerHTML = platforms.map(function(p) {
+                var bestClass = (p.trainCost === minTrain) ? ' class="best-row"' : '';
+                return '<tr' + bestClass + '><td><span class="provider-tag ' + p.tag + '">' + p.name.split(' ')[0] + '</span> <strong>' + p.name + '</strong></td><td class="num">' + fmt(p.trainCost) + '</td><td style="font-size:0.82rem;">' + p.method + '</td><td>' + p.storage + '</td></tr>';
+            }).join('');
+
+            // ── Build inference + TCO table ──
+            var inferPlatforms = [
+                { name: 'AWS Bedrock', tag: 'tag-aws', inferRate: 'PTU: $7.10/hr (no commit)', inferCost: bedrockInfer, hosting: bedrockPTU, notes: 'PTU 24/7 mandatory' },
+                { name: 'Google Vertex AI', tag: 'tag-gcp', inferRate: '$0.30/M in + $2.50/M out', inferCost: vertexInfer, hosting: 0, notes: 'No hosting fee. No surcharge.' },
+                { name: 'Azure OpenAI', tag: 'tag-azure', inferRate: '$0.165/M in + $0.666/M out (FT)', inferCost: azureInfer, hosting: azureHostingMonthly, notes: 'Hosting $1,241/mo idle' },
+                { name: 'Self-Hosted GPU', tag: 'tag-self', inferRate: '@' + fmt(inferGPURate) + '/GPU-hr', inferCost: selfHostedInfer, hosting: 0, notes: '1×' + gpuKey + ' 24/7' }
+            ];
+
+            var minTotal = Infinity;
+            inferPlatforms.forEach(function(p) { var t = p.inferCost + p.hosting; if (t < minTotal) minTotal = t; });
+
+            // Azure warning
+            var warnEl = document.getElementById('warn-azure-host');
+            if (azureTrainCost < azureHostingMonthly) {
+                warnEl.style.display = '';
+                warnEl.innerHTML = '<strong>⚠️ Azure Hosting Trap:</strong> Training costs ' + fmt(azureTrainCost) + ', but hosting costs ' + fmt(azureHostingMonthly) + '/month — <strong>' + (azureHostingMonthly / Math.max(azureTrainCost, 1)).toFixed(0) + '×</strong> the training cost, every month, even at zero traffic. Annual hosting: ' + fmt(azureHostingAnnual) + '. If your monthly inference volume is under ' + fmtInt(azureHostingMonthly / 0.831 * 1000000) + ' tokens, hosting dominates the bill.';
+            } else {
+                warnEl.style.display = 'none';
+            }
+
+            document.getElementById('infer-tbody').innerHTML = inferPlatforms.map(function(p) {
+                var total = p.inferCost + p.hosting;
+                var bestClass = (total === minTotal) ? ' class="best-row"' : '';
+                var annual = total * 12 + (p.name === 'AWS Bedrock' ? bedrockCost : p.name === 'Azure OpenAI' ? azureTrainCost : p.name === 'Google Vertex AI' ? vertexCost : selfHostedTrainingCost);
+                return '<tr' + bestClass + '><td><span class="provider-tag ' + p.tag + '">' + p.name.split(' ')[0] + '</span> <strong>' + p.name + '</strong></td><td style="font-size:0.78rem;">' + p.inferRate + '</td><td class="num">' + fmt(p.inferCost) + '</td><td class="num">' + fmt(p.hosting) + '</td><td class="num" style="color:var(--accent);font-size:1.05rem;">' + fmt(total) + '</td><td class="num">' + fmt(annual) + '</td></tr>';
+            }).join('');
+
+            // Best recommendation
+            document.getElementById('best-recommend').innerHTML = '<strong>📋 Platform recommendation:</strong> For low-volume inference (<100M tokens/mo): Vertex AI or self-hosted QLoRA — no recurring hosting fees. For production workloads (>1B tokens/mo): Bedrock PTU approaches per-token breakeven with on-demand at ~500M tokens/mo. Azure is competitive only when hosting cost is amortized across very high inference volume. Self-hosted is the cheapest at any volume if your team has GPU ops expertise.';
+        }
+
+        window.selectMethod = function(m) {
+            activeMethod = m;
+            document.querySelectorAll('.method-card').forEach(function(c) { c.classList.remove('active'); });
+            document.getElementById('meth-' + m).classList.add('active');
+            document.getElementById('ft-method').value = m;
+            compute();
+        };
+
+        document.getElementById('ft-method').addEventListener('change', function() {
+            activeMethod = this.value;
+            document.querySelectorAll('.method-card').forEach(function(c) { c.classList.remove('active'); });
+            document.getElementById('meth-' + activeMethod).classList.add('active');
+            compute();
+        });
+
+        var inputs = document.querySelectorAll('input[type="number"], select');
+        inputs.forEach(function(el) { el.addEventListener('input', compute); el.addEventListener('change', compute); });
+        document.addEventListener('DOMContentLoaded', compute);
+    })();
+    </script>
+    <script src="nav.js"></script>
+</body>
+</html>

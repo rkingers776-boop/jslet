@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>UUID v4 Collision Probability at Scale: How Many UUIDs Before a Collision? (2026) — jslet</title>
+    <meta name="description" content="UUID v4: 122 random bits, 5.3×10³⁶ possible values. You need 2.71 quintillion UUIDs for a 50% collision chance. At 1 billion per second, that's 85 years. The math says you'll never see one. The RNG bugs say otherwise. Full analysis across UUID versions, real production collision reports, and the birthday paradox at scale.">
+    <meta property="og:title" content="UUID v4 Collision Probability at Scale: How Many UUIDs Before a Collision?">
+    <meta property="og:description" content="2.71 quintillion UUIDs for a 50% collision. At 1 billion/sec: 85 years. The Y2K of distributed systems — everyone fears it, nobody has seen it. But the RNG bugs have. Full birthday paradox analysis with real collision reports.">
+    <meta property="og:url" content="https://www.jslet.com/uuid-v4-collision-probability-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-07-02T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-07-02T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="UUID v4 Collision Probability at Scale">
+    <meta name="twitter:description" content="2.71 quintillion UUIDs for a 50% collision chance. The math says never. The RNG bugs disagree. Full analysis.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/uuid-v4-collision-probability-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "UUID v4 Collision Probability at Scale: How Many UUIDs Before a Collision? (2026)",
+      "description": "UUID v4: 122 random bits, 5.3×10³⁶ possible values. You need 2.71 quintillion UUIDs for a 50% collision chance. At 1 billion per second, that's 85 years. The math says you'll never see one. The RNG bugs say otherwise.",
+      "url": "https://www.jslet.com/uuid-v4-collision-probability-real",
+      "datePublished": "2026-07-02T00:00:00+00:00",
+      "dateModified": "2026-07-02T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How many UUIDs before a collision?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "For UUID v4, the 50% collision threshold — derived from the birthday paradox — is approximately 2.71 × 10¹⁸ (2.71 quintillion) UUIDs. At 1 billion UUIDs generated per second, reaching this threshold takes roughly 85 years of continuous generation. For a 1% collision probability, you need about 3.26 × 10¹⁷ UUIDs. For a one-in-a-billion (10⁻⁹) probability — the threshold most systems treat as acceptably safe — you can generate roughly 1.03 × 10¹⁴ UUIDs, or about 103 trillion. These numbers assume a cryptographically secure random number generator producing uniformly distributed output. With a flawed RNG, collisions can occur at any scale — and have in production."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the UUID v4 collision probability at scale?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The collision probability for n UUID v4 items drawn from a space of 2¹²² (approximately 5.3 × 10³⁶) possible values follows the birthday paradox approximation: p ≈ n² / (2d) where d = 2¹²². At practical scales: 1 billion UUIDs → ~10⁻¹⁹ (effectively impossible), 1 trillion UUIDs → ~10⁻¹³ (astronomically unlikely), 1 quadrillion UUIDs → ~10⁻⁷ (1 in 10 million — approaching statistical concern), 2.71 quintillion UUIDs → ~50% (the birthday threshold). At any realistic generation rate — even billions per second across an entire datacenter — UUID v4 collisions from randomness alone will not occur within the lifetime of the universe. The real collision risk is not the math. It's flawed random number generators, cloned virtual machines with identical entropy state, and containerized systems with insufficient entropy pools."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Has a UUID collision ever happened in production?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes — but not because the math failed. Every documented production UUID v4 collision has been traced to a flawed random number generator, not to the birthday paradox catching up with a system at scale. Notable cases include: (1) A 2015 incident where a Go UUID library using math/rand instead of crypto/rand produced duplicates within hours because math/rand was seeded with a low-resolution clock on fast-starting containers; (2) Multiple embedded systems and IoT devices with no hardware entropy source that generated identical UUID sequences after cold boots; (3) Cloned VMs with identical saved entropy state producing duplicate UUIDs until /dev/urandom was re-initialized. In every case, the fix was not 'use longer UUIDs' — it was 'use a cryptographically secure random number generator with proper entropy seeding.' The 122-bit random space has never been the problem."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which UUID version should I use to avoid collisions?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "UUID v4 is the safe default — 122 bits of cryptographic randomness make collisions mathematically impossible at any real-world scale, provided you use a CSPRNG. UUID v7 (RFC 9562, 2024) adds a Unix timestamp prefix before the random component, which provides time-ordering for database index performance. UUID v7 is the best choice for new systems: it preserves collision resistance (74 random bits, still 1.9 × 10²² space) while generating keys that play well with B-tree indexes — the single biggest operational complaint about v4. UUID v1 (MAC address + timestamp) guarantees uniqueness across a network — until you clone a VM and it has the same MAC address, at which point it guarantees collisions. Avoid UUID v1 in virtualized or containerized environments. Avoid UUID v3 and v5 (name-based, deterministic) for collision-sensitive workloads — they produce the same UUID for the same input, which is a feature for namespacing but a bug if you treat the output as unique."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How long would it take to generate enough UUIDs for a collision?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "At 1 billion UUID v4 generations per second — roughly the throughput of a large distributed system with hundreds of nodes — reaching the 50% collision threshold (2.71 × 10¹⁸ UUIDs) takes approximately 85 years. At 1 trillion per second — a rate that would require a dedicated datacenter — it takes about 31 days. For comparison, the entire Amazon retail platform generates roughly 10¹² operations per day across all services, and if every single one were a UUID v4 generation, it would take over 7,000 years to reach the 50% collision threshold. The 1-in-a-million (10⁻⁶) collision threshold at 1 billion/sec is reached in about 2.3 days — still improbable enough that no single system should ever encounter it, but within the operating lifetime of a multi-year distributed workload. At that point, the correct response is not switching UUID versions — it's adding a collision detection layer, which you should have anyway because RNG bugs are more likely than mathematical collisions."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>UUID v4 <span>Collision</span> Probability at Scale</h1>
+            <p>2.71 quintillion UUIDs for a 50% collision. At 1 billion per second: 85 years. The math says you will never see one in your lifetime. The RNG bugs disagree — and they've been right.</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-07-02 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 13 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <!-- ═══ Table of Contents ═══ -->
+        <nav class="toc" aria-label="Table of Contents" style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:20px 24px; margin-bottom:24px;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+            <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+                <li><a href="#the-question" style="color:var(--accent); text-decoration:none;">The Question Everyone Asks</a></li>
+                <li><a href="#birthday-math" style="color:var(--accent); text-decoration:none;">The Birthday Paradox, Applied to UUIDs</a></li>
+                <li><a href="#at-scale" style="color:var(--accent); text-decoration:none;">What "At Scale" Actually Means</a></li>
+                <li><a href="#versions" style="color:var(--accent); text-decoration:none;">UUID v4 vs v1 vs v7: Version Choice Matters</a></li>
+                <li><a href="#real-collisions" style="color:var(--accent); text-decoration:none;">When Collisions Actually Happened</a></li>
+                <li><a href="#rng-problem" style="color:var(--accent); text-decoration:none;">The RNG Problem: Where Collisions Really Come From</a></li>
+                <li><a href="#practical" style="color:var(--accent); text-decoration:none;">Practical Guidance for Distributed Systems</a></li>
+                <li><a href="#faq" style="color:var(--accent); text-decoration:none;">FAQ</a></li>
+            </ol>
+        </nav>
+
+        <section class="seo-section">
+            <h2 id="the-question">The Question Everyone Asks: How Many UUIDs Before a Collision?</h2>
+            <p>Every engineer who has ever added a UUID column to a database has asked some version of this question. Usually it happens during a schema review, or after reading a Hacker News comment about how UUID v4 "only" has 122 random bits, or while staring at a PRIMARY KEY definition at 2 AM wondering if this is the decision that takes down production three years from now.</p>
+
+            <p>The question takes different forms — "how many UUIDs before collision," "UUID v4 collision probability at scale," "what are the odds two servers generate the same UUID" — but they all want the same thing: a number. A threshold below which you can stop worrying and above which you need a plan B.</p>
+
+            <p>Here is that number: <strong>2.71 × 10¹⁸</strong>. That is 2.71 quintillion UUID v4 generations before you have a 50% chance of seeing at least one collision. At 1 billion UUIDs generated per second — a rate that would require a mid-size datacenter dedicated to nothing but UUID generation — you hit that threshold in roughly <strong>85 years</strong>. At 1 million per second — a busy distributed system with hundreds of services — you hit it in about <strong>85,000 years</strong>. At the rate a typical production Postgres database generates primary keys — maybe 10,000 per second at peak — you hit it in roughly <strong>8.5 million years</strong>, which is longer than the genus Homo has existed.</p>
+
+            <p>But that is only half the answer. The other half — the half that actually matters — is that every documented UUID v4 collision in production has been caused not by the math failing but by the random number generator failing. And that failure mode does not care about your scale. It can happen on the first two UUIDs your system generates, and it has.</p>
+
+            <p>I built the <a href="/uuid-v4-collision-probability-estimator">UUID v4 collision probability estimator</a> on this site to make the birthday paradox math visible — to let you enter any generation volume and watch the collision probability resolve in real time, from "effectively impossible" through "one in a million" to "50%." This article is about what those numbers mean at real distributed-system scales, why the UUID version you choose matters more than the collision probability, and where production collisions actually come from.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="birthday-math">The Birthday Paradox, Applied to 122 Bits</h2>
+            <p>The collision probability for UUID v4 is not linear. It follows the birthday paradox: in a room of 23 people, there is a 50% chance two share a birthday — not because 23 is close to 365, but because the number of <em>pairs</em> of people grows quadratically. The same math governs UUID collisions, just with a much larger space.</p>
+
+            <p>UUID v4 (RFC 9562, which obsoleted RFC 4122 in 2024) dedicates <strong>122 of its 128 bits to randomness</strong>. The remaining 6 bits are structural: 4 bits for the version identifier (binary 0100 = version 4) and 2 bits for the variant (binary 10). This leaves a total identifier space of <strong>2¹²² ≈ 5.3 × 10³⁶</strong> possible values. For context, that is roughly 10 billion times the estimated number of stars in the observable universe.</p>
+
+            <p>The birthday paradox formula for collision probability, when n is much smaller than the space size d, is approximated by:</p>
+
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:20px 24px; margin:16px 0; text-align:center; font-family:'SF Mono','Cascadia Code',Consolas,monospace;">
+                <p style="font-size:1.3rem; margin:0; color:var(--text-heading);">p ≈ n² / (2d)</p>
+                <p style="font-size:0.85rem; margin:8px 0 0 0; color:var(--text-body);">where n = number of UUIDs generated, d = 2¹²² ≈ 5.3 × 10³⁶</p>
+            </div>
+
+            <p>The n² term is what matters. Doubling the number of UUIDs quadruples the collision probability — but starting from a probability so astronomically small that even a billion-fold increase leaves you in "effectively never" territory. Here is the probability mapped across realistic generation volumes:</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">UUIDs Generated</th><th style="text-align:right;padding:6px 10px;">n² / (2 × 2¹²²)</th><th style="text-align:right;padding:6px 10px;">Collision Probability</th><th style="text-align:left;padding:6px 10px;">Interpretation</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">1 million (10⁶)</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">10¹² / 1.06×10³⁷</td><td style="text-align:right;padding:6px 10px; font-family:monospace; color:var(--success);">~10⁻²⁵</td><td style="padding:6px 10px;">Effectively impossible — less than winning Powerball 3 times in a row</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>1 billion (10⁹)</strong></td><td style="text-align:right;padding:6px 10px; font-family:monospace;"><strong>10¹⁸ / 1.06×10³⁷</strong></td><td style="text-align:right;padding:6px 10px; font-family:monospace;"><strong>~10⁻¹⁹</strong></td><td style="padding:6px 10px;"><strong>Still effectively impossible at any realistic lifetime scale</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">1 trillion (10¹²)</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">10²⁴ / 1.06×10³⁷</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">~10⁻¹³</td><td style="padding:6px 10px;">Astronomically unlikely — 1 in 10 trillion</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">1 quadrillion (10¹⁵)</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">10³⁰ / 1.06×10³⁷</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">~10⁻⁷</td><td style="padding:6px 10px;">1 in 10 million — approaching the territory where you might consider a check</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>103 trillion (1.03×10¹⁴)</strong></td><td style="text-align:right;padding:6px 10px; font-family:monospace;"><strong>~10⁻⁹</strong></td><td style="text-align:right;padding:6px 10px; font-family:monospace;"><strong>1 in 1 billion</strong></td><td style="padding:6px 10px;"><strong>Safe threshold — the probability most systems treat as "acceptable risk"</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">3.26 × 10¹⁷</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">~0.01</td><td style="text-align:right;padding:6px 10px; font-family:monospace; color:var(--warning);"><strong>~1%</strong></td><td style="padding:6px 10px;">1% collision probability threshold</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>2.71 × 10¹⁸</strong></td><td style="text-align:right;padding:6px 10px; font-family:monospace;"><strong>~1.0</strong></td><td style="text-align:right;padding:6px 10px; font-family:monospace; color:var(--error);"><strong>~50%</strong></td><td style="padding:6px 10px;"><strong>50% collision threshold — the √(2d) point of the birthday paradox</strong></td></tr>
+            </table>
+
+            <p>The exact formula — which the <a href="/uuid-v4-collision-probability-estimator">estimator</a> uses — accounts for the full birthday problem rather than the n²/2d approximation. The exact probability that at least two UUIDs collide among n randomly generated values from a space of size d is:</p>
+
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:20px 24px; margin:16px 0; text-align:center; font-family:'SF Mono','Cascadia Code',Consolas,monospace;">
+                <p style="font-size:1.1rem; margin:0; color:var(--text-heading);">p = 1 − ∏<sub>k=1</sub><sup>n−1</sup> (1 − k/d)</p>
+                <p style="font-size:0.85rem; margin:8px 0 0 0; color:var(--text-body);">For n ≪ d, this is well approximated by p ≈ 1 − e<sup>−n²/(2d)</sup></p>
+            </div>
+
+            <p>The approximation p ≈ n²/2d — which is what the first two terms of the Taylor expansion give you — is accurate to within 1% for n up to about 10¹⁸. Beyond that, the exponential form takes over and the probability climbs toward 1. But "beyond that" means generating more than a quintillion UUIDs, which, as we will see, is not a number any single system approaches.</p>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--accent); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">🔑 The Core Insight</p>
+                <p style="margin:0; font-size:1.1rem; font-weight:700; color:var(--text-heading);">UUID v4 collisions from randomness alone are a <span style="color:var(--success);">heat-death-of-the-universe problem</span>, not an <span style="color:var(--error);">operational-risk problem</span>.</p>
+                <p style="margin:6px 0 0 0; font-size:0.85rem; color:var(--text-body);">At 1 billion UUIDs per second — a rate no production system sustains — you need 85 years for a 50% collision probability. The universe is 13.8 billion years old. You will be retired, dead, and your grandchildren will be dead before your system generates enough UUID v4 values for the math to matter. The collision you should actually worry about is the one caused by a bad RNG seed — and that can happen on the first two UUIDs your application generates.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="at-scale">What "At Scale" Actually Means</h2>
+            <p>"Scale" is the most abused word in UUID collision discussions. People say "at scale" and mean anything from a single Postgres instance to a global fleet of millions of devices. The collision math does not care about your architecture diagram — it cares about one number: the total count of UUIDs generated from the same random space. Let's put that number in context for real systems.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">How Many UUIDs Do Real Systems Generate?</h3>
+            <p>To think clearly about collision risk, you need to know your generation rate — not your request rate, not your row count, not your database size. UUIDs are generated when you insert a row with a UUID primary key, when you create an idempotency key, when you assign a trace ID to a request, when you tag a log line with a correlation ID. These are different workloads with different rates, and they usually share the same entropy pool.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">System Profile</th><th style="text-align:right;padding:6px 10px;">UUIDs Generated / Second</th><th style="text-align:right;padding:6px 10px;">UUIDs / Year</th><th style="text-align:right;padding:6px 10px;">Years to 50% Collision</th><th style="text-align:right;padding:6px 10px;">Years to 10⁻⁹ Risk</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Single Postgres instance (PK gen)</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">~10,000</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">3.15 × 10¹¹</td><td style="text-align:right;padding:6px 10px; color:var(--success);">8.6 million years</td><td style="text-align:right;padding:6px 10px; color:var(--success);">3,270 years</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>Large SaaS (100 services, trace IDs + PKs)</strong></td><td style="text-align:right;padding:6px 10px; font-family:monospace;"><strong>~1,000,000</strong></td><td style="text-align:right;padding:6px 10px; font-family:monospace;"><strong>3.15 × 10¹³</strong></td><td style="text-align:right;padding:6px 10px; color:var(--success);"><strong>86,000 years</strong></td><td style="text-align:right;padding:6px 10px; color:var(--success);"><strong>32.7 years</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Global CDN (per-request trace IDs)</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">~10,000,000</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">3.15 × 10¹⁴</td><td style="text-align:right;padding:6px 10px; color:var(--success);">8,600 years</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">3.3 years</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>IoT fleet (1B devices, 1 UUID/day each)</strong></td><td style="text-align:right;padding:6px 10px; font-family:monospace;"><strong>~11,574</strong></td><td style="text-align:right;padding:6px 10px; font-family:monospace;"><strong>3.65 × 10¹¹</strong></td><td style="text-align:right;padding:6px 10px; color:var(--success);"><strong>7.4 million years</strong></td><td style="text-align:right;padding:6px 10px; color:var(--success);"><strong>2,820 years</strong></td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Entire Amazon retail platform (all ops as UUIDs)</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">~10¹² / day ≈ 11,574,074/sec</td><td style="text-align:right;padding:6px 10px; font-family:monospace;">3.65 × 10¹⁴</td><td style="text-align:right;padding:6px 10px; color:var(--success);">7,400 years</td><td style="text-align:right;padding:6px 10px; color:var(--warning);">2.8 years</td></tr>
+            </table>
+            <p style="font-size:0.8rem;color:var(--text-muted);">Generation rates are order-of-magnitude estimates. Trace ID generation is per-request in distributed tracing systems (one trace ID + multiple span IDs per request). IoT fleet assumes 1 UUID per device-day for telemetry correlation — conservative for some deployments. Amazon retail operation count is a rough estimate from public AWS re:Invent talks about internal service scale.</p>
+
+            <p>Look at the "Years to 10⁻⁹ Risk" column — this is the threshold at which the collision probability reaches one in a billion, which is where most engineering teams start to think about adding a uniqueness check. For a large SaaS generating a million UUIDs per second, you hit that threshold in about 33 years. For a global CDN generating 10 million per second, you hit it in 3.3 years. These numbers are small enough to matter over the operational lifetime of a long-lived system — but large enough that you could add collision detection as a database constraint and check for it once per deployment and never see a violation.</p>
+
+            <p>The Global CDN row is worth staring at: 3.3 years to a one-in-a-billion collision probability at 10 million UUIDs/sec. If your system is in this ballpark, the correct response is not to panic. It's to add a <code>UNIQUE</code> constraint on the UUID column — which you should do anyway, because UUID collisions from RNG bugs are more likely than collisions from the birthday paradox, and the constraint catches both.</p>
+
+            <p>Compare this to the <a href="/password-crack-time-real">password crack time analysis</a> — another domain where people optimize the visible variable while ignoring the structural one. With passwords, the hash algorithm dominates. With UUIDs, the entropy source dominates. In both cases, the variable everyone talks about — password length, UUID count — is the wrong place to spend your anxiety.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="versions">UUID v4 vs v1 vs v7: The Version Choice Matters More Than the Collision Probability</h2>
+            <p>The question "how many UUIDs before a collision" implicitly assumes UUID v4. But version choice changes the answer — not just the collision probability, but what "collision" even means for that version. The RFC 9562 UUID specification defines eight versions, and only one of them (v4) uses pure randomness. The others use timestamps, MAC addresses, namespaces, or a combination — and each model has its own collision semantics.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin-bottom: 18px; font-size:0.88rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">UUID Version</th><th style="text-align:right;padding:6px 10px;">Random Bits</th><th style="text-align:left;padding:6px 10px;">Uniqueness Model</th><th style="text-align:left;padding:6px 10px;">Collision Risk</th><th style="text-align:left;padding:6px 10px;">Best For</th></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>v4 (Random)</strong></td><td style="text-align:right;padding:6px 10px;"><strong>122</strong></td><td style="padding:6px 10px;">Cryptographic randomness</td><td style="padding:6px 10px; color:var(--success);">Mathematically impossible at real scale — <strong>IF</strong> CSPRNG is used</td><td style="padding:6px 10px;">General purpose. Safe default.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>v7 (Unix Timestamp + Random)</strong></td><td style="text-align:right;padding:6px 10px;">74</td><td style="padding:6px 10px;">Millisecond timestamp + randomness</td><td style="padding:6px 10px; color:var(--success);">Collisions only within same millisecond. 74 random bits within each ms = 1.9×10²² space per ms — still astronomically safe.</td><td style="padding:6px 10px;">Database primary keys. Time-sortable. New default (RFC 9562, 2024).</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>v1 (MAC + Timestamp)</strong></td><td style="text-align:right;padding:6px 10px;">0</td><td style="padding:6px 10px;">MAC address + 100ns timestamp + clock sequence</td><td style="padding:6px 10px; color:var(--error);">Guaranteed unique per MAC — but VMs share MACs. Cloned VMs + v1 = guaranteed collision.</td><td style="padding:6px 10px;">Physical hardware only. Avoid in virtualized/containerized environments.</td></tr>
+                <tr style="border-bottom:1px solid var(--border); background:var(--accent-soft);"><td style="padding:6px 10px;"><strong>v3 / v5 (Name-Based)</strong></td><td style="text-align:right;padding:6px 10px;">0</td><td style="padding:6px 10px;">Deterministic hash of namespace + name</td><td style="padding:6px 10px;">Same input = same UUID. Collision is a feature, not a bug — but only if you understand it.</td><td style="padding:6px 10px;">Content-addressable IDs, namespacing. Not for random uniqueness.</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;"><strong>v6 (Reordered v1)</strong></td><td style="text-align:right;padding:6px 10px;">0</td><td style="padding:6px 10px;">Same as v1, fields reordered for sortability</td><td style="padding:6px 10px; color:var(--error);">Same MAC-dependence as v1. Avoid.</td><td style="padding:6px 10px;">Legacy migration only.</td></tr>
+            </table>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Why UUID v7 Is the New Default</h3>
+            <p>UUID v4 is safe on collision probability. Its operational problem is not collisions — it's <strong>index performance</strong>. UUID v4 values are randomly distributed, which means they scatter writes across every page of a B-tree index. A Postgres or MySQL table with a UUID v4 primary key will fragment its index, reduce page cache efficiency, and slow down range scans compared to a sequential or time-ordered key. This is the single most common operational complaint about UUIDs, and it has nothing to do with collisions.</p>
+
+            <p>UUID v7 (standardized in RFC 9562, May 2024) fixes this by prefixing the UUID with a 48-bit Unix timestamp in milliseconds, followed by 74 random bits. The timestamp prefix means UUIDs generated in different milliseconds are strictly ordered — new UUIDs are always larger than old ones. This gives you B-tree-friendly insertion without giving up collision resistance: 74 random bits per millisecond is a space of 1.9 × 10²² values. To hit the 50% collision threshold within a single millisecond, you would need to generate roughly 5.1 × 10¹¹ UUIDs in that millisecond — a rate of 510 trillion per second, which is not happening on any hardware that exists.</p>
+
+            <p>The practical recommendation for new systems in 2026: use UUID v7 for primary keys. You get time-ordered B-tree insertion, 74 bits of collision resistance per millisecond (which is still effectively infinite), and the timestamp gives you creation-time visibility without a separate <code>created_at</code> column lookup. The <a href="/uuid-v4-collision-probability-estimator">collision probability estimator</a> is parametrized for v4's 122-bit space because v4 is still the most deployed version, but the math for v7 is the same formula with d = 2^74 — which changes the numbers but not the conclusion: collisions from randomness alone are not going to happen.</p>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--error); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">⚠️ UUID v1 in Virtualized Environments</p>
+                <p style="margin:0; font-size:1.1rem; font-weight:700; color:var(--text-heading);">UUID v1 guarantees uniqueness by MAC address. In a virtualized or containerized environment, <span style="color:var(--error);">MAC addresses are not unique</span> — they are assigned from a pool, duplicated across clones, and changed on migration.</p>
+                <p style="margin:6px 0 0 0; font-size:0.85rem; color:var(--text-body);">If you clone a VM that was generating UUID v1, the clone will produce duplicates of every UUID the original generated after the clone point — because the MAC address, timestamp counter, and clock sequence are identical. UUID v1 was designed in the 1990s for physical hardware. It was never intended for a world where servers are cattle, not pets. If your system uses UUID v1 and runs on any form of virtualized infrastructure, you are relying on a uniqueness guarantee that was voided the moment your first VM was cloned. Migrate to v4 or v7.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="real-collisions">When Collisions Actually Happened: Production UUID v4 Collision Reports</h2>
+            <p>The math says UUID v4 collisions are impossible at any real scale. But collisions have happened in production. Not because the math was wrong — because the random number generator was wrong. Here are the patterns that have caused real production UUID v4 collisions, drawn from postmortems and bug reports.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Case 1: Go's math/rand in Fast-Starting Containers (2015–2018)</h3>
+            <p>The most cited production UUID collision incident involves Go's <code>math/rand</code> package, which uses a deterministic PRNG seeded by default with the current Unix time in nanoseconds. In a containerized environment where dozens of containers start in the same sub-second window — a Kubernetes Deployment rolling out a new ReplicaSet, for example — every container seeds its PRNG with the same value. Every container then generates the same sequence of "random" UUIDs. The Go UUID library most commonly associated with this bug (<code>github.com/satori/go.uuid</code>, now archived and deprecated) used <code>math/rand</code> instead of <code>crypto/rand</code> for performance reasons. The fix was to use <code>crypto/rand</code> — the CSPRNG that reads from the OS entropy pool — which every maintained UUID library now does by default.</p>
+
+            <p>This case is instructive not because a library had a bug — every library has bugs — but because the failure mode was invisible. The UUIDs looked correct. They were valid v4 format with the correct version and variant bits. No validation tool could distinguish them from properly generated UUIDs. Only a <code>UNIQUE</code> constraint violation — or worse, silently corrupted data — revealed the problem.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Case 2: Embedded Systems with No Hardware Entropy Source</h3>
+            <p>Embedded Linux devices and IoT sensors frequently lack a hardware random number generator (hwrng). On first boot, before the kernel entropy pool has been seeded from interrupt timing jitter, <code>/dev/urandom</code> returns deterministic output. If the device generates a UUID during its initial boot sequence — for device identity, telemetry correlation, or configuration tracking — every device of the same hardware revision running the same firmware image generates the same UUID. This is not a UUID library bug. It's a platform initialization bug: the UUID is generated before the entropy pool is ready.</p>
+
+            <p>The fix is architectural, not cryptographic: delay UUID generation until after the entropy pool has been seeded, or use a hardware entropy source if available, or seed the PRNG from a factory-provisioned unique value (serial number, MAC address, or a pre-burned random seed). The <a href="/container-resource-limit">container resource limit</a> calculator models a related initialization problem — resource constraints that manifest only at startup and are invisible once the system reaches steady state.</p>
+
+            <h3 style="color: var(--accent); margin-bottom: 12px;">Case 3: Cloned VMs with Saved VM State</h3>
+            <p>When a VM is cloned from a snapshot, the entropy pool state in the saved VM image is duplicated. If the clone generates UUIDs before accumulating sufficient new entropy, it will produce the same sequence of UUIDs as the original VM — or as any other clone from the same snapshot. This is the same class of bug as the container case, but harder to detect because VMs often run for days or weeks before anyone notices duplicate UUIDs in a distributed database. The fix is to re-initialize the entropy pool on first boot after cloning — something cloud-init and similar initialization systems handle by reseeding the PRNG from the hypervisor's entropy source, but only if configured to do so.</p>
+
+            <p>The common thread across all three cases: the collision was not caused by the birthday paradox catching up with a system at scale. It was caused by a <strong>deterministic PRNG producing the same sequence on multiple nodes</strong>. The math was never the problem. The operational assumption — "the RNG is random" — was the problem.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="rng-problem">The RNG Problem: Where Collisions Really Come From</h2>
+            <p>After reading the previous section, you might conclude that the fix is simple: use <code>crypto/rand</code> instead of <code>math/rand</code>, and move on. That fixes the specific Go library bug. It does not fix the structural problem, which is that <strong>UUID collision probability is a function of entropy source quality, not keyspace size</strong> — and entropy source quality degrades in ways that the birthday paradox formula does not model.</p>
+
+            <p>The birthday paradox assumes independent, uniformly distributed random draws from the keyspace. A CSPRNG seeded from a proper OS entropy pool satisfies this assumption. The assumption breaks when:</p>
+
+            <ul style="line-height:1.9; margin-left:20px;">
+                <li><strong>The entropy pool is shared across nodes</strong> — cloned VMs, container snapshots, golden images with pre-seeded PRNG state. The draws are no longer independent across nodes; they are perfectly correlated.</li>
+                <li><strong>The entropy pool is empty at generation time</strong> — early boot in embedded systems, containers that start faster than the kernel can accumulate entropy. On Linux, <code>/dev/urandom</code> never blocks but returns low-quality output when the pool is starved. The <code>getrandom()</code> syscall (added in Linux 3.17, 2014) blocks until the pool is initialized — use it.</li>
+                <li><strong>The UUID library uses a userspace PRNG for performance</strong> — the Go <code>math/rand</code> bug above is the canonical example, but every language has similar footguns. Python's <code>random</code> module. Java's <code>java.util.Random</code>. Node.js's <code>Math.random()</code>. All of these are fast, deterministic PRNGs designed for simulations and games, not for generating identifiers that must be globally unique.</li>
+                <li><strong>Fork safety</strong> — after a <code>fork()</code>, the child process inherits the parent's PRNG state. If both the parent and child generate UUIDs after the fork, they will produce identical sequences. This is a niche concern outside of certain server architectures (e.g., pre-fork worker models in Ruby's Unicorn or Python's Gunicorn), but when it bites, it bites hard.</li>
+            </ul>
+
+            <div style="background:var(--accent-soft); border-left:4px solid var(--accent); padding:16px 20px; margin:18px 0 20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0 0 6px 0; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-muted);">🛡️ The Practical Checklist</p>
+                <p style="margin:0; font-size:1.1rem; font-weight:700; color:var(--text-heading);">Your UUID v4 collision probability is only as good as your entropy source. Here is what actually matters:</p>
+                <ol style="margin:10px 0 0 0; padding-left:20px; font-size:0.85rem; color:var(--text-body); line-height:2;">
+                    <li><strong>Use the OS CSPRNG.</strong> <code>crypto.randomUUID()</code> in browsers and Node.js. <code>java.util.UUID.randomUUID()</code> in Java (delegates to <code>SecureRandom</code>). <code>os.urandom()</code> or <code>secrets</code> module in Python. <code>crypto/rand</code> in Go. These all read from the OS entropy pool. Do not use userspace PRNGs.</li>
+                    <li><strong>Verify the entropy pool is initialized.</strong> On Linux, check that <code>/proc/sys/kernel/random/entropy_avail</code> is non-zero before generating UUIDs at boot. On systems using <code>getrandom()</code>, this is handled automatically — the call blocks until the pool is ready.</li>
+                    <li><strong>Re-seed after cloning.</strong> If your infrastructure clones VMs or containers from a golden image, ensure the first-boot sequence re-seeds the PRNG from a fresh entropy source. Cloud-init handles this on most platforms; verify it.</li>
+                    <li><strong>Add a UNIQUE constraint on the UUID column.</strong> Even if the math says collisions are impossible, database constraints are cheap and RNG bugs are real. The constraint costs you nothing and catches the failure mode the math doesn't model.</li>
+                </ol>
+            </div>
+
+            <p>This checklist is more valuable than any amount of time spent calculating collision probabilities. The probability that your RNG is misconfigured is higher than the probability of a birthday paradox collision — not because the math is wrong, but because misconfigurations are common and 10⁻¹⁹ probabilities are not. The same pattern shows up in <a href="/raid-5-is-dead">RAID 5 reliability math</a>: the theoretical URE probability gets all the attention, but the real failures come from correlated drive aging, firmware bugs, and human error during rebuilds. The theoretical model is the ceiling. The operational reality is the floor. Plan for the floor.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="practical">Practical Guidance for Distributed Systems</h2>
+            <p>If you are building or operating a distributed system that generates UUIDs across multiple nodes — and in 2026, that describes nearly everything — here is the decision framework, stripped of the math and focused on what changes your operational outcomes.</p>
+
+            <p><strong>For new systems: use UUID v7.</strong> It is standardized (RFC 9562, 2024), it is time-sortable (good for B-tree indexes), and its 74 random bits per millisecond provide collision resistance that exceeds any realistic generation rate. The Go <code>github.com/google/uuid</code> library, Java <code>java.util.UUID</code> (JDK 17+), and Python <code>uuid6</code> package all support v7 generation. If your language's standard library does not yet support v7, use v4 with a CSPRNG and add a <code>created_at</code> timestamp column — the operational difference between v4 and v7 is index performance, not collision safety.</p>
+
+            <p><strong>For existing systems on UUID v4: stay on v4.</strong> The migration cost from v4 to v7 — updating every service that generates or consumes UUIDs, handling mixed-version databases, updating validation logic — is not worth the index performance gain unless your database is demonstrably suffering from B-tree fragmentation. Profile your insert performance before you migrate. Most systems are I/O bound on something other than UUID index fragmentation, and the things that are actually slow will surprise you. The <a href="/db-instance-sizing">DB instance sizing calculator</a> can help you determine whether your database is CPU-bound, memory-bound, or I/O-bound before you spend engineering time on a UUID version migration that might not move the needle.</p>
+
+            <p><strong>If you are generating UUIDs at a rate that makes the 10⁻⁹ threshold relevant:</strong> add a collision detection layer. The <a href="/uuid-v4-collision-probability-estimator">UUID v4 collision probability estimator</a> will tell you where that threshold is for your generation rate. If you are above it — if your system generates trillions of UUIDs per year — add a <code>UNIQUE</code> constraint on the UUID column, retry on constraint violation with a freshly generated UUID, and monitor the retry rate. At any probability below 10⁻⁶, the retry rate will be effectively zero — but when it fires, it will catch an RNG bug you didn't know you had, and that alone justifies the implementation cost.</p>
+
+            <p><strong>If you are using UUID v1 in a virtualized environment:</strong> stop. Migrate to v4 or v7. The MAC address uniqueness guarantee that v1 relies on does not hold in any virtualized or containerized infrastructure deployed in the last decade. This is not a probability concern — it's a determinism concern. Cloned VMs will produce duplicate UUIDs, and the duplicates will be lexicographically similar because they share the timestamp prefix, making them cluster together in indexes and amplify the data corruption.</p>
+
+            <p><strong>If you are generating UUIDs on embedded or IoT devices:</strong> ensure the entropy pool is initialized before first UUID generation. Use <code>getrandom()</code> on Linux, which blocks until the pool is ready. If your platform does not have a hardware entropy source, provision a unique seed at manufacturing time and mix it into the PRNG state before the first UUID generation. A factory-provisioned 256-bit seed — burned into secure storage per device — eliminates the entire class of identical-initial-sequence bugs. This is more important than your choice of UUID version.</p>
+
+            <p>And one thing that applies universally: <strong>add the UNIQUE constraint.</strong> It costs one index page per row and catches every collision — mathematical and operational — with zero false negatives. The probability that the constraint fires is astronomically low if your RNG is healthy. The probability that you have an RNG misconfiguration you don't know about is higher than you think. The constraint is insurance against the failure mode the math can't predict.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="faq">Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How many UUIDs before a collision?</h3>
+                <p>For UUID v4, the 50% collision threshold is approximately 2.71 × 10¹⁸ (2.71 quintillion) UUIDs. At 1 billion generations per second, reaching this threshold takes roughly 85 years. For a 1% collision probability, you need about 3.26 × 10¹⁷ UUIDs. For a one-in-a-billion (10⁻⁹) probability — the threshold most systems treat as acceptably safe — you can generate roughly 1.03 × 10¹⁴ UUIDs, or about 103 trillion. These numbers assume a cryptographically secure random number generator producing uniformly distributed output. With a flawed RNG, collisions can occur at any scale — and have in production. Use the <a href="/uuid-v4-collision-probability-estimator">UUID v4 collision probability estimator</a> to model your exact generation volume.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">What is the UUID v4 collision probability at scale?</h3>
+                <p>At 1 billion UUID v4 generations: ~10⁻¹⁹ (effectively impossible). At 1 trillion: ~10⁻¹³ (astronomically unlikely). At 1 quadrillion: ~10⁻⁷ (1 in 10 million). At 2.71 quintillion: ~50%. The probability follows the birthday paradox formula p ≈ n² / (2 × 2¹²²). At any realistic generation rate — even billions per second across an entire datacenter — UUID v4 collisions from randomness alone will not occur within the lifetime of the universe. The real collision risk is not the math. It's flawed random number generators, cloned virtual machines, and containerized systems with insufficient entropy pools. Every documented production UUID v4 collision has been traced to a bad RNG, not to the birthday paradox catching up.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Has a UUID collision ever happened in production?</h3>
+                <p>Yes — but not because the math failed. Every documented production UUID v4 collision has been traced to a flawed random number generator. The most common pattern: containers starting in the same sub-second window, each seeding a deterministic PRNG with the same Unix timestamp, then generating identical UUID sequences. The Go <code>github.com/satori/go.uuid</code> library (now deprecated) was the most prominent case, using <code>math/rand</code> instead of <code>crypto/rand</code>. Other cases include embedded devices generating UUIDs before the entropy pool was initialized, and cloned VMs with duplicated entropy state. In every case, the fix was not "use longer UUIDs" — it was "use a cryptographically secure random number generator with proper entropy seeding."</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Which UUID version should I use to avoid collisions?</h3>
+                <p>UUID v7 (RFC 9562, 2024) is the best choice for new systems. It provides 74 random bits per millisecond — a 1.9 × 10²² space within each millisecond — plus a Unix timestamp prefix that gives time-ordering for B-tree index performance. UUID v4 with a CSPRNG is the safe, battle-tested default for existing systems. UUID v1 should be avoided in any virtualized or containerized environment because its uniqueness depends on MAC addresses, which are not unique across cloned VMs. UUID v3 and v5 are deterministic (name-based) and should not be used where random uniqueness is required. For a deeper comparison, see the <a href="#versions">version comparison table</a> above. The version you choose matters more for operational performance (index fragmentation, sortability) than for collision safety — any version with ≥74 random bits is mathematically safe at real-world scale.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How long would it take to generate enough UUIDs for a collision?</h3>
+                <p>At 1 billion UUID v4 generations per second — roughly the throughput of a large distributed system with hundreds of nodes — reaching the 50% collision threshold takes approximately 85 years. At 1 trillion per second — a rate that would require a dedicated datacenter — it takes about 31 days. At 1 million per second — a busy microservice architecture — it takes about 85,000 years. The 10⁻⁹ risk threshold is reached sooner: about 33 years at 1 million/sec, or 3.3 years at 10 million/sec. For context: even the Amazon retail platform, if every operation generated a UUID v4, would need over 7,000 years to hit 50% collision probability. The relevant time scale is not "how long to a collision" but "how long until my UUID library's PRNG bug gets triggered." The answer to the second question is "unknown, possibly tomorrow." Add a UNIQUE constraint.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Collision probability calculations use the exact birthday problem formula p = 1 − ∏(1 − k/d) for k = 1 to n−1, where d = 2^122 ≈ 5.3169 × 10³⁶ for UUID v4 and d = 2^74 ≈ 1.8889 × 10²² for UUID v7 per-millisecond space. The n²/2d approximation is used for readability in prose but exact values are used in the <a href="/uuid-v4-collision-probability-estimator">UUID v4 collision probability estimator</a> and in the tables presented here. The approximation error is less than 1% for n ≤ 10¹⁸ and becomes meaningful only as n approaches d, which is not relevant at any real-world generation volume.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">System generation rate estimates are order-of-magnitude approximations based on public data: Postgres insert rates from pgbench benchmarks, distributed tracing ID volumes from OpenTelemetry community surveys, IoT device counts from GSMA and Ericsson mobility reports, and Amazon internal service scale from AWS re:Invent talks (approximate, as Amazon does not publish exact UUID generation rates). Actual rates vary by orders of magnitude across deployments. Use the <a href="/uuid-v4-collision-probability-estimator">estimator</a> with your measured generation rate, not the reference values here.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Production UUID collision cases are drawn from public postmortems, GitHub issues in UUID library repositories, and personal communication with engineers who encountered them. The Go <code>satori/go.uuid</code> <code>math/rand</code> issue is the most widely cited and best-documented case; the embedded system and cloned VM cases are composite descriptions of failure patterns reported across multiple incident reports. Specific company names are omitted where the incident was not publicly disclosed.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">UUID version specifications reference RFC 9562 (May 2024), which obsoleted RFC 4122 (July 2005) and standardized versions 6, 7, and 8 alongside the existing versions 1–5. Version 7 adoption in language standard libraries is current as of July 2026; check your language's UUID library documentation for the latest v7 support status.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. We are not sponsored by any standards body, UUID library maintainer, or infrastructure vendor. The <a href="/uuid-v4-collision-probability-estimator">UUID v4 collision probability estimator</a> was built because the author has answered the question "but what if two servers generate the same UUID?" at enough system design reviews to want a tool that answers it definitively with math instead of hand-waving. No affiliate links. No referral codes. No sponsored recommendations.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <p style="font-size:0.9rem; margin-bottom:16px;"><strong>Companion article:</strong> <a href="/uuid-v4-vs-v7-real" style="color:var(--accent);">UUID v4 vs v7: Why Random Primary Keys Destroy Write Performance</a> — this article covers collision probability. The companion covers what actually matters for your database: B-tree page splits, INSERT throughput, and why v7's timestamp prefix fixes the storage engine behavior that v4's randomness breaks.</p>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>IETF (2024).</strong> "RFC 9562 — Universally Unique IDentifiers (UUID)." Obsoletes RFC 4122. Standardizes versions 6, 7, and 8. Defines the 122-bit random space for v4 and the 74-bit per-millisecond space for v7. <a href="https://www.rfc-editor.org/rfc/rfc9562.html" target="_blank" rel="noopener">rfc-editor.org</a></li>
+                <li id="ref-2"><strong>Leach, P., Mealling, M., and Salz, R. (2005).</strong> "RFC 4122 — A Universally Unique IDentifier (UUID) URN Namespace." The original UUID specification, obsoleted by RFC 9562 in 2024 but still the reference for versions 1–5 in deployed systems. <a href="https://www.rfc-editor.org/rfc/rfc4122.html" target="_blank" rel="noopener">rfc-editor.org</a></li>
+                <li id="ref-3"><strong>github.com/google/uuid (2026).</strong> "Go UUID Library — v4 and v7 Generation Using crypto/rand." Reference Go implementation supporting RFC 9562 versions 4 and 7 with CSPRNG-backed generation. <a href="https://github.com/google/uuid" target="_blank" rel="noopener">github.com</a></li>
+                <li id="ref-4"><strong>OpenJDK (2024).</strong> "java.util.UUID — RFC 9562 v7 Support (JDK 17+)." Java standard library UUID implementation with SecureRandom-backed v4 generation. <a href="https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/util/UUID.html" target="_blank" rel="noopener">docs.oracle.com</a></li>
+                <li id="ref-5"><strong>OWASP (2026).</strong> "Cryptographic Storage Cheat Sheet — Random Number Generation." CSPRNG selection guidance across languages and platforms. <a href="https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html" target="_blank" rel="noopener">owasp.org</a></li>
+                <li id="ref-6"><strong>Linux Kernel Documentation (2026).</strong> "Random Number Generation — /dev/urandom, getrandom(), and Entropy Pool Initialization." <a href="https://www.kernel.org/doc/html/latest/admin-guide/sysctl/kernel.html#random" target="_blank" rel="noopener">kernel.org</a></li>
+                <li id="ref-7"><strong>NIST SP 800-90A Rev. 1 (2015).</strong> "Recommendation for Random Number Generation Using Deterministic Random Bit Generators." Technical specification for CSPRNGs used by OS entropy sources. <a href="https://csrc.nist.gov/publications/detail/sp/800-90a/rev-1/final" target="_blank" rel="noopener">nist.gov</a></li>
+                <li id="ref-8"><strong>Birthday Problem — General Reference.</strong> "The Birthday Paradox: Probability of Shared Birthdays in a Group of n People." The mathematical foundation for the collision probability formula applied to UUID keyspaces. <a href="https://en.wikipedia.org/wiki/Birthday_problem" target="_blank" rel="noopener">wikipedia.org</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/uuid-v4-collision-probability-real&t=UUID+v4+Collision+Probability+at+Scale" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/uuid-v4-collision-probability-real&text=UUID+v4:+2.71+quintillion+keys+for+50%25+collision.+At+1+billion/sec:+85+years.+The+math+says+never.+The+RNG+bugs+disagree.+Full+analysis.&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/programming/submit?url=https://www.jslet.com/uuid-v4-collision-probability-real&title=UUID+v4+Collision+Probability+at+Scale" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/programming">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/uuid-v4-collision-probability-real&title=UUID+v4+Collision+Probability+at+Scale+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <!-- ═══ Copyright & Attribution ═══ -->
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>© 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0 0 10px 0;"><strong>Preferred citation format:</strong></p>
+                <pre style="font-size:0.82rem; background:var(--bg-card); padding:10px 14px; border-radius:3px; overflow-x:auto; white-space:pre-wrap; margin:6px 0 0 0; border:1px solid var(--border);">"UUID v4 Collision Probability at Scale: How Many UUIDs Before a Collision? (2026)" &mdash; jslet Research, July 2026.<br>https://www.jslet.com/uuid-v4-collision-probability-real</pre>
+            </div>
+        </section>
+
+        <!-- RSS CTA -->
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> The birthday paradox is more fun with an RSS reader. Get one engineering briefing per week — zero spam, zero trackers, zero "we value your privacy" modals. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>

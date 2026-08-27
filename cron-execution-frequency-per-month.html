@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Cron Pattern Trigger Frequency Matrix — jslet</title>
+    <meta name="description" content="*/5 * * * * looks innocent. That is 8,640 executions per month. Your rate limiter is set to 1,000/min and your monthly quota is 50,000. Do the math before the cron job does.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Cron Pattern Trigger Frequency Matrix — jslet">
+    <meta property="og:description" content="*/5 * * * * fires 8,640 times a month. Your rate limiter caps at 1,000/min. Do the math before the cron job does — capacity planning starts with knowing how often your schedules actually fire.">
+    <meta property="og:url" content="https://www.jslet.com/cron-execution-frequency-per-month">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Cron Pattern Trigger Frequency Matrix — jslet">
+    <meta name="twitter:description" content="*/5 * * * * fires 8,640 times a month. Your rate limiter caps at 1,000/min. Do the math before the cron job does — capacity planning starts with knowing how often your schedules actually fire.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/cron-execution-frequency-per-month">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.6rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Cron Pattern Trigger Frequency Matrix",
+      "description": "*/5 * * * * fires 8,640 times a month. Your rate limiter caps at 1,000/min. Do the math before the cron job does — capacity planning starts with knowing how often your schedules actually fire.",
+      "url": "https://www.jslet.com/cron-execution-frequency-per-month",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How many times does a cron job run per month?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It multiplies fast: */5 * * * * runs every 5 minutes, which is 12 runs/hour × 24 hours × 30 days = 8,640 executions per month. The calculator builds the full frequency matrix for any cron expression, so you can see the real execution count before your rate limiter or monthly quota does."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does cron frequency break capacity planning?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Each execution is a function invocation, a task, or a worker spin-up — all billed or rate-limited. A job that looks cheap per run becomes 43,200 executions/month when it fires every minute. The calculator connects the cron expression to monthly volume so capacity planning and rate-limit budgets are set from the actual number."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I avoid cascading failures from cron jobs?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "When a cron job overruns its window or a downstream rate limit trips, retries can pile up into cascading failures. The calculator's analysis covers the relationship between frequency, execution duration, and rate limits, helping you pick intervals that leave headroom for retries without hitting quotas."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>Cron <span>Trigger Frequency</span> Matrix</h1>
+            <p>*/5 * * * * looks innocent. That fires 8,640 times a month. Your rate limiter caps at 1,000/min and your monthly quota is 50,000. Do this math before the cron job does — capacity planning starts with knowing how often your schedules actually fire.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>⏲️ Cron Schedule Parameters</h3>
+                <p class="card-desc">Set runs per hour, active hours per day. The engine multiplies across day/week/month/year time horizons. Use this before your CI pipeline's cron schedule accidentally DDOSes your own API.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="rph">Runs Per Hour</label>
+                        <input type="number" class="unit-input" id="rph" value="60" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="hpd">Active Hours Per Day</label>
+                        <input type="number" class="unit-input" id="hpd" value="24" step="any" min="1" max="24">
+                    </div>
+                </div>
+                <button class="btn-calc">Run Calculation</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Execution Frequency Matrix</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-per-day"></div><div class="metric-label">Per Day</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-per-week"></div><div class="metric-label">Per Week</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-per-month"></div><div class="metric-label">Per Month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-per-year"></div><div class="metric-label">Per Year</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- REFERENCE SECTION -->
+        <section class="seo-section">
+            <h2>Cron Frequency: 60 Runs/Hour &times; 24 Hours = 43,200 Executions/Month</h2>
+            <p>Cron is the quintessential Unix job scheduler, powering recurring automation across every Linux server, Kubernetes CronJob, and cloud scheduler service. A single cron expression like <code>* * * * *</code> — firing every minute, 24 hours a day, 7 days a week — triggers <strong>43,200 executions per month</strong> on a 30-day calendar. Understanding this raw execution volume is the first step toward capacity planning for cron-driven architectures.</p>
+
+            <h3>How Cron Scheduling Works</h3>
+            <p>The classic cron expression consists of five fields: <code>minute hour day-of-month month day-of-week</code>. Each <code>*</code> wildcard means "every" for that field. The expression <code>* * * * *</code> therefore fires once per minute, every minute, every hour, every day — producing <strong>1,440 executions per day</strong> (60 minutes &times; 24 hours). Other common patterns and their monthly volumes:</p>
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th>Cron Expression</th><th>Meaning</th><th>Runs/Minute</th><th>Runs/Month (30d)</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>* * * * *</code></td><td>Every minute</td><td>1</td><td>43,200</td></tr>
+                        <tr><td><code>*/5 * * * *</code></td><td>Every 5 minutes</td><td>0.2</td><td>8,640</td></tr>
+                        <tr><td><code>0 * * * *</code></td><td>Every hour at :00</td><td>0.0167</td><td>720</td></tr>
+                        <tr><td><code>*/30 * * * *</code></td><td>Every 30 minutes</td><td>0.0333</td><td>1,440</td></tr>
+                        <tr><td><code>0 0 * * *</code></td><td>Once per day at midnight</td><td>0.000694</td><td>30</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>Capacity Planning for Cron Workloads</h3>
+            <p>When cron-triggered jobs interact with databases, APIs, or message queues, the aggregate execution frequency directly impacts infrastructure sizing. A fleet of 200 microservices each running a per-minute cron health check generates <strong>8.64 million executions per month</strong>. Each execution may spawn a database connection, allocate memory buffers, and write log entries — compound this across a distributed system and the resource footprint becomes non-trivial. Use this calculator to model your total scheduled execution volume and right-size your supporting infrastructure.</p>
+
+            <h3>Rate Limiting and Cascading Failures</h3>
+            <p>Cron jobs that fire simultaneously across many instances — known as the <strong>thundering herd problem</strong> — can saturate downstream services instantaneously. Injecting a random jitter (sleep interval) into each cron execution, or staggering schedules across instances, is a standard mitigation. Understanding your raw execution matrix is the prerequisite for designing these safeguards and setting appropriate rate limits on upstream APIs and database connection pools.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/container-resource-limit">Container Resource Limit &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function v(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+    function compute() {
+        var r = v('rph');
+        var h = v('hpd');
+        var pd = r * h;
+        var pm = pd * 30;
+
+        document.getElementById('results-params').innerText =
+            r.toLocaleString() + ' runs/hour × ' + h.toLocaleString() + ' active hours/day = ' + pd.toLocaleString() + ' executions/day';
+
+        document.getElementById('val-per-day').innerText = pd.toLocaleString();
+        document.getElementById('val-per-week').innerText = (pd * 7).toLocaleString();
+        document.getElementById('val-per-month').innerText = pm.toLocaleString();
+        document.getElementById('val-per-year').innerText = (pm * 12).toLocaleString();
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    var btn = document.querySelector('.btn-calc');
+    if (btn) btn.addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

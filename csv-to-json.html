@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>CSV to JSON Converter — Parse Spreadsheet Data to JSON Online — jslet</title>
+    <meta name="description" content="Convert CSV to JSON online. RFC 4180-compliant parsing with quoted fields, BOM stripping, optional type inference, 4 output formats. 100% client-side — your data never leaves your browser.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/csv-to-json">
+    <meta property="og:title" content="CSV to JSON Converter — Parse CSV to JSON Online">
+    <meta property="og:description" content="Convert CSV to JSON with RFC 4180 parsing, BOM stripping and type inference. 4 output formats. 100% client-side.">
+    <meta property="og:url" content="https://www.jslet.com/csv-to-json">
+    <meta property="og:type" content="website"><meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="CSV to JSON Converter — Parse CSV to JSON Online">
+    <meta name="twitter:description" content="RFC 4180 CSV parsing, BOM stripping, type inference, 4 output formats. 100% client-side.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"CSV to JSON Converter","description":"Convert CSV to JSON with RFC 4180-compliant parsing, BOM stripping, optional type inference and 4 output formats. 100% client-side.","url":"https://www.jslet.com/csv-to-json","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I convert CSV to JSON without writing code?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Paste your CSV (from Excel, Google Sheets or any export) into jslet's CSV to JSON tool. The first row becomes the JSON keys and each following row becomes an object. You can choose between 4 output shapes: array of objects ([{\"name\":\"Alice\"}]), array of arrays ([[\"name\"],[\"Alice\"]]), keyed by first column ({\"Alice\": {...}}) or column arrays ({\"name\":[\"Alice\"]}). The parser follows RFC 4180: quoted fields with embedded commas or newlines are handled correctly, and a UTF-8 byte-order-mark (BOM) added by Excel is stripped automatically so your first column name never gets corrupted. Everything runs in your browser — no uploads, no server."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does my CSV-to-JSON converter turn \"00501\" into 501?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "That is type inference: a converter that 'helpfully' coerces every digit-only string into a JSON number will drop leading zeros, because JSON's number grammar has no concept of leading zeros. Zip codes, phone numbers and account IDs are the classic victims. This tool keeps type inference OFF by default and only applies it when you enable the 'Infer types' option — and even then you can disable it for a specific conversion. When type inference is on, \"42\" becomes the number 42, \"true\" becomes boolean true, and empty cells become null. When it is off, everything stays a string, which is the safe default for data you do not fully trust."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does my first JSON key look corrupted after conversion?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "That is almost always a UTF-8 byte-order-mark (BOM). When Excel exports 'CSV UTF-8', it writes three invisible bytes (EF BB BF) at the very start of the file. If the converter does not strip them, those bytes get glued onto your first header name, turning \"id\" into a key that looks right but fails strict matching in code. This tool strips a leading BOM automatically before parsing headers. If you paste data copied from a web page instead of a file export, BOMs can also sneak in — the stripping handles both cases."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What happens when a CSV row has more or fewer columns than the header?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A short row (fewer fields than headers) produces objects with missing keys for the unfilled columns — the values do not shift into the wrong fields. A row with MORE fields than headers is almost always a malformed CSV, usually an unescaped delimiter or unbalanced quote inside a quoted field. This tool flags that mismatch with a warning instead of silently shifting every subsequent value one column over, which is the failure mode of naive converters that zip headers to values by position without checking lengths. Fix the source data rather than trusting a silently misaligned output."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is my CSV data uploaded to a server?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. The conversion runs entirely in your browser via JavaScript — your CSV never leaves your device. This matters when your data contains customer PII, employee records or proprietary datasets. You can verify it yourself: open the browser Network tab (F12) before converting and you will see zero outbound requests. No account, no signup, no file-size limit beyond your browser's memory."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .tool-layout { display: flex; gap: 20px; min-height: 450px; }
+        @media (max-width: 768px) { .tool-layout { flex-direction: column; } }
+        .tool-panel { flex: 1; display: flex; flex-direction: column; }
+        .tool-panel label { font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; color: var(--text-body); }
+        .tool-panel textarea { flex: 1; min-height: 380px; font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 0.82rem; padding: 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-body); resize: vertical; line-height: 1.5; }
+        .tool-panel textarea:focus { border-color: var(--accent); outline: none; }
+        .btn-row { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); }
+        .btn-outline:hover { background: var(--accent-soft); }
+        .info-bar { font-size: 0.82rem; color: var(--text-muted); margin-top: 8px; display: flex; gap: 20px; flex-wrap: wrap; }
+        .options-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; font-size: 0.85rem; }
+        .options-row label { display: flex; align-items: center; gap: 5px; cursor: pointer; font-weight: 400; }
+        .warn-bar { background: var(--accent-soft, #fff3e6); border: 1px solid var(--accent); color: var(--accent); font-size: 0.82rem; padding: 8px 12px; border-radius: var(--radius-sm); margin-bottom: 10px; display: none; }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>CSV <span>→JSON</span> Converter</h1><p>Paste spreadsheet data, get clean JSON. RFC 4180 parsing, BOM stripping, and an honest type-inference switch — because "00501" is not the number 501.</p></header>
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="convertCsv()">🟢🔄 Convert CSV →JSON</button>
+            <button class="btn btn-outline" onclick="downloadJson()">🟢💾 Download .json</button>
+            <button class="btn btn-outline" onclick="copyJson()">🟢📋 Copy JSON</button>
+            <button class="btn btn-outline" onclick="loadSample()">🟢🧪 Sample</button>
+            <button class="btn btn-outline" onclick="clearAll()">🗑 Clear</button>
+        </div>
+        <div class="options-row">
+            <label><input type="checkbox" id="opt-infer" onchange="convertCsv()"> Infer types (numbers / booleans / null)</label>
+            <label><input type="checkbox" id="opt-header" checked onchange="convertCsv()"> First row is header</label>
+            <label>Delimiter: <select id="opt-delim" onchange="convertCsv()" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text-body);"><option value=",">Comma (,)</option><option value=";">Semicolon (;)</option><option value="\t">Tab</option><option value="|">Pipe (|)</option></select></label>
+            <label>Output: <select id="opt-format" onchange="convertCsv()" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text-body);"><option value="objects">Array of objects</option><option value="arrays">Array of arrays</option><option value="keyed">Keyed by first column</option><option value="columns">Column arrays</option></select></label>
+        </div>
+        <div class="warn-bar" id="csv-warn"></div>
+        <div class="tool-layout">
+            <div class="tool-panel"><label for="input-csv">🟢📥 CSV Input</label><textarea id="input-csv" placeholder='Paste CSV here...&#10;name,age,city&#10;Alice,30,NYC&#10;Bob,25,LA'></textarea></div>
+            <div class="tool-panel"><label for="output-json">🟢📤 JSON Output</label><textarea id="output-json" placeholder="JSON will appear here..." readonly></textarea><div class="info-bar" id="csv-stats"></div></div>
+        </div>
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">🟢📖 The Four CSV Traps This Converter Handles</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>1. The BOM:</strong> Excel's "CSV UTF-8" export writes three invisible bytes (EF BB BF) at the start of the file. A naive converter glues them onto your first column name, producing a key like <code>id</code> that looks right but fails strict matching. This tool strips the BOM before parsing headers.</p>
+                <p><strong>2. Quoted fields:</strong> RFC 4180 allows commas, newlines and doubled quotes inside quoted fields — <code>"Smith, John"</code> is ONE field, not two. The parser here reads quote state properly instead of naively splitting on every comma. A field with an unbalanced quote is the #1 cause of "my CSV rows are misaligned" — the tool flags it instead of silently shifting data.</p>
+                <p><strong>3. Leading zeros:</strong> Turn <code>00501</code> (a zip code) into the number 501 and you have silently corrupted data, because JSON numbers cannot have leading zeros. Type inference is therefore OFF by default — enable it only when you trust the data and actually want typed output.</p>
+                <p><strong>4. Row/header mismatch:</strong> A row with more fields than headers usually means an unescaped delimiter upstream. This tool warns you about the mismatch rather than zipping values into the wrong columns.</p>
+                <p>See also: <a href="/json-to-csv">JSON →CSV Converter</a> (reverse) · <a href="/json-formatter">JSON Formatter</a> · <a href="/json-minify">JSON Minifier</a> · <a href="/json-to-code">JSON →Code Generator</a> · <a href="/json-tools">All JSON / CSV Tools</a></p>
+            </div>
+        </section>
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var inp = document.getElementById('input-csv');
+        var out = document.getElementById('output-json');
+        var stats = document.getElementById('csv-stats');
+        var warn = document.getElementById('csv-warn');
+
+        // ── RFC 4180 CSV line parser: handles quoted fields, embedded commas/newlines, doubled quotes ──
+        function parseCsv(text, delim) {
+            if (!text) return [];
+            // Strip UTF-8 BOM if present
+            if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+            var rows = [];
+            var row = [];
+            var field = '';
+            var inQuotes = false;
+            var i = 0;
+            var n = text.length;
+            while (i < n) {
+                var ch = text[i];
+                if (inQuotes) {
+                    if (ch === '"') {
+                        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+                        inQuotes = false; i++; continue;
+                    }
+                    field += ch; i++; continue;
+                }
+                if (ch === '"' && field === '') { inQuotes = true; i++; continue; }
+                if (ch === delim) { row.push(field); field = ''; i++; continue; }
+                if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+                if (ch === '\r') { i++; continue; }
+                field += ch; i++;
+            }
+            // Last field/row without trailing newline
+            if (field !== '' || row.length > 0) { row.push(field); rows.push(row); }
+            return rows;
+        }
+
+        // ── Type inference: "42"→42, "true"→true, ""→null ──
+        function inferValue(s) {
+            if (s === '') return null;
+            if (s === 'true') return true;
+            if (s === 'false') return false;
+            if (/^-?\d+(\.\d+)?$/.test(s) && !/^0\d/.test(s)) return Number(s);
+            return s;
+        }
+
+        function normalizeHeaders(headers) {
+            var seen = {};
+            return headers.map(function(h) {
+                var key = String(h).trim();
+                if (!key) key = 'column';
+                var base = key;
+                var k = 1;
+                while (seen[key]) { key = base + '_' + k; k++; }
+                seen[key] = true;
+                return key;
+            });
+        }
+
+        function convertCsv() {
+            var text = inp.value;
+            if (!text.trim()) { out.value = ''; stats.textContent = ''; warn.style.display = 'none'; return; }
+            var delim = document.getElementById('opt-delim').value === '\\t' ? '\t' : document.getElementById('opt-delim').value;
+            var infer = document.getElementById('opt-infer').checked;
+            var hasHeader = document.getElementById('opt-header').checked;
+            var format = document.getElementById('opt-format').value;
+
+            var rows = parseCsv(text, delim);
+            if (rows.length === 0) { out.value = ''; stats.textContent = '⚠ No rows parsed'; return; }
+
+            // Header handling
+            var headers = null;
+            var dataStart = 0;
+            if (hasHeader) {
+                headers = normalizeHeaders(rows[0]);
+                dataStart = 1;
+            }
+
+            var maxCols = 0;
+            for (var r = 0; r < rows.length; r++) if (rows[r].length > maxCols) maxCols = rows[r].length;
+            if (!headers) {
+                headers = [];
+                for (var c = 0; c < maxCols; c++) headers.push('column_' + (c + 1));
+            }
+
+            // Row/header mismatch warnings
+            var warnMsgs = [];
+            var tooLong = 0, tooShort = 0;
+            for (var r2 = dataStart; r2 < rows.length; r2++) {
+                if (rows[r2].length > headers.length) tooLong++;
+                else if (rows[r2].length < headers.length) tooShort++;
+            }
+            if (tooLong > 0) warnMsgs.push('⚠ ' + tooLong + ' row(s) have MORE fields than headers — likely an unescaped delimiter inside a quoted field. Values are NOT shifted.');
+            if (tooShort > 0) warnMsgs.push('⚠ ' + tooShort + ' row(s) have fewer fields than headers — missing keys filled with null.');
+            warn.textContent = warnMsgs.join(' ');
+            warn.style.display = warnMsgs.length ? 'block' : 'none';
+
+            // Build rows of objects
+            var objects = [];
+            for (var r3 = dataStart; r3 < rows.length; r3++) {
+                var obj = {};
+                for (var c2 = 0; c2 < headers.length; c2++) {
+                    var raw = c2 < rows[r3].length ? rows[r3][c2] : '';
+                    obj[headers[c2]] = infer ? inferValue(raw) : raw;
+                }
+                objects.push(obj);
+            }
+
+            var result;
+            if (format === 'objects') {
+                result = objects;
+            } else if (format === 'arrays') {
+                var arr = hasHeader ? [rows[0]] : [];
+                for (var r4 = dataStart; r4 < rows.length; r4++) {
+                    var padded = rows[r4].slice();
+                    while (padded.length < headers.length) padded.push('');
+                    arr.push(padded.map(function(v) { return infer ? inferValue(v) : v; }));
+                }
+                result = arr;
+            } else if (format === 'keyed') {
+                result = {};
+                var keyCol = headers[0] || 'column_1';
+                for (var r5 = 0; r5 < objects.length; r5++) {
+                    var kv = objects[r5];
+                    var kk = kv[keyCol];
+                    if (kk === null || kk === '') kk = 'row_' + (r5 + 1);
+                    delete kv[keyCol];
+                    result[kk] = kv;
+                }
+            } else { // columns
+                result = {};
+                for (var c3 = 0; c3 < headers.length; c3++) {
+                    result[headers[c3]] = [];
+                    for (var r6 = dataStart; r6 < rows.length; r6++) {
+                        var vv = c3 < rows[r6].length ? rows[r6][c3] : '';
+                        result[headers[c3]].push(infer ? inferValue(vv) : vv);
+                    }
+                }
+            }
+
+            var json = JSON.stringify(result, null, 2);
+            out.value = json;
+            var bytes = new Blob([json]).size;
+            stats.textContent = '🟢📊 ' + objects.length.toLocaleString() + ' records · ' + headers.length + ' columns · ' + bytes.toLocaleString() + ' bytes · ' + format;
+        }
+
+        window.downloadJson = function() {
+            if (!out.value) return;
+            var blob = new Blob([out.value], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a'); a.href = url; a.download = 'data.json'; a.click();
+            URL.revokeObjectURL(url);
+        };
+
+        window.copyJson = function() { if (out.value) navigator.clipboard.writeText(out.value); };
+        window.clearAll = function() { inp.value = ''; out.value = ''; stats.textContent = ''; warn.style.display = 'none'; };
+        window.loadSample = function() {
+            inp.value = 'name,age,city,note\nAlice,30,"New York, NY","said ""hi""\nsecond line"\nBob,25,Los Angeles,\n"00501",true,Springfield,zip-with-leading-zero';
+            convertCsv();
+        };
+
+        window.convertCsv = convertCsv;
+
+        // Expose for tests
+        window.parseCsvForTest = parseCsv;
+        window.inferValueForTest = inferValue;
+
+        // Initial sample
+        inp.value = 'name,age,city,active\nAlice,30,New York,true\nBob,25,Los Angeles,false\nCarol,35,Chicago,true';
+        convertCsv();
+    })();
+    </script>
+</body>
+</html>

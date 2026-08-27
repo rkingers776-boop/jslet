@@ -1,0 +1,348 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>CSS Grid Generator — Visual Grid Layout Tool Online — jslet</title>
+    <meta name="description" content="Generate CSS Grid layouts visually. Set columns, rows, gaps and alignment with live preview and instant code. Includes fr units, minmax/auto-fit patterns, and Dashboard, Gallery, Hero presets. 100% client-side.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="style.css">
+    <link rel="canonical" href="https://www.jslet.com/css-grid-generator">
+    <meta property="og:title" content="CSS Grid Generator — Visual Grid Layout"><meta property="og:description" content="Build CSS Grid layouts visually. Live preview, instant code, fr/minmax patterns, layout presets. 100% client-side."><meta property="og:url" content="https://www.jslet.com/css-grid-generator"><meta property="og:type" content="website"><meta property="og:site_name" content="jslet"><meta property="og:image" content="https://www.jslet.com/og-image.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="CSS Grid Generator"><meta name="twitter:description" content="Visual CSS Grid layout generator with live preview and instant code. 100% client-side."><meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"CSS Grid Generator","description":"Visually design CSS Grid layouts: configure columns, rows, gaps and alignment with a live preview and instant copy-ready CSS. Supports fr units, minmax() and auto-fit patterns, plus Dashboard, Gallery and Hero presets. Runs 100% in the browser.","url":"https://www.jslet.com/css-grid-generator","applicationCategory":"DeveloperApplication","operatingSystem":"Any","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is the fr unit in CSS Grid?","acceptedAnswer":{"@type":"Answer","text":"fr (fraction) is a flexible unit that distributes the remaining space after fixed tracks are resolved. grid-template-columns: 1fr 2fr means the second column takes twice as much space as the first. Unlike percentages, fr handles gaps automatically and never causes overflow from padding or borders."}},{"@type":"Question","name":"When should I use CSS Grid instead of Flexbox?","acceptedAnswer":{"@type":"Answer","text":"Use Grid for two-dimensional layouts where you care about rows AND columns simultaneously — page layouts, card dashboards, photo galleries, form grids. Use Flexbox for one-dimensional distributions along a single axis — nav bars, button groups, toolbars. Grid is the layout engine; Flexbox is the alignment tool. They work together, not against each other."}},{"@type":"Question","name":"What does minmax(200px, 1fr) do?","acceptedAnswer":{"@type":"Answer","text":"minmax(min, max) sets a track to never shrink below the minimum and grow up to the maximum. minmax(200px, 1fr) means the column is at least 200px wide and shares remaining space with other fr tracks. Combined with auto-fit or auto-fill, it creates responsive grids that add columns when space allows, with no media queries needed."}},{"@type":"Question","name":"What is the difference between auto-fit and auto-fill?","acceptedAnswer":{"@type":"Answer","text":"Both create as many tracks as fit. auto-fill keeps empty tracks — a 5-column container with 3 items still reserves 5 tracks, preserving their widths. auto-fit collapses empty tracks to zero, letting the used columns stretch to fill the row. Use auto-fill when you want consistent column width across breakpoints; use auto-fit when you want the content to expand."}},{"@type":"Question","name":"How do I center an element in a grid cell?","acceptedAnswer":{"@type":"Answer","text":"Set justify-items: center on the grid container to center items horizontally within their cells, and align-items: center to center vertically. For a single item, use place-items: center (shorthand for both) on the container, or place-self: center on the item itself. These properties also accept start, end and stretch."}}]}</script>
+    <style>
+        .gg-preview-wrap { background: var(--bg-card, #fff); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 18px; position: relative; }
+        .gg-preview { display: grid; width: 100%; min-height: 220px; background: var(--bg-input); border: 1px dashed var(--border); border-radius: 8px; padding: 6px; box-sizing: border-box; }
+        .gg-cell { display: flex; align-items: center; justify-content: center; font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.78rem; font-weight: 700; color: #fff; border-radius: 4px; min-height: 28px; background: var(--accent); opacity: 0.9; }
+        .gg-cell:nth-child(3n) { background: #3b82f6; }
+        .gg-cell:nth-child(3n+1) { background: var(--accent); }
+        .gg-cell:nth-child(3n+2) { background: #8b5cf6; }
+        .controls-panel { background: var(--bg-card, #fff); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
+        .slider-group { display: flex; align-items: center; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+        .slider-group label { font-size: 0.85rem; font-weight: 600; color: var(--text-heading); min-width: 110px; }
+        .slider-group input[type="range"] { flex: 1; min-width: 130px; accent-color: var(--accent); }
+        .slider-group .val { font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.85rem; color: var(--accent); min-width: 44px; text-align: right; }
+        .align-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0; }
+        .align-item label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 3px; }
+        .align-item select { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-input); color: var(--text-body); font-size: 0.82rem; }
+        .preset-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+        .preset-chip { padding: 6px 14px; border: 2px solid var(--border); border-radius: 20px; font-size: 0.8rem; font-weight: 600; cursor: pointer; color: var(--text-muted); }
+        .preset-chip:hover, .preset-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft, rgba(234,88,12,0.08)); }
+        .gg-advanced { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+        .gg-advanced textarea { width: 100%; min-height: 44px; font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.8rem; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-input); color: var(--text-body); box-sizing: border-box; }
+        .css-output { font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.8rem; line-height: 1.6; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin: 12px 0; white-space: pre; overflow-x: auto; cursor: pointer; color: var(--text-body); }
+        .btn { padding: 10px 22px; border: none; border-radius: var(--radius-sm); font-weight: 700; font-size: 0.88rem; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: #fff; } .btn-primary:hover { background: var(--accent-hover); }
+        .btn-outline { background: transparent; border: 2px solid var(--accent); color: var(--accent); } .btn-outline:hover { background: var(--accent-soft, rgba(234,88,12,0.08)); }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    </style>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container">
+        <header><h1>CSS Grid <span>Generator</span></h1><p>Design CSS Grid layouts visually — set columns, rows, gaps and alignment with a live preview and instant copy-ready code.</p></header>
+
+        <div class="preset-row" role="group" aria-label="Layout presets">
+            <span class="preset-chip" onclick="applyPreset('equal')">Equal Columns</span>
+            <span class="preset-chip" onclick="applyPreset('sidebar')">Sidebar Layout</span>
+            <span class="preset-chip" onclick="applyPreset('dashboard')">Dashboard</span>
+            <span class="preset-chip" onclick="applyPreset('gallery')">Gallery (auto-fit)</span>
+            <span class="preset-chip" onclick="applyPreset('hero')">Centered Hero</span>
+        </div>
+
+        <div class="gg-preview-wrap">
+            <div class="gg-preview" id="gg-preview"></div>
+        </div>
+
+        <div class="controls-panel">
+            <div class="slider-group">
+                <label for="gg-cols">Columns</label>
+                <input type="range" id="gg-cols" min="1" max="12" value="3" oninput="updateGrid()">
+                <span class="val" id="val-cols">3</span>
+            </div>
+            <div class="slider-group">
+                <label for="gg-rows">Rows</label>
+                <input type="range" id="gg-rows" min="1" max="8" value="3" oninput="updateGrid()">
+                <span class="val" id="val-rows">3</span>
+            </div>
+            <div class="slider-group">
+                <label for="gg-gap">Gap</label>
+                <input type="range" id="gg-gap" min="0" max="60" value="12" oninput="updateGrid()">
+                <span class="val" id="val-gap">12px</span>
+            </div>
+            <div class="align-row">
+                <div class="align-item">
+                    <label for="gg-ji">justify-items</label>
+                    <select id="gg-ji" onchange="updateGrid()">
+                        <option value="stretch" selected>stretch</option><option value="start">start</option><option value="center">center</option><option value="end">end</option>
+                    </select>
+                </div>
+                <div class="align-item">
+                    <label for="gg-ai">align-items</label>
+                    <select id="gg-ai" onchange="updateGrid()">
+                        <option value="stretch" selected>stretch</option><option value="start">start</option><option value="center">center</option><option value="end">end</option>
+                    </select>
+                </div>
+                <div class="align-item">
+                    <label for="gg-jc">justify-content</label>
+                    <select id="gg-jc" onchange="updateGrid()">
+                        <option value="start" selected>start</option><option value="center">center</option><option value="end">end</option><option value="space-between">space-between</option><option value="space-around">space-around</option><option value="space-evenly">space-evenly</option>
+                    </select>
+                </div>
+                <div class="align-item">
+                    <label for="gg-ac">align-content</label>
+                    <select id="gg-ac" onchange="updateGrid()">
+                        <option value="start" selected>start</option><option value="center">center</option><option value="end">end</option><option value="space-between">space-between</option><option value="space-around">space-around</option><option value="space-evenly">space-evenly</option>
+                    </select>
+                </div>
+            </div>
+            <div class="gg-advanced">
+                <label for="gg-template" style="font-size:0.8rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px;">Custom column template (overrides Columns — try <code>repeat(auto-fit, minmax(150px, 1fr))</code>)</label>
+                <textarea id="gg-template" aria-label="Custom grid-template-columns" placeholder="e.g. 200px 1fr 2fr  or  repeat(auto-fit, minmax(150px, 1fr))" oninput="updateGrid()"></textarea>
+            </div>
+        </div>
+
+        <div class="css-output" id="gg-output" onclick="copyGridCSS()" title="Click to copy CSS">Click to copy CSS &rarr;</div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="copyGridCSS()">&#x1F4CB; Copy CSS</button>
+            <button class="btn-outline" onclick="resetGrid()">&#x21BA; Reset</button>
+        </div>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2 style="font-size:1rem;">&#x1F4D6; CSS Grid Fundamentals</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>Grid vs Flexbox — the real division of labor.</strong> Flexbox solves one-dimensional layout: distributing items along a single axis (a navbar, a toolbar, a button group). Grid solves two-dimensional layout: rows AND columns at once (a dashboard, a photo wall, a page skeleton). The common mistake is asking which one to use everywhere. The correct question is which axis you care about. If items flow in one line — Flexbox. If you are structuring a region of the page into tracks — Grid. In practice, a page is usually 80% Grid for structure and 20% Flexbox for the small alignment details inside each cell.</p>
+                <p><strong>The fr unit is smarter than percentages.</strong> <code>1fr</code> means "one fraction of the leftover space". <code>grid-template-columns: 1fr 2fr</code> gives a 1:2 ratio, and the fr tracks automatically absorb whatever the fixed tracks (px, em, auto) and the <code>gap</code> leave over. Percentages must be hand-tuned to compensate for gaps and padding; fr never overflows. Rule of thumb: use fr for the fluid columns, px or auto for the fixed rails (sidebars, gutters), and minmax for the boundaries.</p>
+                <p><strong>minmax() + auto-fit kills media queries.</strong> <code>grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))</code> creates as many 200px-or-larger columns as fit, and stretches them to fill the row. Shrink the window and columns drop from 5 to 3 to 1 automatically — no breakpoint needed. <strong>auto-fill</strong> keeps empty tracks (stable column widths across breakpoints); <strong>auto-fit</strong> collapses them (content expands to fill). For card grids, auto-fit is the usual choice.</p>
+                <p><strong>Alignment is a two-axis affair.</strong> On the container, <code>justify-items</code> aligns items horizontally inside their cells and <code>align-items</code> vertically; both default to <code>stretch</code>, which is why cells fill their tracks. <code>justify-content</code>/<code>align-content</code> align the whole grid inside the container — visible only when tracks are narrower than the container (e.g. with <code>justify-content: center</code> and fixed-width columns). For one-off overrides, <code>justify-self</code>/<code>align-self</code> on a single item beat the container setting.</p>
+                <p><strong>Named areas make layouts readable.</strong> <code>grid-template-areas: "header header" "sidebar main" "footer footer"</code> turns the layout into an ASCII diagram that survives code review. Assign children with <code>grid-area: header</code>. The classic trap: area names must form a rectangle — an L-shaped "sidebar main / footer footer" is invalid, because a cell cannot be split between two areas.</p>
+                <p><strong>Grid items never overlap — until you ask them to.</strong> Implicit rows are created for items that exceed the explicit tracks (<code>grid-auto-rows</code> controls their height, defaulting to auto). Two items can occupy the same cell only when you explicitly assign <code>grid-column</code>/<code>grid-row</code> spans or overlapping lines — useful for hero overlays, but the number-one source of "where did my item go" bugs.</p>
+                <p>See also: <a href="/flexbox-generator">Flexbox Generator</a> &middot; <a href="/gradient-editor">CSS Gradient Editor</a> &middot; <a href="/box-shadow-generator">Box Shadow Generator</a> &middot; <a href="/border-radius-generator">Border Radius Generator</a> &middot; <a href="/color-converter">Color Converter</a> &middot; <a href="/css-tools">All CSS Tools</a> &middot; Read: <a href="/layout-tax-real">The Layout Tax</a> &middot; <a href="/animation-tax-real">The Animation Tax</a></p>
+            </div>
+        </section>
+
+        <footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        var preview = document.getElementById('gg-preview');
+        var output = document.getElementById('gg-output');
+
+        var CELL_COLORS = ['#f97316', '#3b82f6', '#8b5cf6', '#10b981', '#ef4444', '#f59e0b', '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#14b8a6', '#f43f5e'];
+
+        function renderCells(cols, rows) {
+            var n = cols * rows;
+            var html = '';
+            for (var i = 1; i <= n; i++) {
+                var c = CELL_COLORS[(i - 1) % CELL_COLORS.length];
+                html += '<div class="gg-cell" style="background:' + c + '">' + i + '</div>';
+            }
+            preview.innerHTML = html;
+        }
+
+        function currentTemplate() {
+            var custom = document.getElementById('gg-template').value.trim();
+            if (custom) return custom;
+            var cols = parseInt(document.getElementById('gg-cols').value, 10);
+            var parts = [];
+            for (var i = 0; i < cols; i++) parts.push('1fr');
+            return parts.join(' ');
+        }
+
+        function updateGrid() {
+            var custom = document.getElementById('gg-template').value.trim();
+            var cols = custom ? 0 : parseInt(document.getElementById('gg-cols').value, 10);
+            var rows = parseInt(document.getElementById('gg-rows').value, 10);
+            var gap = parseInt(document.getElementById('gg-gap').value, 10);
+            var ji = document.getElementById('gg-ji').value;
+            var ai = document.getElementById('gg-ai').value;
+            var jc = document.getElementById('gg-jc').value;
+            var ac = document.getElementById('gg-ac').value;
+
+            // 显示数值
+            document.getElementById('val-cols').textContent = cols || 'auto';
+            document.getElementById('val-rows').textContent = rows;
+            document.getElementById('val-gap').textContent = gap + 'px';
+
+            // 应用预览
+            preview.style.gridTemplateColumns = currentTemplate();
+            preview.style.gridTemplateRows = 'repeat(' + rows + ', minmax(36px, 1fr))';
+            preview.style.gap = gap + 'px';
+            preview.style.justifyItems = ji;
+            preview.style.alignItems = ai;
+            preview.style.justifyContent = jc;
+            preview.style.alignContent = ac;
+
+            // 渲染单元格（自定义模板时按需生成）
+            if (custom) {
+                // 估算列数以生成合理的单元格数量：用模板中的数字/词数
+                var tokens = custom.replace(/repeat\(|\)/g, ' ').split(/[\s,]+/).filter(function(t) { return t.length > 0 && !/^auto-fit$/.test(t) && !/^auto-fill$/.test(t) && !/^minmax$/.test(t) && !/^1fr$/.test(t); });
+                var estCols = custom.indexOf('auto-fit') >= 0 ? 4 : Math.max(1, tokens.length);
+                renderCells(estCols, rows);
+            } else {
+                renderCells(cols, rows);
+            }
+
+            // 生成代码
+            var code = '.grid {\n';
+            code += '  display: grid;\n';
+            code += '  grid-template-columns: ' + currentTemplate() + ';\n';
+            code += '  grid-template-rows: repeat(' + rows + ', minmax(36px, 1fr));\n';
+            code += '  gap: ' + gap + 'px;\n';
+            code += '  justify-items: ' + ji + ';\n';
+            code += '  align-items: ' + ai + ';\n';
+            code += '  justify-content: ' + jc + ';\n';
+            code += '  align-content: ' + ac + ';\n';
+            code += '}';
+            output.textContent = code;
+        }
+
+        window.updateGrid = updateGrid;
+
+        window.copyGridCSS = function() {
+            var text = output.textContent.replace('Click to copy CSS \u2192', '').trim();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).catch(function() { fallbackCopy(text); });
+            } else {
+                fallbackCopy(text);
+            }
+        };
+
+        function fallbackCopy(text) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            document.body.removeChild(ta);
+        }
+
+        window.resetGrid = function() {
+            document.getElementById('gg-cols').value = '3';
+            document.getElementById('gg-rows').value = '3';
+            document.getElementById('gg-gap').value = '12';
+            document.getElementById('gg-template').value = '';
+            document.getElementById('gg-ji').value = 'stretch';
+            document.getElementById('gg-ai').value = 'stretch';
+            document.getElementById('gg-jc').value = 'start';
+            document.getElementById('gg-ac').value = 'start';
+            updateGrid();
+        };
+
+        window.applyPreset = function(name) {
+            if (name === 'equal') {
+                document.getElementById('gg-cols').value = '3';
+                document.getElementById('gg-rows').value = '3';
+                document.getElementById('gg-template').value = '';
+                document.getElementById('gg-gap').value = '12';
+            } else if (name === 'sidebar') {
+                document.getElementById('gg-template').value = '220px 1fr';
+                document.getElementById('gg-rows').value = '4';
+                document.getElementById('gg-gap').value = '16';
+            } else if (name === 'dashboard') {
+                document.getElementById('gg-template').value = '1fr 2fr 1fr';
+                document.getElementById('gg-rows').value = '4';
+                document.getElementById('gg-gap').value = '14';
+            } else if (name === 'gallery') {
+                document.getElementById('gg-template').value = 'repeat(auto-fit, minmax(150px, 1fr))';
+                document.getElementById('gg-rows').value = '3';
+                document.getElementById('gg-gap').value = '10';
+            } else if (name === 'hero') {
+                document.getElementById('gg-template').value = '1fr';
+                document.getElementById('gg-rows').value = '2';
+                document.getElementById('gg-gap').value = '0';
+                document.getElementById('gg-ji').value = 'center';
+                document.getElementById('gg-ai').value = 'center';
+            }
+            updateGrid();
+        };
+
+        // 初始化
+        updateGrid();
+    })();
+    </script>
+</body>
+</html>

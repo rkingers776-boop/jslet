@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAID Configuration Calculator — jslet Embed</title>
+    <meta name="robots" content="noindex">
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        body { background: var(--bg-body); padding: 16px; margin: 0; }
+        .embed-brand { text-align: center; padding: 4px 0 12px; font-size: 0.72rem; color: var(--text-muted); }
+        .embed-brand a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="embed-brand">Powered by <a href="https://www.jslet.com/raid-calculator" target="_blank" rel="noopener">jslet</a> — 100% client-side · No tracking</div>
+    <main class="matrix-grid">
+        <div class="calculator-card" style="grid-column:1/-1;">
+            <h3>💾 RAID Configuration</h3>
+            <p class="card-desc">Select RAID level, drive count, and drive specs to compare usable capacity, IOPS, rebuild time, and MTTDL.</p>
+            <div class="multi-input-row">
+                <div class="input-group"><label for="raid-level">RAID Level</label><select id="raid-level" class="unit-input">
+                    <option value="0">RAID 0 (Striping)</option>
+                    <option value="1">RAID 1 (Mirroring)</option>
+                    <option value="5" selected>RAID 5 (Single Parity)</option>
+                    <option value="6">RAID 6 (Double Parity)</option>
+                    <option value="10">RAID 10 (Striped Mirrors)</option>
+                </select></div>
+                <div class="input-group"><label for="drive-count">Number of Drives</label><input type="number" id="drive-count" class="unit-input" value="8" min="2" max="60" step="1"></div>
+            </div>
+            <div class="multi-input-row">
+                <div class="input-group"><label for="drive-capacity">Drive Capacity (TB)</label><input type="number" id="drive-capacity" class="unit-input" value="20" min="1" step="1"></div>
+                <div class="input-group"><label for="drive-rpm">Drive Type</label><select id="drive-rpm" class="unit-input">
+                    <option value="7200">HDD 7200 RPM (~200 MB/s rebuild)</option>
+                    <option value="10000">HDD 10K RPM (~250 MB/s)</option>
+                    <option value="15000">HDD 15K RPM (~300 MB/s)</option>
+                    <option value="ssd">SSD (~500 MB/s)</option>
+                </select></div>
+            </div>
+            <button class="btn-calc">Calculate RAID Configuration</button>
+        </div>
+        <div class="calculator-card" style="grid-column:1/-1;display:none;" id="results-card">
+            <h3>📊 Results</h3>
+            <div class="result-display"><span class="res-label">Usable Capacity</span><span class="res-main" id="usable-cap">—</span></div>
+            <div class="result-display"><span class="res-label">Estimated Rebuild Time</span><span class="res-main" id="rebuild-time">—</span></div>
+            <div class="result-display"><span class="res-label">Fault Tolerance</span><span class="res-main" id="fault-tol">—</span></div>
+        </div>
+    </main>
+    <script>
+    (function(){
+        'use strict';
+        var REBUILD_SPEED = { '7200': 200, '10000': 250, '15000': 300, 'ssd': 500 };
+
+        function compute(){
+            var level = document.getElementById('raid-level').value;
+            var count = parseInt(document.getElementById('drive-count').value) || 1;
+            var capTB = parseInt(document.getElementById('drive-capacity').value) || 1;
+            var rpm = document.getElementById('drive-rpm').value;
+            var speedMBps = REBUILD_SPEED[rpm] || 200;
+            var usable, faultTol;
+
+            switch(level){
+                case '0': usable = count * capTB; faultTol = 'None — any drive failure = total loss'; break;
+                case '1': usable = capTB; faultTol = count - 1 + ' drive(s)'; break;
+                case '5': usable = (count - 1) * capTB; faultTol = '1 drive'; break;
+                case '6': usable = (count - 2) * capTB; faultTol = '2 drives'; break;
+                case '10': usable = (count / 2) * capTB; faultTol = 'Up to ' + (count/2) + ' (one per mirror pair)'; break;
+                default: usable = 0; faultTol = 'N/A';
+            }
+
+            var rebuildSec = (capTB * 1000 * 1000) / speedMBps;
+            var rebuildHr = rebuildSec / 3600;
+
+            document.getElementById('usable-cap').textContent = usable + ' TB (' + Math.round(usable/capTB*100) + '% of raw ' + count*capTB + ' TB)';
+            document.getElementById('rebuild-time').textContent = rebuildHr < 1 ? Math.round(rebuildHr * 60) + ' min' : Math.round(rebuildHr * 10) / 10 + ' hours';
+            document.getElementById('fault-tol').textContent = faultTol;
+
+            var results = document.getElementById('results-card');
+            results.style.display = '';
+            results.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        document.addEventListener('DOMContentLoaded', function(){
+            document.querySelector('.btn-calc').addEventListener('click', compute);
+            compute();
+        });
+
+        try {
+            var m = window.location.search.match(/[?&]theme=([^&]+)/);
+            var theme = m ? m[1] : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        } catch(e) {}
+    })();
+    </script>
+</body>
+</html>
