@@ -15,7 +15,7 @@
                         '<div class="gestalt-hub-panel" id="gestalt-hub-panel" role="menu" aria-label="Tool categories">' +
                             '<div class="gestalt-hub-head">' +
                                 '<span class="gestalt-hub-title">Tool Categories</span>' +
-                                '<span class="gestalt-hub-count">14 Categories · 136 Tools</span>' +
+                                '<span class="gestalt-hub-count">14 Categories · 137 Tools</span>' +
                             '</div>' +
                             '<div class="gestalt-hub-grid">' +
                                 '<a href="/json-tools" class="gestalt-hub-item" role="menuitem"><span class="gestalt-hub-icon gic-json">{ }</span><span class="gestalt-hub-info"><strong>JSON / CSV</strong><span>Format · Validate · Convert</span></span></a>' +

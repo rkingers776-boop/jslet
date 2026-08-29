@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Error Budget &amp; SLO Burn Rate Calculator — jslet</title>
+    <meta name="description" content="A 99.9% SLO is 43.2 minutes of downtime per month — spend it on deploys, lose it to incidents. Input your SLO, window, and consumed downtime to get budget remaining, burn rate, and hours-until-exhausted. Google SRE multi-window alerting thresholds included.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <meta property="og:title" content="Error Budget &amp; SLO Burn Rate Calculator — jslet">
+    <meta property="og:description" content="Compute error budget, budget remaining %, and burn rate from your SLO, window, and consumed downtime. Google SRE alerting thresholds: 14.4x/1h, 6x/6h, 1x/3d.">
+    <meta property="og:url" content="https://www.jslet.com/error-budget-calculator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Error Budget &amp; SLO Burn Rate Calculator — jslet">
+    <meta name="twitter:description" content="SLO to error budget: 99.9% = 43.2 min/month. Burn rate, budget remaining, hours until exhausted.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/error-budget-calculator">
+    <style>
+        select.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono","Cascadia Code",Consolas,monospace; transition: border-color 0.2s,box-shadow 0.2s; appearance: none; cursor: pointer; }
+        select.unit-input:focus, input.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        input.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono","Cascadia Code",Consolas,monospace; box-sizing: border-box; }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 1.3rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .burn-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.85rem; }
+        .burn-table th, .burn-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); text-align: left; }
+        .burn-table th { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .burn-table td { font-family: "SF Mono","Cascadia Code",Consolas,monospace; color: var(--text-heading); }
+        .status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .status-ok { background: #E1F5EE; color: #0F6E56; }
+        .status-warn { background: #FAEEDA; color: #854F0B; }
+        .status-danger { background: #FCEBEB; color: #A32D2D; }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Error Budget & SLO Burn Rate Calculator",
+      "description": "Compute error budget from your SLO target and measurement window, then track budget remaining, burn rate, and hours until exhaustion from consumed downtime or error counts. Includes Google SRE multi-window alerting thresholds (14.4x over 1 hour, 6x over 6 hours, 1x over 3 days).",
+      "url": "https://www.jslet.com/error-budget-calculator",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is an error budget?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "An error budget is the amount of unreliability a service is allowed within a measurement window, defined by the SLO: error budget = (1 - SLO) x window. A 99.9% availability SLO over a 30-day window permits 43.2 minutes of downtime. The budget is deliberately spent on deploys, experiments, and incidents; when it is exhausted, teams typically freeze risky changes until the window resets. It converts reliability from an argument into a number."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I calculate burn rate?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Burn rate is the ratio of how fast you are consuming the error budget to the rate that would exactly exhaust it at the end of the window: burn rate = budget consumed % / elapsed window %. A burn rate of 1 means the budget runs out exactly at window close. A burn rate of 2 exhausts it halfway through. Google's SRE workbook recommends alerting when burn rate exceeds 14.4 over 1 hour (2% of a 30-day budget), 6 over 6 hours (5%), and 1 over 3 days (10%)."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What are the Google SRE burn rate alert thresholds?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Google's SRE workbook defines three tiers: page immediately when burn rate is above 14.4 over a 1-hour window (consumes 2% of a 30-day error budget per hour), page during working hours when burn rate is above 6 over a 6-hour window (5% consumed), and file a ticket when burn rate is above 1 over a 3-day window (10% consumed). Multi-window alerting requires both the short and long window conditions to fire together to suppress noise."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the difference between an SLA and an SLO error budget?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "An SLA is a contractual promise with penalties, usually measured over a quarter or year. An SLO is the internal target you hold yourself to, and the error budget is its complement. The SLO must be stricter than the SLA: the gap between them is your safety margin. If SLA = 99.9% and SLO = 99.95%, the error budget is 0.05% of the window — the space where internal failures do not yet breach the contract."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How many minutes of downtime does each SLO allow?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Over a 30-day window: 99% allows 432 minutes (7.2 hours), 99.5% allows 216 minutes (3.6 hours), 99.9% allows 43.2 minutes, 99.95% allows 21.6 minutes, 99.99% allows 4.32 minutes, and 99.999% allows 26 seconds. Each additional nine divides the budget by roughly ten — 99.99% is not 'slightly better' than 99.9%, it is a different operating model requiring redundancy and automated failover."
+      }
+    }
+  ]
+}
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="
+    <div class="container" id="main-content">
+        <header style="margin-bottom: 24px;">
+            <h1 style="font-size:1.9rem; line-height:1.2;">Error <span>Budget</span> &amp; SLO Burn Rate</h1>
+            <p style="font-size:1.02rem; color:var(--text-secondary); max-width:720px;">A 99.9% SLO is <strong>43.2 minutes per month</strong> — spend it on deploys, lose it to incidents. Feed in your SLO, window, and consumed downtime, and get the number that tells you whether to ship or freeze.</p>
+        </header>
+
+        <main style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:16px;">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3 style="margin-bottom: 4px;">SLO &amp; Window</h3>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
+                    <div class="input-group">
+                        <label for="slo">SLO target</label>
+                        <select class="unit-input" id="slo">
+                            <option value="99">99% (Two Nines)</option>
+                            <option value="99.5">99.5%</option>
+                            <option value="99.9" selected>99.9% (Three Nines)</option>
+                            <option value="99.95">99.95%</option>
+                            <option value="99.99">99.99% (Four Nines)</option>
+                            <option value="99.999">99.999% (Five Nines)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="window">Measurement window</label>
+                        <select class="unit-input" id="window">
+                            <option value="720" selected>30 days (rolling)</option>
+                            <option value="672">28 days (4 weeks)</option>
+                            <option value="2160">Quarter (90 days)</option>
+                            <option value="8760">Year (365 days)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3 style="margin-bottom: 4px;">Consumption</h3>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
+                    <div class="input-group">
+                        <label for="consumed">Downtime consumed (minutes)</label>
+                        <input class="unit-input" type="number" id="consumed" value="10" min="0" step="0.1" inputmode="decimal">
+                    </div>
+                    <div class="input-group">
+                        <label for="elapsed">Window elapsed</label>
+                        <select class="unit-input" id="elapsed">
+                            <option value="0.25">25% (first week)</option>
+                            <option value="0.5">50% (mid-window)</option>
+                            <option value="0.75">75%</option>
+                            <option value="1" selected>100% (window closed)</option>
+                        </select>
+                    </div>
+                </div>
+                <p style="font-size:0.8rem; color:var(--text-muted); margin-top:8px;">Burn rate needs the elapsed fraction: it compares consumption so far against the pace that would exactly exhaust the budget at window close.</p>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Error Budget Report</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div style="margin: 6px 0 2px;" id="status-row"></div>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-budget"></div><div class="metric-label">Total Budget</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-consumed"></div><div class="metric-label">Consumed</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-remaining"></div><div class="metric-label">Remaining</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-burn"></div><div class="metric-label">Burn Rate</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-exhaust"></div><div class="metric-label">Exhausted At</div></div>
+                </div>
+            </div>
+        </main>
+
+        <section style="margin-top: 30px;">
+            <h2 style="font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 16px;">📋 Google SRE Multi-Window Alerting Thresholds</h2>
+            <div style="overflow-x: auto;">
+                <table class="burn-table">
+                    <thead><tr><th>Burn Rate</th><th>Budget Consumed</th><th>Window</th><th>Action</th></tr></thead>
+                    <tbody>
+                        <tr><td>14.4&times;</td><td>2%</td><td>1 hour</td><td>Page immediately — active incident</td></tr>
+                        <tr><td>6&times;</td><td>5%</td><td>6 hours</td><td>Page during working hours — sustained degradation</td></tr>
+                        <tr><td>1&times;</td><td>10%</td><td>3 days</td><td>File a ticket — slow bleed</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section style="margin-top: 26px;">
+            <h2 style="font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 16px;">📋 Error Budget by SLO (30-Day Window)</h2>
+            <div style="overflow-x: auto;">
+                <table class="burn-table">
+                    <thead><tr><th>SLO</th><th>Per Month</th><th>Per Year</th><th>Operating Model</th></tr></thead>
+                    <tbody>
+                        <tr><td>99%</td><td>432 min (7h 12m)</td><td>3d 15h 36m</td><td>Internal tools, batch</td></tr>
+                        <tr><td>99.9%</td><td>43.2 min</td><td>8h 45m</td><td>SaaS APIs, business apps</td></tr>
+                        <tr><td>99.95%</td><td>21.6 min</td><td>4h 22m</td><td>Consumer platforms</td></tr>
+                        <tr><td>99.99%</td><td>4.3 min</td><td>52m 34s</td><td>Payments, critical infra</td></tr>
+                        <tr><td>99.999%</td><td>26 sec</td><td>5m 15s</td><td>Carrier-grade, life-critical</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Math That Turns Reliability Into a Number</h2>
+            <p>Error budget = (1 &minus; SLO) &times; window. That one line replaces every argument about "how stable is stable enough" with a number both engineering and product can read. A 99.9% availability SLO over a 30-day window permits <strong>43.2 minutes</strong> of downtime; every minute of outage draws from that account. The budget is not a tolerance for carelessness — it is a resource to be spent on deploys, migrations, and experiments, which is exactly why Google's SRE framework calls it a budget rather than a target.</p>
+            <h3>Burn Rate: The Warning System</h3>
+            <p>Budget remaining is a postmortem tool; burn rate is the alarm. Burn rate compares how fast you are consuming the budget against the pace that would exactly exhaust it at window close — a rate of 1 means you arrive at zero with nothing to spare. The <strong>14.4&times;/1h</strong> threshold pages on-call because it spends 2% of a monthly budget in a single hour; the slow <strong>1&times;/3d</strong> burn catches the regression that never trips a spike alert but quietly eats the month. Alerting on burn rate instead of raw error rate matters: a 1% error rate is fine against a 99% SLO but is a 10&times; burn against 99.9% — same signal, wildly different meaning.</p>
+            <h3>When the Budget Runs Out</h3>
+            <p>The value of an error budget is not the freeze — it is that the policy was written while everyone was calm. Graduated responses work best: review what spent the budget at 50%, require sign-off for risky changes at 75%, freeze non-essential deploys at 100%. And keep the SLO stricter than the SLA: if the public contract promises 99.9%, an internal SLO of 99.95% leaves a safety margin where internal failures do not yet breach the customer promise. Budget your nines before the incident, not after.</p>
+        </section>
+
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/system-availability-sla">System Availability SLA Calculator &rarr;</a>
+                <a href="/system-availability-sla-economics">📰 SLA Economics: How Much Does Each Extra 9 Cost? (Full Briefing) &rarr;</a>
+                <a href="/latency-budget-calculator">Latency Budget Calculator &rarr;</a>
+                <a href="/security-sre">Security / SRE Toolbox &rarr;</a>
+                <a href="/cloud-load-balancer-rules-to-latency-overhead">LB Rules Latency &rarr;</a>
+            </div>
+        </div>
+<footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script>
+    function fmtDuration(seconds) {
+        if (seconds < 1) return (seconds * 1000).toFixed(0) + ' ms';
+        if (seconds < 60) return seconds.toFixed(2) + ' sec';
+        if (seconds < 3600) return (seconds / 60).toFixed(2) + ' min';
+        return (seconds / 3600).toFixed(2) + ' hours';
+    }
+
+    function compute() {
+        var pct = parseFloat(document.getElementById('sla').value);
+        var downtimeRatio = 1 - (pct / 100);
+
+        var secPerYear = 365.25 * 86400;
+        var secPerMonth = 30 * 86400;
+        var secPerWeek = 7 * 86400;
+        var secPerDay = 86400;
+
+        var yearDT = secPerYear * downtimeRatio;
+        var monthDT = secPerMonth * downtimeRatio;
+        var weekDT = secPerWeek * downtimeRatio;
+        var dayDT = secPerDay * downtimeRatio;
+        var uptime = secPerYear - yearDT;
+
+        var n = -Math.log10(downtimeRatio || 1e-15);
+        var nines = Math.floor(n);
+        var extra = n - nines;
+
+        document.getElementById('results-params').innerText = pct + '% availability (' + nines + '.' + extra.toFixed(1).replace('0.','') + ' nines equivalent)';
+
+        document.getElementById('val-year').innerText = fmtDuration(yearDT);
+        document.getElementById('val-month').innerText = fmtDuration(monthDT);
+        document.getElementById('val-week').innerText = fmtDuration(weekDT);
+        document.getElementById('val-day').innerText = fmtDuration(dayDT);
+        document.getElementById('val-uptime').innerText = (pct).toFixed(4) + '%';
+        document.getElementById('val-budget').innerText = fmtDuration(yearDT);
+
+        // Nines table
+        var slas = [
+            ['90%', 90], ['99%', 99], ['99.5%', 99.5], ['99.9%', 99.9],
+            ['99.95%', 99.95], ['99.99%', 99.99], ['99.995%', 99.995],
+            ['99.999%', 99.999], ['99.9999%', 99.9999]
+        ];
+        var tbody = '<tr><th>SLA</th><th>Nines</th><th>Per Year</th><th>Per Month</th><th>Per Week</th><th>Per Day</th></tr>';
+        slas.forEach(s => {
+            var ratio = 1 - (s[1] / 100);
+            var y = secPerYear * ratio;
+            var m = secPerMonth * ratio;
+            var w = secPerWeek * ratio;
+            var d = secPerDay * ratio;
+            var cls = (s[1] === pct) ? ' class="highlight-row"' : '';
+            tbody += '<tr' + cls + '><td><strong>' + s[0] + '</strong></td><td>' + (-Math.log10(Math.max(ratio, 1e-15))).toFixed(1) + '</td><td>' + fmtDuration(y) + '</td><td>' + fmtDuration(m) + '</td><td>' + fmtDuration(w) + '</td><td>' + fmtDuration(d) + '</td></tr>';
+        });
+        document.getElementById('nines-table-body').innerHTML = tbody;
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+    <script src="nav.js"></script>
+
+    <script>
+    (function() {
+        'use strict';
+        var sloEl = document.getElementById('slo');
+        var winEl = document.getElementById('window');
+        var consEl = document.getElementById('consumed');
+        var elapEl = document.getElementById('elapsed');
+        var card = document.getElementById('results-card');
+
+        function fmtTime(min) {
+            if (min <= 0) return '0';
+            if (min < 1) return (min * 60).toFixed(0) + ' sec';
+            if (min < 60) return min.toFixed(1) + ' min';
+            var h = Math.floor(min / 60), m = Math.round(min % 60);
+            return h + 'h ' + m + 'm';
+        }
+
+        function fmtNum(n) {
+            return n.toLocaleString('en-US', { maximumFractionDigits: 1 });
+        }
+
+        function calc() {
+            var slo = parseFloat(sloEl.value) || 99.9;
+            var hours = parseFloat(winEl.value) || 720;
+            var consumed = parseFloat(consEl.value) || 0;
+            var elapsedFrac = parseFloat(elapEl.value) || 1;
+            if (elapsedFrac <= 0) elapsedFrac = 0.01;
+            if (elapsedFrac > 1) elapsedFrac = 1;
+
+            var totalBudgetMin = (1 - slo / 100) * hours * 60;
+            var pctConsumed = totalBudgetMin > 0 ? (consumed / totalBudgetMin) * 100 : (consumed > 0 ? 100 : 0);
+            var remainingMin = Math.max(0, totalBudgetMin - consumed);
+            var pctRemaining = Math.max(0, 100 - pctConsumed);
+            // burn rate = budget consumed % / window elapsed %
+            var burnRate = pctConsumed / (elapsedFrac * 100);
+
+            var exhaust = null;
+            if (pctConsumed >= 100) { exhaust = 'Already exhausted'; }
+            else if (burnRate > 0) {
+                var remainingPct = 100 - pctConsumed;
+                var timeLeftFrac = remainingPct / burnRate; // in elapsed-units
+                var hoursLeft = timeLeftFrac * (hours * elapsedFrac);
+                exhaust = fmtTime(hoursLeft * 60);
+            }
+
+            card.style.display = 'block';
+            document.getElementById('results-params').textContent =
+                'SLO ' + slo + '% · window ' + hours + 'h (' + (hours / 24).toFixed(0) + 'd) · ' +
+                consumed + ' min consumed · window ' + Math.round(elapsedFrac * 100) + '% elapsed';
+
+            document.getElementById('val-budget').textContent = fmtTime(totalBudgetMin);
+            document.getElementById('val-consumed').textContent = fmtNum(pctConsumed) + '%';
+            document.getElementById('val-remaining').textContent = fmtTime(remainingMin) + ' (' + fmtNum(pctRemaining) + '%)';
+            document.getElementById('val-burn').textContent = burnRate.toFixed(1) + 'x';
+            document.getElementById('val-exhaust').textContent = exhaust || '—';
+
+            var row = document.getElementById('status-row');
+            var badge, note;
+            if (pctConsumed >= 100) { badge = 'status-danger'; note = 'Budget exhausted — freeze non-essential deploys.'; }
+            else if (pctConsumed >= 75) { badge = 'status-danger'; note = 'Critical — require sign-off for risky changes.'; }
+            else if (pctConsumed >= 50) { badge = 'status-warn'; note = 'Warning — review what spent the budget.'; }
+            else { badge = 'status-ok'; note = 'Healthy — budget available for deploys and experiments.'; }
+            row.innerHTML = '<span class="status-badge ' + badge + '">' + note + '</span>';
+        }
+
+        sloEl.addEventListener('change', calc);
+        winEl.addEventListener('change', calc);
+        consEl.addEventListener('input', calc);
+        elapEl.addEventListener('change', calc);
+        calc();
+    })();
+    </script>
+
+</body>
+</html>
