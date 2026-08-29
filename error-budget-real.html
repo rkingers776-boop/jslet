@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The Error Budget: 99.9% Is 43.2 Minutes. Most Teams Never Spend a Second of It. (2026) — jslet</title>
+    <meta name="description" content="Two teams, same 99.9% SLO: one ships with confidence because it knows its error budget; the other discovers at quarter-end that a 30-minute outage ate 69% of the month. The budget is not a metric — it is a decision mechanism. This briefing covers burn-rate alerting (14.4x/1h, 6x/6h, 1x/3d), the SLO-vs-SLA gap, and a graduated freeze policy written before the incident.">
+    <meta property="og:title" content="The Error Budget: 99.9% Is 43.2 Minutes. Most Teams Never Spend a Second of It.">
+    <meta property="og:description" content="Error budgets convert 'how stable is stable enough' from an argument into a number. Burn-rate alerting, the SLO gap, and a freeze policy you write while calm.">
+    <meta property="og:url" content="https://www.jslet.com/error-budget-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-08-29T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-08-29T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Error Budget: 99.9% Is 43.2 Minutes. Most Teams Never Spend a Second of It.">
+    <meta name="twitter:description" content="Error budgets turn reliability from an argument into a number. Burn rate (14.4x/1h pages), the SLO gap, graduated freezes — with real math.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/error-budget-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Error Budget: 99.9% Is 43.2 Minutes. Most Teams Never Spend a Second of It. (2026)",
+      "description": "An error budget is the operationalized form of an SLO: for a 99.9% availability target over a 30-day window it is 43.2 minutes of permitted failure. Most teams define one and never look at it again. This briefing argues the budget only works as a decision mechanism — a number that settles the ship-vs-freeze argument — and covers the three mechanics that make it real: burn-rate alerting (page at 14.4x over 1 hour, 6x over 6 hours, 1x over 3 days), the SLO-vs-SLA gap that creates the safety margin, and a graduated freeze policy written before the incident. Includes real arithmetic: a 30-minute outage is 69% of a 99.9% monthly budget, and 99.99% leaves only 4.3 minutes — one incident exhausts it.",
+      "url": "https://www.jslet.com/error-budget-real",
+      "datePublished": "2026-08-29T00:00:00+00:00",
+      "dateModified": "2026-08-29T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is an error budget and how is it calculated?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "An error budget is the amount of failure a service is permitted within a measurement window, defined by its SLO: error budget = (1 - SLO) x window. A 99.9% availability SLO over 30 days permits 43.2 minutes of downtime; 99.99% permits 4.3 minutes; 99.999% permits 26 seconds. The budget is deliberately spent on deploys, migrations, and experiments, and when exhausted, teams freeze risky changes until the window resets."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does my error budget never get used in decisions?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because a budget without alerting and without an owner is a document, not a mechanism. Three things make it operational: wire burn-rate alerts so the number reaches someone in real time (14.4x over 1 hour pages on-call, 6x over 6 hours pages during working hours, 1x over 3 days files a ticket); assign explicit ownership of the budget to the service team; and write the freeze policy in advance, while nobody is stressed. Teams that skip these three treat the budget as a quarterly report instead of a daily decision."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What are the Google SRE burn rate alert thresholds?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Google's SRE workbook defines three tiers: burn rate above 14.4 over a 1-hour window (consuming 2% of a 30-day budget per hour) pages immediately; above 6 over a 6-hour window (5% consumed) pages during working hours; above 1 over a 3-day window (10% consumed) files a ticket. Multi-window alerting requires the short and long windows to fire together, which suppresses noise from brief spikes while still catching sustained degradation."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why must the SLO be stricter than the SLA?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because the gap between them is your safety margin. The SLA is a contractual promise with penalties, usually measured over a quarter or year; the SLO is the internal target you hold yourself to. If the SLA promises 99.9% and the SLO is also 99.9%, the error budget is zero and the first real incident is a contractual breach. Setting the SLO to 99.95% leaves a 0.05% cushion where internal failures do not yet breach the customer promise — that cushion is the error budget your teams actually spend."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much of the monthly budget does a 30-minute outage consume?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Against a 99.9% SLO with a 30-day window (43.2-minute budget), a 30-minute outage consumes 30 / 43.2 = 69.4% of the month's budget. Against 99.99% (4.3-minute budget), the same outage is 7x over budget. This is why the nines matter: 99.9% can absorb one moderate incident per month and keep shipping; 99.99% cannot absorb a single significant incident without exhausting the budget — it requires redundancy and automated failover, not just a bigger dashboard number."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="
+    <div class="container" id="
+    <div class="container" id="main-content">
+        <header>
+            <h1>The <span>Error Budget</span></h1>
+            <p>99.9% Is 43.2 Minutes. Most Teams Never Spend a Second of It.</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-08-29 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 10 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <section class="seo-section">
+            <h2>Executive Summary</h2>
+            <p>Two teams run the same 99.9% SLO. Team A ships three times a week, runs experiments on Thursdays, and treats an incident as a cost of doing business. Team B discovers at quarter-end that a 30-minute outage in March ate most of the month's allowance, then spends April arguing about whether anyone can deploy. Same number on the dashboard. Completely different relationship to risk.</p>
+
+            <p>The difference is not discipline. It is that Team A turned its error budget into a <strong>decision mechanism</strong>: a number that settles the ship-versus-freeze argument before it starts, while Team B left it as a definition in a document nobody reads. An error budget of 43.2 minutes per month is meaningless until something in your tooling reacts to it: an alert that pages at the right burn rate, an owner who can say no, and a freeze policy written while everyone was calm.</p>
+
+            <p>This briefing covers the three mechanics that make an error budget real (burn-rate alerting with the Google SRE thresholds, the SLO-vs-SLA gap that creates your safety margin, and a graduated freeze policy), plus the arithmetic that should make you uncomfortable about your own nines. If you have not checked your budget in a while, run the <a href="/error-budget-calculator">Error Budget &amp; SLO Burn Rate Calculator</a> first and see how much of the month you have already spent.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Budget Nobody Reads</h2>
+            <p>Ask most SRE teams how much of this month's error budget their flagship service has consumed and you get a pause. The budget is defined (usually in the same document as the SLO, usually with a formula and a reference to the SRE workbook) and then it vanishes. It is not on the dashboard. It does not alert. Nobody owns it. It is consulted at quarterly reviews, which is exactly the wrong cadence: the number only helps if it is in front of someone <em>before</em> the fourth incident, not after.</p>
+
+            <p>The failure mode is structural. A budget with no alerting is a report. A budget with no owner is a suggestion. A budget with no policy attached is just a metric with a rounding error in its future. The error budget is the rare reliability artifact that only works when it is wired into the daily loop: consumed by the deploy pipeline, watched by on-call, and enforced by a pre-agreed policy. Without the wiring, the 43.2 minutes is not a budget — it is a postmortem footnote waiting to happen.</p>
+
+            <p>There is a second, subtler reason budgets go unread: they feel like permission to fail. Teams interpret a 0.1% allowance as an invitation to be sloppy, or they treat it as a quota that must not be touched. Both readings miss the point. The budget is a <strong>resource you are expected to spend</strong>: on deploys, migrations, experiments, and the incidents that follow from them. A team that ends every month with a full budget is not winning; it is shipping too slowly. The budgeting error is not spending too much; it is not spending deliberately.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Number That Ends Arguments</h2>
+            <p>The operational value of an error budget is that it converts "should we ship this on a Friday?" from a temperament debate into a question with an answer. Product wants velocity; operations wants stability; both are right, and the budget is the arbitration layer. When the budget is healthy, the answer is yes — ship, experiment, migrate, accept the risk, that is what the allowance is for. When it is nearly exhausted, the answer is no, and nobody has to win an argument to reach it.</p>
+
+            <p>This only works if the budget is <strong>visible at the moment of the decision</strong>. The deploy button, the migration window, the canary analysis: the number needs to be there, not in a quarterly deck. Google's model makes it concrete: budget remaining is a first-class dashboard metric, and the freeze is a formal policy, not a mood. Teams that wire it up report a side effect nobody predicts: the ship-versus-stability conversation gets shorter, because both sides stop rehearsing their positions and start reading the same number.</p>
+
+            <p>The other side of the arbitration is that the budget gives product a legitimate path to risk. A launch that will overrun the budget is not automatically forbidden; it is a decision that someone accountable makes explicitly and records. That is the difference between a budget and a ceiling: a ceiling stops conversation, a budget prices it.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Burn Rate: The Alarm Nobody Sets Up</h2>
+            <p>Budget remaining is a postmortem tool — it tells you, after the fact, how much room you have left. <strong>Burn rate is the warning system</strong>: how fast you are consuming the budget relative to the pace that would exactly exhaust it at window close. A burn rate of 1 means you arrive at zero with nothing to spare. A burn rate of 2 means you run out halfway through. Alerting on burn rate instead of raw error rate matters because the same error rate means different things at different SLOs: a 1% error rate is fine against a 99% SLO but is a <strong>10&times; burn</strong> against 99.9%: you are out of budget in three days, and a threshold that only watches "error rate &gt; 1%" never fires.</p>
+
+            <p>Google's SRE workbook defines three tiers, and they cover different failure shapes:</p>
+
+            <table style="width:100%; border-collapse:collapse; font-size:0.88rem; margin:16px 0;">
+                <thead><tr style="background:var(--bg-input);">
+                    <th style="padding:8px 10px; text-align:left; border-bottom:2px solid var(--border);">Burn Rate</th>
+                    <th style="padding:8px 10px; text-align:left; border-bottom:2px solid var(--border);">Budget Consumed</th>
+                    <th style="padding:8px 10px; text-align:left; border-bottom:2px solid var(--border);">Window</th>
+                    <th style="padding:8px 10px; text-align:left; border-bottom:2px solid var(--border);">Catches</th>
+                </tr></thead>
+                <tbody>
+                    <tr><td style="padding:6px 10px; border-bottom:1px solid var(--border);">14.4&times;</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">2%</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">1 hour</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Active incident — page immediately</td></tr>
+                    <tr><td style="padding:6px 10px; border-bottom:1px solid var(--border);">6&times;</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">5%</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">6 hours</td><td style="padding:6px 10px; border-bottom:1px solid var(--border);">Sustained degradation — page working hours</td></tr>
+                    <tr><td style="padding:6px 10px;">1&times;</td><td style="padding:6px 10px;">10%</td><td style="padding:6px 10px;">3 days</td><td style="padding:6px 10px;">Slow bleed — file a ticket</td></tr>
+                </tbody>
+            </table>
+
+            <p>The slow bleed row is the one most teams miss. A small regression that never trips a spike alert but quietly eats the month is the classic budget killer; it is why the 1&times;/3d tier exists. And the multi-window rule matters: alert only when the short <em>and</em> long windows fire together, so a self-correcting five-minute blip does not page anyone. The 14.4&times; condition alone is noisy; the conjunction is the signal.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The 43.2-Minute Reality Check</h2>
+            <p>Put the arithmetic next to real incidents and the nines stop being abstract. Against a 99.9% SLO with a 30-day window, a <strong>30-minute outage consumes 69% of the month's budget</strong>. Two moderate incidents, and the month is spent; the third outage is a breach, whether or not customers noticed. Against 99.99%, the same 30-minute outage is 7&times; over budget — the service has violated its SLO inside a single incident, and no amount of clever alerting changes that.</p>
+
+            <p>This is why 99.99% is not "slightly better than" 99.9%. It is a different operating model. At 4.3 minutes of monthly allowance, a service cannot tolerate even one unplanned failure of meaningful duration: it needs redundancy, automated failover, chaos testing, and a deploy pipeline that cannot take a whole AZ down. The budget forces the engineering investment: either you build the resilience that keeps outages under four minutes, or you accept that the SLO will be breached most months. The <a href="/system-availability-sla-economics">Price of a Nine</a> briefing prices that choice; the <a href="/system-availability-sla">SLA calculator</a> converts it into downtime units.</p>
+
+            <p>The uncomfortable corollary: most teams set 99.9% because it sounds serious, then discover that their incident history does not support it. Before you promise a nine, run your actual outage minutes through the <a href="/error-budget-calculator">error budget calculator</a> — the honest exercise is to pick the SLO your <em>current</em> reliability earns, then invest to close the gap to the one you want.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Spend It Deliberately</h2>
+            <p>The error budget reframes failure from an anomaly to an operating cost — and costs should be spent on purpose. Deploys consume budget; that is their price, and it is the price of shipping. Migrations consume budget; a well-run migration that takes 20 minutes of the 43.2 is a bargain if it removes a recurring 15-minute incident. The deliberate-spend mindset changes how teams plan: instead of hoping incidents do not happen, they budget for them the way they budget for a new feature.</p>
+
+            <p>Borrowing is legitimate too, with one condition: it must be explicit and recorded. A launch that will overrun the budget is sometimes worth it — but it should be a decision made by someone accountable, written down, with a plan to pay the debt back in the next window. The failure mode is not borrowing; it is borrowing silently, so that the budget resets each month with the same structural debt and the conversation about it never happens.</p>
+
+            <p>What you should not do is treat the budget as a target to hit. Ending every month at 100% consumed means you are operating at the edge of the contract with no margin for the genuinely unexpected, and unexpected incidents are the one thing the budget cannot absorb by definition. The healthy range is somewhere between "spent most of it on purpose" and "never touched it at all." Both extremes are signals: the former of over-exposure, the latter of an SLO too loose to be useful.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Write the Policy Before the Incident</h2>
+            <p>Every part of this system is easy to agree on in the abstract and hard to enforce in the moment, which is exactly why the policy must be written while nobody is stressed. A graduated response works better than a binary freeze:</p>
+
+            <p><strong>At 50% consumed, review.</strong> Ask what spent the budget. If it is a pattern (the same subsystem keeps eating minutes), fix the pattern, not the month. <strong>At 75%, require sign-off.</strong> Risky changes need an explicit approval from someone accountable, which forces the trade-off to be made in the open. <strong>At 100%, freeze.</strong> Non-essential deploys stop until the window resets or the root cause is addressed. The freeze can be scoped: halt deploys to the service that missed its SLO rather than the whole organization, which keeps the blast radius proportional.</p>
+
+            <p>The second rule to write down: the <strong>SLO must be stricter than the SLA</strong>. If the public contract promises 99.9% and the internal SLO is also 99.9%, the budget is zero and the first real incident is a contractual breach. Setting the SLO to 99.95% leaves a 0.05% cushion: the gap is your safety margin, the space where internal failures do not yet breach the customer promise. Teams that skip the gap are not being strict; they are being unprotected. For a deeper treatment of how the nines map to cost, the <a href="/system-availability-sla-economics">SLA Economics briefing</a> is the companion piece to this one.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">What is an error budget and how is it calculated?</h3>
+                <p>An error budget is the permitted failure within a window, defined by the SLO: (1 - SLO) x window. 99.9% over 30 days = 43.2 minutes; 99.99% = 4.3 minutes; 99.999% = 26 seconds. The budget is spent on deploys, migrations, and experiments; when exhausted, teams freeze risky changes until the window resets.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why does my error budget never get used in decisions?</h3>
+                <p>Because a budget without alerting, ownership, and policy is a document. Wire burn-rate alerts so the number reaches someone in real time; assign explicit ownership; write the freeze policy in advance. Teams that skip these treat the budget as a quarterly report instead of a daily decision.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">What are the Google SRE burn rate alert thresholds?</h3>
+                <p>14.4x over 1 hour (2% of a 30-day budget) pages immediately; 6x over 6 hours (5%) pages during working hours; 1x over 3 days (10%) files a ticket. Multi-window alerting requires the short and long windows together to suppress noise.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why must the SLO be stricter than the SLA?</h3>
+                <p>The gap is your safety margin. If SLA and SLO are both 99.9%, the budget is zero and the first incident is a breach. An internal SLO of 99.95% leaves a cushion where failures do not breach the customer promise — that cushion is the budget your teams actually spend.</p>
+            </div>
+
+            <div class="faq-item">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How much of the monthly budget does a 30-minute outage consume?</h3>
+                <p>Against 99.9% (43.2-minute budget), 30 minutes is 69.4% of the month. Against 99.99% (4.3 minutes), the same outage is 7x over budget. That is why 99.99% requires redundancy and automated failover — it cannot absorb a single significant incident.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p>All budget arithmetic uses a 30-day (720-hour) window and binary minutes. Burn-rate thresholds (14.4x/1h, 6x/6h, 1x/3d) are from Google's Site Reliability Engineering workbook, the canonical reference for this model. The 69.4% figure for a 30-minute outage is computed as 30 / 43.2 against the 99.9% SLO. SLO/SLA gap guidance reflects the standard SRE practice that the internal target must be stricter than the external promise. Workload examples are illustrative composites. Compute your own numbers in the <a href="/error-budget-calculator">Error Budget &amp; SLO Burn Rate Calculator</a>.</p>
+        </section>
+
+        <section class="seo-section" style="border-top: 2px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>Beyer, B., Jones, C., Petoff, J., Murphy, N. (2016).</strong> "Site Reliability Engineering." Chapter on error budgets; the original framing of budget as decision mechanism. <a href="https://sre.google/sre-book/part3-practices/" target="_blank" rel="noopener">sre.google</a></li>
+                <li id="ref-2"><strong>Google SRE Workbook (2018).</strong> "Alerting on SLOs." Defines the multi-window burn-rate thresholds (14.4x/1h, 6x/6h, 1x/3d) and the conjunction rule. <a href="https://sre.google/workbook/alerting-on-slos/" target="_blank" rel="noopener">sre.google</a></li>
+                <li id="ref-3"><strong>Google Cloud (2026).</strong> "Monitoring: Alerts on service level objectives." Implementation guidance for burn-rate alerting in production monitoring. <a href="https://cloud.google.com/monitoring/slos" target="_blank" rel="noopener">cloud.google.com</a></li>
+                <li id="ref-4"><strong>openstatus.dev (2026).</strong> "Error Budgets Explained." Independent treatment of budget windows, burn tiers, and graduated policies. <a href="https://www.openstatus.dev/guides/error-budgets-explained" target="_blank" rel="noopener">openstatus.dev</a></li>
+                <li id="ref-5"><strong>realpython.com (2026).</strong> "Error Budget" — software engineering glossary entry with the canonical formula and a Python reference implementation. <a href="https://realpython.com/ref/software-engineering-glossary/error-budget/" target="_blank" rel="noopener">realpython.com</a></li>
+                <li id="ref-6"><strong>jslet (2026).</strong> Related: <a href="/error-budget-calculator">Error Budget &amp; SLO Burn Rate Calculator</a> · <a href="/system-availability-sla-economics">The Price of a Nine</a> · <a href="/system-availability-sla">SLA Calculator</a> · <a href="/latency-budget-calculator">Latency Budget</a> · <a href="/password-crack-time-real">Password Crack Times</a></li>
+            </ol>
+        </section>
+
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0;"><strong>Preferred Attribution Format:</strong> <code style="font-size:0.82rem; background:var(--bg-card); padding:2px 8px; border-radius:4px;">"The Error Budget: 99.9% Is 43.2 Minutes" by jslet Research, 2026 — <a href="https://www.jslet.com/error-budget-real">https://www.jslet.com/error-budget-real</a></code></p>
+            </div>
+        </section>
+<footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script>
+    function fmtDuration(seconds) {
+        if (seconds < 1) return (seconds * 1000).toFixed(0) + ' ms';
+        if (seconds < 60) return seconds.toFixed(2) + ' sec';
+        if (seconds < 3600) return (seconds / 60).toFixed(2) + ' min';
+        return (seconds / 3600).toFixed(2) + ' hours';
+    }
+
+    function compute() {
+        var pct = parseFloat(document.getElementById('sla').value);
+        var downtimeRatio = 1 - (pct / 100);
+
+        var secPerYear = 365.25 * 86400;
+        var secPerMonth = 30 * 86400;
+        var secPerWeek = 7 * 86400;
+        var secPerDay = 86400;
+
+        var yearDT = secPerYear * downtimeRatio;
+        var monthDT = secPerMonth * downtimeRatio;
+        var weekDT = secPerWeek * downtimeRatio;
+        var dayDT = secPerDay * downtimeRatio;
+        var uptime = secPerYear - yearDT;
+
+        var n = -Math.log10(downtimeRatio || 1e-15);
+        var nines = Math.floor(n);
+        var extra = n - nines;
+
+        document.getElementById('results-params').innerText = pct + '% availability (' + nines + '.' + extra.toFixed(1).replace('0.','') + ' nines equivalent)';
+
+        document.getElementById('val-year').innerText = fmtDuration(yearDT);
+        document.getElementById('val-month').innerText = fmtDuration(monthDT);
+        document.getElementById('val-week').innerText = fmtDuration(weekDT);
+        document.getElementById('val-day').innerText = fmtDuration(dayDT);
+        document.getElementById('val-uptime').innerText = (pct).toFixed(4) + '%';
+        document.getElementById('val-budget').innerText = fmtDuration(yearDT);
+
+        // Nines table
+        var slas = [
+            ['90%', 90], ['99%', 99], ['99.5%', 99.5], ['99.9%', 99.9],
+            ['99.95%', 99.95], ['99.99%', 99.99], ['99.995%', 99.995],
+            ['99.999%', 99.999], ['99.9999%', 99.9999]
+        ];
+        var tbody = '<tr><th>SLA</th><th>Nines</th><th>Per Year</th><th>Per Month</th><th>Per Week</th><th>Per Day</th></tr>';
+        slas.forEach(s => {
+            var ratio = 1 - (s[1] / 100);
+            var y = secPerYear * ratio;
+            var m = secPerMonth * ratio;
+            var w = secPerWeek * ratio;
+            var d = secPerDay * ratio;
+            var cls = (s[1] === pct) ? ' class="highlight-row"' : '';
+            tbody += '<tr' + cls + '><td><strong>' + s[0] + '</strong></td><td>' + (-Math.log10(Math.max(ratio, 1e-15))).toFixed(1) + '</td><td>' + fmtDuration(y) + '</td><td>' + fmtDuration(m) + '</td><td>' + fmtDuration(w) + '</td><td>' + fmtDuration(d) + '</td></tr>';
+        });
+        document.getElementById('nines-table-body').innerHTML = tbody;
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+    <script src="nav.js"></script>
+
+    <script>
+    (function() {
+        'use strict';
+        var sloEl = document.getElementById('slo');
+        var winEl = document.getElementById('window');
+        var consEl = document.getElementById('consumed');
+        var elapEl = document.getElementById('elapsed');
+        var card = document.getElementById('results-card');
+
+        function fmtTime(min) {
+            if (min <= 0) return '0';
+            if (min < 1) return (min * 60).toFixed(0) + ' sec';
+            if (min < 60) return min.toFixed(1) + ' min';
+            var h = Math.floor(min / 60), m = Math.round(min % 60);
+            return h + 'h ' + m + 'm';
+        }
+
+        function fmtNum(n) {
+            return n.toLocaleString('en-US', { maximumFractionDigits: 1 });
+        }
+
+        function calc() {
+            var slo = parseFloat(sloEl.value) || 99.9;
+            var hours = parseFloat(winEl.value) || 720;
+            var consumed = parseFloat(consEl.value) || 0;
+            var elapsedFrac = parseFloat(elapEl.value) || 1;
+            if (elapsedFrac <= 0) elapsedFrac = 0.01;
+            if (elapsedFrac > 1) elapsedFrac = 1;
+
+            var totalBudgetMin = (1 - slo / 100) * hours * 60;
+            var pctConsumed = totalBudgetMin > 0 ? (consumed / totalBudgetMin) * 100 : (consumed > 0 ? 100 : 0);
+            var remainingMin = Math.max(0, totalBudgetMin - consumed);
+            var pctRemaining = Math.max(0, 100 - pctConsumed);
+            // burn rate = budget consumed % / window elapsed %
+            var burnRate = pctConsumed / (elapsedFrac * 100);
+
+            var exhaust = null;
+            if (pctConsumed >= 100) { exhaust = 'Already exhausted'; }
+            else if (burnRate > 0) {
+                var remainingPct = 100 - pctConsumed;
+                var timeLeftFrac = remainingPct / burnRate; // in elapsed-units
+                var hoursLeft = timeLeftFrac * (hours * elapsedFrac);
+                exhaust = fmtTime(hoursLeft * 60);
+            }
+
+            card.style.display = 'block';
+            document.getElementById('results-params').textContent =
+                'SLO ' + slo + '% · window ' + hours + 'h (' + (hours / 24).toFixed(0) + 'd) · ' +
+                consumed + ' min consumed · window ' + Math.round(elapsedFrac * 100) + '% elapsed';
+
+            document.getElementById('val-budget').textContent = fmtTime(totalBudgetMin);
+            document.getElementById('val-consumed').textContent = fmtNum(pctConsumed) + '%';
+            document.getElementById('val-remaining').textContent = fmtTime(remainingMin) + ' (' + fmtNum(pctRemaining) + '%)';
+            document.getElementById('val-burn').textContent = burnRate.toFixed(1) + 'x';
+            document.getElementById('val-exhaust').textContent = exhaust || '—';
+
+            var row = document.getElementById('status-row');
+            var badge, note;
+            if (pctConsumed >= 100) { badge = 'status-danger'; note = 'Budget exhausted — freeze non-essential deploys.'; }
+            else if (pctConsumed >= 75) { badge = 'status-danger'; note = 'Critical — require sign-off for risky changes.'; }
+            else if (pctConsumed >= 50) { badge = 'status-warn'; note = 'Warning — review what spent the budget.'; }
+            else { badge = 'status-ok'; note = 'Healthy — budget available for deploys and experiments.'; }
+            row.innerHTML = '<span class="status-badge ' + badge + '">' + note + '</span>';
+        }
+
+        sloEl.addEventListener('change', calc);
+        winEl.addEventListener('change', calc);
+        consEl.addEventListener('input', calc);
+        elapEl.addEventListener('change', calc);
+        calc();
+    })();
+    </script>
+
+</body>
+</html>
