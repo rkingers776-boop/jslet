@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Kubernetes Pod Cost Calculator — jslet</title>
+    <meta name="description" content="A pod requesting 0.5 vCPU and 1 GB of memory costs about $17.50/month per replica — before the 70% you waste on idle requests. Compute per-pod and fleet cost from vCPU, memory, replicas, and provider pricing (EKS/GKE/AKS presets). Includes utilization waste analysis and control-plane fees.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <meta property="og:title" content="Kubernetes Pod Cost Calculator — jslet">
+    <meta property="og:description" content="Per-pod and fleet Kubernetes cost from vCPU, memory, replicas, and provider pricing. EKS/GKE/AKS presets, utilization waste analysis, control-plane fees.">
+    <meta property="og:url" content="https://www.jslet.com/kubernetes-pod-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Kubernetes Pod Cost Calculator — jslet">
+    <meta name="twitter:description" content="K8s per-pod cost: 0.5 vCPU + 1 GB = $17.50/mo per replica. Fleet cost, waste analysis, EKS/GKE/AKS presets.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/kubernetes-pod-cost">
+    <style>
+        select.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono","Cascadia Code",Consolas,monospace; transition: border-color 0.2s,box-shadow 0.2s; appearance: none; cursor: pointer; }
+        select.unit-input:focus, input.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        input.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono","Cascadia Code",Consolas,monospace; box-sizing: border-box; }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono","Cascadia Code",Consolas,monospace; font-size: 1.3rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .price-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.85rem; }
+        .price-table th, .price-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); text-align: left; }
+        .price-table th { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .price-table td { font-family: "SF Mono","Cascadia Code",Consolas,monospace; color: var(--text-heading); }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Kubernetes Pod Cost Calculator",
+      "description": "Compute per-pod and fleet Kubernetes cost from vCPU requests, memory requests, replica count, and provider pricing. Includes EKS/GKE/AKS price presets, utilization waste analysis (a pod at 30% utilization wastes 70% of its cost), and control-plane fee options.",
+      "url": "https://www.jslet.com/kubernetes-pod-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I calculate the cost of a Kubernetes pod?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Multiply the pod's vCPU request by the per-core price and the memory request by the per-GB price, then multiply by the number of replicas and by 730 hours per month. A pod requesting 0.5 vCPU and 1 GB of memory at industry-average rates ($21/core/month, $7/GB/month) costs (0.5 x 21 + 1 x 7) = $17.50 per replica per month, or $52.50/month for three replicas."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much does Kubernetes cost per vCPU and per GB of memory in 2026?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Industry averages across EKS, GKE, and AKS are about $21 per vCPU core per month and $7 per GB of memory per month. By provider: EKS runs about $22/core and $6.50/GB, GKE $21/core and $7/GB, AKS $20/core and $7.50/GB. Managed control planes add roughly $73/month per cluster on EKS and GKE (Azure AKS does not charge for the control plane)."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why does my Kubernetes bill look higher than the pod cost I calculated?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Three reasons: utilization waste (most pods use 20-40% of requested resources, so you pay for requests, not usage), unallocated node capacity (nodes are billed whole even when pods do not fill them), and hidden fees (control plane, load balancers, storage, and egress). A workload that requests $1,000/month at 100% utilization typically delivers only about $300 of real work at 30% utilization."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the best way to reduce Kubernetes costs?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Right-size requests first: run kubectl top pods and compare actual usage to requests, then lower over-provisioned limits. Use spot node pools for fault-tolerant workloads (70-80% discounts on AWS EKS, GKE, and AKS). Enable cluster autoscaling so unallocated node capacity shrinks off-peak, and add pod disruption budgets before moving workloads to spot."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I convert milliCPU to vCPU for cost calculation?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "1,000 millicores equals 1 vCPU. A pod requesting 250m CPU is 0.25 vCPU; 2,000m is 2 vCPU. Convert milli to cores before multiplying by the per-core price: 250m x $21/core/month = $5.25/month per replica. See the milliCPU-to-cores converter for the full table."
+      }
+    }
+  ]
+}
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="gestalt-header" id="gestalt-nav"><div class="gestalt-header-inner"><div class="gestalt-nav-left"><a href="/" class="gestalt-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="gestalt-brand-text">Tool Hub</span></div><div class="gestalt-search-container"><div class="gestalt-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="gestalt-nav-right"><a href="/articles" class="gestalt-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="gestalt-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="gestalt-profile-btn" aria-label="Your profile"><div class="gestalt-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="
+    <div class="container" id="
+    <div class="container" id="main-content">
+        <header style="margin-bottom: 24px;">
+            <h1 style="font-size:1.9rem; line-height:1.2;">Kubernetes <span>Pod Cost</span></h1>
+            <p style="font-size:1.02rem; color:var(--text-secondary); max-width:720px;">A pod requesting 0.5 vCPU and 1 GB costs <strong>$17.50/month per replica</strong> — and at 30% utilization you are paying for 70% you never use. Model your fleet, then find the waste.</p>
+        </header>
+
+        <main style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:16px;">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3 style="margin-bottom: 4px;">Pod Spec &amp; Fleet</h3>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:14px;">
+                    <div class="input-group">
+                        <label for="vcpu">vCPU request (cores)</label>
+                        <input class="unit-input" type="number" id="vcpu" value="0.5" min="0.05" step="0.05" inputmode="decimal">
+                    </div>
+                    <div class="input-group">
+                        <label for="mem">Memory request (GiB)</label>
+                        <input class="unit-input" type="number" id="mem" value="1" min="0.1" step="0.1" inputmode="decimal">
+                    </div>
+                    <div class="input-group">
+                        <label for="replicas">Replicas</label>
+                        <input class="unit-input" type="number" id="replicas" value="3" min="1" step="1" inputmode="numeric">
+                    </div>
+                    <div class="input-group">
+                        <label for="provider">Provider pricing</label>
+                        <select class="unit-input" id="provider">
+                            <option value="avg" selected>Industry average ($21/core · $7/GB)</option>
+                            <option value="eks">AWS EKS ($22/core · $6.50/GB)</option>
+                            <option value="gke">GKE ($21/core · $7/GB)</option>
+                            <option value="aks">Azure AKS ($20/core · $7.50/GB)</option>
+                        </select>
+                    </div>
+                </div>
+                <p style="font-size:0.8rem; color:var(--text-muted); margin-top:8px;">Rates are monthly per core and per GB, based on 2026 industry averages across the big three providers. Convert milliCPU with the <a href="/kubernetes-milli-cpu-to-cores">milliCPU → cores converter</a>.</p>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3 style="margin-bottom: 4px;">Utilization &amp; Overheads</h3>
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:14px;">
+                    <div class="input-group">
+                        <label for="util">Average utilization</label>
+                        <select class="unit-input" id="util">
+                            <option value="0.3" selected>30% (typical pod)</option>
+                            <option value="0.4">40%</option>
+                            <option value="0.5">50%</option>
+                            <option value="0.7">70% (healthy target)</option>
+                            <option value="1">100% (assumes requests = usage)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="control">Control plane</label>
+                        <select class="unit-input" id="control">
+                            <option value="0">None</option>
+                            <option value="73" selected>Managed ($73/mo — EKS/GKE)</option>
+                            <option value="0">AKS (free)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Cost Report</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="val-pod"></div><div class="metric-label">Per Pod / Month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-fleet"></div><div class="metric-label">Fleet / Month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-year"></div><div class="metric-label">Fleet / Year</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-effective"></div><div class="metric-label">Effective Work</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-waste"></div><div class="metric-label">Waste / Month</div></div>
+                </div>
+                <div class="metric-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                    <div class="metric-tile"><div class="metric-val" id="val-util"></div><div class="metric-label">Utilization</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-hourly"></div><div class="metric-label">Hourly (fleet)</div></div>
+                </div>
+            </div>
+        </main>
+
+        <section style="margin-top: 30px;">
+            <h2 style="font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 16px;">📋 Managed Kubernetes Pricing Reference (2026, monthly)</h2>
+            <div style="overflow-x: auto;">
+                <table class="price-table">
+                    <thead><tr><th>Provider</th><th>CPU / core</th><th>Memory / GB</th><th>Control Plane</th></tr></thead>
+                    <tbody>
+                        <tr><td>AWS EKS</td><td>$22</td><td>$6.50</td><td>$73/cluster</td></tr>
+                        <tr><td>Google GKE</td><td>$21</td><td>$7</td><td>$73/cluster</td></tr>
+                        <tr><td>Azure AKS</td><td>$20</td><td>$7.50</td><td>Free</td></tr>
+                        <tr><td>Industry avg</td><td>$21</td><td>$7</td><td>~$73</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Pod Cost Model: Requests, Not Usage</h2>
+            <p>Kubernetes bills you for what pods <strong>request</strong>, not what they use. The node is paid whole, and the pod cost is its share of that node — which is why the two numbers that matter are the vCPU and memory requests in the pod spec. The formula is the same one OpenCost, Kubecost, and Harness use: (vCPU &times; per-core price) + (memory GB &times; per-GB price), scaled by replicas and the 730 hours in a month. A microservice requesting 0.5 vCPU and 2 GiB across three replicas lands at roughly $52.50/month before anything else.</p>
+            <h3>The Waste Factor</h3>
+            <p>Most pods use 20&ndash;40% of what they request. A fleet that requests $1,000/month of resources and runs at 30% utilization is doing about <strong>$300 of real work</strong> — the other $700 is idle allocation you are paying for. The fix is not more hardware; it is right-sizing: run <code>kubectl top pods</code>, compare actual usage to requests, and cut the over-provisioned limits. This is the single largest Kubernetes saving available, and it costs nothing but an afternoon. If you are also wondering how many pods actually fit on a node, the <a href="/pod-density-real">Pod Density briefing</a> covers why the default 110-pod cap is a lie at production workloads.</p>
+            <h3>Spot, Control Planes, and the Hidden Line</h3>
+            <p>Fault-tolerant workloads (batch, CI/CD, stateless APIs with replicas) can run on spot node pools at 70&ndash;80% discounts — add a <strong>pod disruption budget</strong> before you do. And remember the control plane: EKS and GKE charge roughly $73/month per cluster even if it runs one pod, so consolidating small clusters is often free money. For the wider Kubernetes cost picture, the <a href="/container-resource-limit">container resource limit calculator</a> and the <a href="/cloud-quotas">Cloud Quotas toolbox</a> cover adjacent sizing decisions.</p>
+        </section>
+
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/kubernetes-milli-cpu-to-cores">milliCPU → Cores Converter &rarr;</a>
+                <a href="/container-resource-limit">Container Resource Limits &rarr;</a>
+                <a href="/pod-density-calculator">Pod Density Calculator &rarr;</a>
+                <a href="/pod-density-real">📰 Pod Density: Why 110 Pods Is a Lie (Full Briefing) &rarr;</a>
+                <a href="/gpu-training-cost">GPU Training Cost &rarr;</a>
+                <a href="/cloud-quotas">Cloud Quotas Toolbox &rarr;</a>
+            </div>
+        </div>
+<footer class="gestalt-footer-box">
+            <div class="gestalt-footer-inner">
+                <div class="gestalt-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="gestalt-footer-features">
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="gestalt-feature-col">
+                        <div class="gestalt-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="gestalt-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="gestalt-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="gestalt-footer-brand">
+                        <a href="/" class="gestalt-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#E60023"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="gestalt-footer-name">jslet.com</span>
+                        </a>
+                        <p class="gestalt-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="gestalt-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="gestalt-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="gestalt-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script>
+    function fmtDuration(seconds) {
+        if (seconds < 1) return (seconds * 1000).toFixed(0) + ' ms';
+        if (seconds < 60) return seconds.toFixed(2) + ' sec';
+        if (seconds < 3600) return (seconds / 60).toFixed(2) + ' min';
+        return (seconds / 3600).toFixed(2) + ' hours';
+    }
+
+    function compute() {
+        var pct = parseFloat(document.getElementById('sla').value);
+        var downtimeRatio = 1 - (pct / 100);
+
+        var secPerYear = 365.25 * 86400;
+        var secPerMonth = 30 * 86400;
+        var secPerWeek = 7 * 86400;
+        var secPerDay = 86400;
+
+        var yearDT = secPerYear * downtimeRatio;
+        var monthDT = secPerMonth * downtimeRatio;
+        var weekDT = secPerWeek * downtimeRatio;
+        var dayDT = secPerDay * downtimeRatio;
+        var uptime = secPerYear - yearDT;
+
+        var n = -Math.log10(downtimeRatio || 1e-15);
+        var nines = Math.floor(n);
+        var extra = n - nines;
+
+        document.getElementById('results-params').innerText = pct + '% availability (' + nines + '.' + extra.toFixed(1).replace('0.','') + ' nines equivalent)';
+
+        document.getElementById('val-year').innerText = fmtDuration(yearDT);
+        document.getElementById('val-month').innerText = fmtDuration(monthDT);
+        document.getElementById('val-week').innerText = fmtDuration(weekDT);
+        document.getElementById('val-day').innerText = fmtDuration(dayDT);
+        document.getElementById('val-uptime').innerText = (pct).toFixed(4) + '%';
+        document.getElementById('val-budget').innerText = fmtDuration(yearDT);
+
+        // Nines table
+        var slas = [
+            ['90%', 90], ['99%', 99], ['99.5%', 99.5], ['99.9%', 99.9],
+            ['99.95%', 99.95], ['99.99%', 99.99], ['99.995%', 99.995],
+            ['99.999%', 99.999], ['99.9999%', 99.9999]
+        ];
+        var tbody = '<tr><th>SLA</th><th>Nines</th><th>Per Year</th><th>Per Month</th><th>Per Week</th><th>Per Day</th></tr>';
+        slas.forEach(s => {
+            var ratio = 1 - (s[1] / 100);
+            var y = secPerYear * ratio;
+            var m = secPerMonth * ratio;
+            var w = secPerWeek * ratio;
+            var d = secPerDay * ratio;
+            var cls = (s[1] === pct) ? ' class="highlight-row"' : '';
+            tbody += '<tr' + cls + '><td><strong>' + s[0] + '</strong></td><td>' + (-Math.log10(Math.max(ratio, 1e-15))).toFixed(1) + '</td><td>' + fmtDuration(y) + '</td><td>' + fmtDuration(m) + '</td><td>' + fmtDuration(w) + '</td><td>' + fmtDuration(d) + '</td></tr>';
+        });
+        document.getElementById('nines-table-body').innerHTML = tbody;
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() { compute(); });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+    <script src="nav.js"></script>
+
+    <script>
+    (function() {
+        'use strict';
+        var sloEl = document.getElementById('slo');
+        var winEl = document.getElementById('window');
+        var consEl = document.getElementById('consumed');
+        var elapEl = document.getElementById('elapsed');
+        var card = document.getElementById('results-card');
+
+        function fmtTime(min) {
+            if (min <= 0) return '0';
+            if (min < 1) return (min * 60).toFixed(0) + ' sec';
+            if (min < 60) return min.toFixed(1) + ' min';
+            var h = Math.floor(min / 60), m = Math.round(min % 60);
+            return h + 'h ' + m + 'm';
+        }
+
+        function fmtNum(n) {
+            return n.toLocaleString('en-US', { maximumFractionDigits: 1 });
+        }
+
+        function calc() {
+            var slo = parseFloat(sloEl.value) || 99.9;
+            var hours = parseFloat(winEl.value) || 720;
+            var consumed = parseFloat(consEl.value) || 0;
+            var elapsedFrac = parseFloat(elapEl.value) || 1;
+            if (elapsedFrac <= 0) elapsedFrac = 0.01;
+            if (elapsedFrac > 1) elapsedFrac = 1;
+
+            var totalBudgetMin = (1 - slo / 100) * hours * 60;
+            var pctConsumed = totalBudgetMin > 0 ? (consumed / totalBudgetMin) * 100 : (consumed > 0 ? 100 : 0);
+            var remainingMin = Math.max(0, totalBudgetMin - consumed);
+            var pctRemaining = Math.max(0, 100 - pctConsumed);
+            // burn rate = budget consumed % / window elapsed %
+            var burnRate = pctConsumed / (elapsedFrac * 100);
+
+            var exhaust = null;
+            if (pctConsumed >= 100) { exhaust = 'Already exhausted'; }
+            else if (burnRate > 0) {
+                var remainingPct = 100 - pctConsumed;
+                var timeLeftFrac = remainingPct / burnRate; // in elapsed-units
+                var hoursLeft = timeLeftFrac * (hours * elapsedFrac);
+                exhaust = fmtTime(hoursLeft * 60);
+            }
+
+            card.style.display = 'block';
+            document.getElementById('results-params').textContent =
+                'SLO ' + slo + '% · window ' + hours + 'h (' + (hours / 24).toFixed(0) + 'd) · ' +
+                consumed + ' min consumed · window ' + Math.round(elapsedFrac * 100) + '% elapsed';
+
+            document.getElementById('val-budget').textContent = fmtTime(totalBudgetMin);
+            document.getElementById('val-consumed').textContent = fmtNum(pctConsumed) + '%';
+            document.getElementById('val-remaining').textContent = fmtTime(remainingMin) + ' (' + fmtNum(pctRemaining) + '%)';
+            document.getElementById('val-burn').textContent = burnRate.toFixed(1) + 'x';
+            document.getElementById('val-exhaust').textContent = exhaust || '—';
+
+            var row = document.getElementById('status-row');
+            var badge, note;
+            if (pctConsumed >= 100) { badge = 'status-danger'; note = 'Budget exhausted — freeze non-essential deploys.'; }
+            else if (pctConsumed >= 75) { badge = 'status-danger'; note = 'Critical — require sign-off for risky changes.'; }
+            else if (pctConsumed >= 50) { badge = 'status-warn'; note = 'Warning — review what spent the budget.'; }
+            else { badge = 'status-ok'; note = 'Healthy — budget available for deploys and experiments.'; }
+            row.innerHTML = '<span class="status-badge ' + badge + '">' + note + '</span>';
+        }
+
+        sloEl.addEventListener('change', calc);
+        winEl.addEventListener('change', calc);
+        consEl.addEventListener('input', calc);
+        elapEl.addEventListener('change', calc);
+        calc();
+    })();
+    </script>
+
+
+    <script>
+    (function() {
+        'use strict';
+        var vcpuEl = document.getElementById('vcpu');
+        var memEl = document.getElementById('mem');
+        var repEl = document.getElementById('replicas');
+        var provEl = document.getElementById('provider');
+        var utilEl = document.getElementById('util');
+        var ctrlEl = document.getElementById('control');
+        var card = document.getElementById('results-card');
+
+        var PRICES = {
+            avg: { cpu: 21, mem: 7 },
+            eks: { cpu: 22, mem: 6.5 },
+            gke: { cpu: 21, mem: 7 },
+            aks: { cpu: 20, mem: 7.5 }
+        };
+
+        function fmtMoney(n) {
+            if (n >= 1000) return '$' + (n / 1000).toFixed(2) + 'K';
+            return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+        }
+
+        function calc() {
+            var vcpu = parseFloat(vcpuEl.value) || 0;
+            var mem = parseFloat(memEl.value) || 0;
+            var reps = parseInt(repEl.value, 10) || 1;
+            var p = PRICES[provEl.value] || PRICES.avg;
+            var util = parseFloat(utilEl.value) || 1;
+            var ctrl = parseFloat(ctrlEl.value) || 0;
+
+            var podCost = vcpu * p.cpu + mem * p.mem;
+            var fleet = podCost * reps + ctrl;
+            var effective = fleet * util;
+            var waste = fleet - effective;
+            var hourly = fleet / 730;
+
+            card.style.display = 'block';
+            document.getElementById('results-params').textContent =
+                vcpu + ' vCPU + ' + mem + ' GiB &times; ' + reps + ' replicas · ' +
+                (provEl.selectedOptions[0] ? provEl.selectedOptions[0].text.split(' (')[0] : 'avg') +
+                ' pricing · ' + Math.round(util * 100) + '% utilization';
+
+            document.getElementById('val-pod').textContent = fmtMoney(podCost) + ' / mo';
+            document.getElementById('val-fleet').textContent = fmtMoney(fleet) + ' / mo';
+            document.getElementById('val-year').textContent = fmtMoney(fleet * 12) + ' / yr';
+            document.getElementById('val-effective').textContent = fmtMoney(effective) + ' / mo';
+            document.getElementById('val-waste').textContent = fmtMoney(waste) + ' / mo';
+            document.getElementById('val-util').textContent = Math.round(util * 100) + '%';
+            document.getElementById('val-hourly').textContent = '$' + hourly.toFixed(3) + ' / hr';
+        }
+
+        vcpuEl.addEventListener('input', calc);
+        memEl.addEventListener('input', calc);
+        repEl.addEventListener('input', calc);
+        provEl.addEventListener('change', calc);
+        utilEl.addEventListener('change', calc);
+        ctrlEl.addEventListener('change', calc);
+        calc();
+    })();
+    </script>
+
+</body>
+</html>
