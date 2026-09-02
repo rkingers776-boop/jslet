@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The CI/CD Tax: Why Your Build Pipeline Costs More Than Your Production Servers (2026) — jslet</title>
+    <meta name="description" content="GitHub Actions quotes $0.006/minute for Linux. A 5-person team shipping an iOS app sees a four-figure monthly bill. The gap is five structural costs the pricing page never shows: the macOS price premium, cache-miss blowups, concurrency queues, artifact storage, and per-job overhead that turns matrix builds into budget bombs. Real 2026 pricing from GitHub, GitLab, and CircleCI.">
+    <meta property="og:title" content="The CI/CD Tax: Why Your Build Pipeline Costs More Than Your Production Servers">
+    <meta property="og:description" content="$0.006/minute on the pricing page. A four-figure bill at the end of the month. Five hidden taxes: the macOS premium, cache misses, concurrency queues, artifact storage, per-job overhead.">
+    <meta property="og:url" content="https://www.jslet.com/ci-cd-cost-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-09-02T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-09-02T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The CI/CD Tax: Why Your Build Pipeline Costs More Than Your Production Servers">
+    <meta name="twitter:description" content="GitHub Actions says $0.006/min. Your bill says four figures a month. Five hidden taxes across GitHub, GitLab, and CircleCI — with the real math.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/ci-cd-cost-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The CI/CD Tax: Why Your Build Pipeline Costs More Than Your Production Servers (2026)",
+      "description": "CI/CD pricing pages show per-minute rates that look trivial: $0.006 for Linux, $0.062 for macOS on GitHub Actions. A mid-size team's monthly bill tells a different story. This briefing decomposes the five structural costs that sit between the per-minute rate and the actual invoice: OS-based multipliers (macOS costs roughly 10x Linux minutes and consumes the included quota much faster), cache-miss amplification (a cold node_modules install turns a sub-minute build into an 8-minute one), concurrency queue latency (waiting runners cost nothing on the CI bill but cost engineering hours and deployment velocity), artifact and log storage (build outputs, container images, and retained logs compound monthly), and per-job overhead (matrix strategies and Docker layer caching charges that apply to every job, not every minute). Includes self-hosted runner break-even math, a 5-step pipeline audit, and provider-by-provider pricing comparison for GitHub Actions, GitLab CI, and CircleCI as of September 2026.",
+      "url": "https://www.jslet.com/ci-cd-cost-real",
+      "datePublished": "2026-09-02T00:00:00+00:00",
+      "dateModified": "2026-09-02T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How much does GitHub Actions actually cost per minute in 2026?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "After the January 2026 price cut, GitHub Actions charges $0.006/minute for a 2-core Linux x64 runner, $0.002/minute for the 1-core slim runner, $0.005/minute for Linux ARM64, $0.010/minute for Windows 2-core, and $0.062/minute for macOS (3 or 4-core). The catch: minutes round up to the nearest whole minute per job, and macOS minutes cost roughly 10x the Linux rate ($0.062 vs $0.006), so macOS usage consumes the included monthly quota much faster. A 90-second macOS job bills 2 minutes at the macOS rate. Private repos get 2,000 free minutes/month, which disappears fast with macOS builds. Use the vCPU-to-Core-Hours calculator at jslet.com/vcpu-to-core-hours to compare hosted runner costs against self-hosted infrastructure."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why do macOS CI builds cost 10-20x more than Linux?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "macOS runners are expensive because Apple hardware doesn't virtualize the way x86 Linux does. GitHub prices macOS at $0.062/min versus $0.006/min for Linux — roughly a 10x premium — and macOS usage consumes the included monthly quota much faster than Linux. CircleCI is steeper: macOS M4 Pro Medium costs 200 credits/min ($0.120), and M4 Pro Large is 400 credits/min ($0.240) — 20-40x the Linux rate. A 30-minute iOS build on GitHub costs $1.86; the same duration on Linux costs $0.18. For a team running 50 iOS builds/day, that's $93/day or ~$2,800/month just for macOS compute. The only real mitigation is self-hosted macOS runners (Mac Stadium or AWS EC2 Mac instances at ~$1.05/hour for an M1), which break even around 203 macOS build-hours/month on raw compute (about 6.8 hours/day) — though EC2 Mac's 24-hour minimum allocation makes Mac Stadium's monthly Mac minis the cheaper path for steady workloads. GitLab's shared macOS runners apply a 6x-12x cost factor depending on the machine class."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much does a cache miss actually cost in CI?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A cache miss doesn't cost extra per minute — it costs extra minutes. A Node.js project with a warm node_modules cache installs in seconds (billed as one minute). Without the cache, npm install pulls 200-800 packages and takes 3-8 minutes. At $0.006/min Linux, that's $0.006 warm versus $0.018-$0.048 cold per build — a 3x to 8x multiplier. At $0.062/min macOS for an iOS project with CocoaPods, the gap is worse: 1 minute vs 12 minutes = $0.062 vs $0.744 per build. GitHub Actions cache has a 10 GB per-repository limit and entries expire after 7 days of inactivity. A monorepo with 6 workflows can blow through the 10 GB cap, causing oldest caches to evict and creating cascading misses. CircleCI charges 200 credits per job for Docker layer caching ($0.12/job) on top of compute. The fix: pin dependency versions, use cache keys that include lockfile hashes, split large caches across multiple cache steps, and for self-hosted runners use a local registry or pull-through cache (e.g., Verdaccio for npm, go- mod proxy) that never expires."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "When does a self-hosted CI runner become cheaper than GitHub-hosted?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The break-even depends on OS and utilization. For Linux: a 4-core 8GB cloud VM costs $24-40/month (Hetzner CX42 ~$24, DigitalOcean s-4vcpu-8gb ~$48). GitHub Actions 4-core Linux costs $0.012/min. At $30/month for a VM, the raw-compute break-even is 2,500 minutes/month (42 hours) — about 83 minutes/day. Teams running more than that save money on raw compute, though the true break-even is higher once runner maintenance and security patching are included. For macOS: AWS EC2 Mac M1 (mac2.metal) costs ~$1.05/hour = $756/month if always on. GitHub macOS at $0.062/min = $3.72/hour. Break-even: 756 ÷ 3.72 = 203 hours/month = ~6.8 hours/day. A team doing continuous iOS integration hits this fast. The hidden cost of self-hosting is maintenance: runner updates, disk cleanup, security patching, and downtime. For a 5-person team, figure 2-4 hours/month of engineer time. Model your exact numbers with the vCPU-to-Core-Hours calculator at jslet.com/vcpu-to-core-hours and the Container Resource Limit Calculator at jslet.com/container-resource-limit."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What's the cheapest CI/CD platform for a small team in 2026?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "For Linux-only workloads under 2,000 minutes/month: GitHub Actions free tier (2,000 min) beats GitLab Free (400 min) and CircleCI Free (~6,000 Linux min from 30,000 credits). CircleCI's free tier is actually the most generous by minute count, but credits expire monthly and macOS eats them at 200/min. For teams exceeding free tiers: GitHub Actions is cheapest on Linux ($0.006/min) and macOS ($0.062/min). GitLab charges $0.010/min for extra minutes but includes 10,000 with Premium ($29/user/mo) — if you already pay for GitLab for code hosting, the effective CI rate can be lower. CircleCI is competitive on Linux ($0.006/min) but expensive on macOS ($0.12-0.24/min) and adds per-job Docker cache charges. The real differentiator isn't the per-minute rate — it's cache performance, concurrency limits, and ecosystem integration. A team on GitHub gets Actions for free with their existing code hosting and branch protection rules. A team on GitLab gets CI integrated with merge requests and security scanning. Migrating platforms to save $50/month usually costs more in engineer time than it saves. Use the Cron Execution Frequency calculator at jslet.com/cron-execution-frequency-per-month to estimate your monthly build minutes from commit and deploy cadence."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 136 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>The <span>CI/CD Tax</span></h1>
+            <p>Why Your Build Pipeline Costs More Than Your Production Servers</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-09-02 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 18 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <section class="seo-section">
+            <h2>Executive Summary</h2>
+            <p>GitHub Actions' pricing page is a masterclass in making infrastructure look cheap. Linux: $0.006 per minute. That's six-tenths of a cent. Run a build for 10 minutes and you've spent six cents. A startup with 5 engineers pushing 20 CI-triggering commits a day, 5 minutes per build on Linux — do the napkin math and you get about $18 a month. The actual bill for that team, if they ship an iOS app, is a four-figure sum: the worked example below lands at roughly $1,400 a month on macOS compute alone, before Windows matrix builds, artifact storage, and cache-miss minutes are even added.</p>
+
+            <p>The gap between the per-minute rate and the invoice is not fraud. It's not even particularly hidden. It's five charging dimensions that the pricing page relegates to footnotes, and that most teams discover only after the first monthly invoice triggers a Slack message from finance. They are: the OS multiplier that makes macOS cost 10-40x Linux; the cache miss that turns a sub-minute install into a multi-minute one; the concurrency queue that doesn't appear on the CI bill at all but costs engineering hours and deployment velocity; the artifact and log storage that compounds silently month over month; and the per-job overhead that makes matrix strategies and Docker layer caching cost money per job, not per minute.</p>
+
+            <p>This briefing runs the real numbers for all three major platforms — GitHub Actions, GitLab CI, and CircleCI — using September 2026 pricing. It quantifies each tax, gives you the self-hosted break-even formula, and ends with a 5-step audit you can run against your own pipeline this afternoon.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The OS Multiplier: Why Your iOS Build Budget Dwarfs Your Web Build Budget</h2>
+            <p>Here is the part nobody reads in the GitHub Actions docs: macOS minutes cost roughly ten times Linux minutes — $0.062/min versus $0.006/min — and macOS usage burns through your included monthly quota far faster than Linux. It's not a markup. It's physics — Apple silicon doesn't virtualize the way x86 Linux does, and every macOS runner is a physical Mac sitting in a data center somewhere, depreciating whether you use it or not.</p>
+
+            <p>Let's put this in real terms. A typical iOS build — compile, run tests, produce an IPA — takes 25 minutes on a 3-core GitHub macOS runner. Cost per build: 25 × $0.062 = $1.55. A team that runs CI on every pull request and merges 15 times a day, with 2 builds per PR (one on push, one on merge), runs roughly 600 builds a month. That's $930/month just for macOS compute. If they also run nightly releases and UI tests, add another 300 builds: $465. Total macOS: $1,395/month. The equivalent Linux pipeline for the backend service — same commit cadence, 5-minute builds — costs 600 × 5 × $0.006 = $18/month. The iOS build is 77x more expensive.</p>
+
+            <p>Stack the rest of the stack on top and the figure climbs fast. A Windows desktop client verified on the same cadence adds 600 × 15 minutes × $0.010 = $90. A Linux backend running x64 and ARM64 matrices adds 600 × 5 × $0.006 plus 600 × 5 × $0.005 = $33. Retained artifacts and logs beyond the 500 MB free tier run about 80 GB × $0.25 = $20 (the math is in the storage section). Total: $1,395 (macOS) + $90 (Windows) + $33 (Linux) + $20 (storage) = roughly $1,540 a month — more than 80x the $18 the per-minute napkin math promised. That is the CI/CD tax in one worked example.</p>
+
+            <p>CircleCI makes this look reasonable by comparison. Their macOS M4 Pro Medium runner burns 200 credits per minute. At $0.0006/credit, that's $0.12/min — nearly double GitHub's rate. The M4 Pro Large is 400 credits/min, $0.24/min. A 25-minute iOS build on CircleCI M4 Pro Medium costs $3.00. At 600 builds/month: $1,800. GitLab applies a cost factor of 6x to 12x for macOS shared runners depending on the machine class, on top of their $0.010/min base rate for extra minutes.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>The OS Multiplier Rule:</strong> If more than 20% of your CI minutes run on macOS or Windows, the per-minute Linux rate on the pricing page is irrelevant to your actual bill. Model your macOS usage separately. A 5-person iOS team can easily spend $1,000-1,500/month on CI while their backend team spends under $50. Use the <a href="/vcpu-to-core-hours">vCPU to Core Hours calculator</a> to compare hosted macOS rates against EC2 Mac instances.</p>
+            </div>
+
+            <p>The escape hatch is self-hosted macOS, but it's not the bargain it looks like on paper. AWS EC2 Mac M1 (mac2.metal) costs roughly $1.05/hour, or $756/month if you run it 24/7. GitHub macOS at $0.062/min is $3.72/hour — so the EC2 Mac is cheaper after 203 hours of build time per month, about 6.8 hours a day. But you can't turn off a bare-metal Mac instance the way you can an EC2 VM; it has a 24-hour minimum allocation. And you're on the hook for Xcode updates, disk cleanup, and runner version management. For a team doing 4+ hours of macOS builds a day, a Mac Stadium dedicated machine (roughly $99-199/month for a Mac mini as of September 2026) often beats both cloud options.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Cache Miss: When 20 Seconds Becomes 6 Minutes</h2>
+            <p>CI caching is the most impactful cost optimization nobody owns. It's also the least understood. Here's what actually happens: your workflow has a step that restores node_modules from cache. The cache key is <code>node-modules-${{ hashFiles('package-lock.json') }}</code>. If the lockfile hasn't changed and the cache entry exists under GitHub's 10 GB per-repository limit and hasn't expired (7 days since last access), the restore takes 15 seconds and npm install sees everything already there. Total install time: 20 seconds.</p>
+
+            <p>Now change one dependency. The hash changes. The cache key misses. npm install downloads 400 packages, runs postinstall scripts, compiles native modules: 6 minutes instead of seconds. At $0.006/min Linux, that's $0.036 cold versus $0.006 warm — a 6x jump — once you account for GitHub rounding every job up to the nearest whole minute (a 20-second install still bills as one full minute). On macOS with CocoaPods, the gap is uglier: pod install with a warm cache finishes in well under a minute; cold, it downloads and compiles 30 pods and takes 12 minutes. At $0.062/min, that's $0.744 versus $0.062 per build.</p>
+
+            <p>It gets worse in monorepos. GitHub Actions caps total cache storage at 10 GB per repository. A monorepo with 6 services, each with its own node_modules cache entry of 1.5 GB, uses 9 GB. Add a Go build cache (2 GB) and you're over the limit. GitHub evicts the least-recently-used entry. The next build for the evicted service misses cache, takes 8 minutes, and pushes out another service's cache. Cache thrashing sets in — every build misses something, and average build time drifts upward without anyone noticing until the monthly report.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">Scenario</th><th style="text-align:right;padding:6px 10px;">Warm Cache (billed)</th><th style="text-align:right;padding:6px 10px;">Cold Cache (billed)</th><th style="text-align:right;padding:6px 10px;">Cost Multiplier</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Node.js (Linux, $0.006/min)</td><td style="text-align:right;padding:6px 10px;">1 min → $0.006</td><td style="text-align:right;padding:6px 10px;">6 min → $0.036</td><td style="text-align:right;padding:6px 10px;">6x</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">iOS / CocoaPods (macOS, $0.062/min)</td><td style="text-align:right;padding:6px 10px;">1 min → $0.062</td><td style="text-align:right;padding:6px 10px;">12 min → $0.744</td><td style="text-align:right;padding:6px 10px;">12x</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Docker build (Linux, layer cache)</td><td style="text-align:right;padding:6px 10px;">2 min → $0.012</td><td style="text-align:right;padding:6px 10px;">14 min → $0.084</td><td style="text-align:right;padding:6px 10px;">7x</td></tr>
+                <tr style="border-bottom:1px solid var(--border);background:var(--accent-soft);"><td style="padding:6px 10px;">Rust / C++ compile (Linux)</td><td style="text-align:right;padding:6px 10px;">3 min → $0.018</td><td style="text-align:right;padding:6px 10px;">22 min → $0.132</td><td style="text-align:right;padding:6px 10px;">7.3x</td></tr>
+            </table>
+
+            <p>CircleCI adds insult to injury: Docker layer caching costs 200 credits per job ($0.12), regardless of whether the cache actually hits. If you have 10 jobs in a workflow and 3 of them don't even use Docker, you're paying $0.36/run for a feature that partially works. The pragmatic fixes: split caches by language and lockfile hash so one dependency bump doesn't invalidate everything; use <code>restore-keys</code> prefixes to fall back to a parent cache; and for self-hosted runners, run a local pull-through cache (Verdaccio for npm, Athens for Go, goproxy.cn-style) that never expires and isn't subject to the 10 GB cap.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Concurrency Queue: The Cost That Doesn't Show Up on the Bill</h2>
+            <p>This one is invisible in the CI invoice, which is why it's the most expensive tax of all. Every CI platform caps concurrent jobs. GitHub caps them by plan — Free allows 20 concurrent jobs, Pro 40, Team 60, and Enterprise 500 — while standard macOS runners top out at 5 concurrent jobs. GitLab Free allows 4 (and you share them with every project in the namespace), CircleCI Free allows 2-4 containers depending on the plan. When your team opens 8 pull requests before lunch and each triggers 3 jobs, you have 24 jobs queued against 20 slots. Four jobs wait.</p>
+
+            <p>A 5-minute wait doesn't sound like much. But it's 5 minutes where the engineer who opened the PR is context-switching — checking Slack, reading email, starting another task. When the CI finally goes green 12 minutes after they pushed, they've lost their flow state and need 5-10 minutes to reload the problem. Interruption research for knowledge workers consistently lands in the 15-25 minute range for full refocus after a switch. If queueing adds one such switch per engineer per day, that's 5 engineers × 22 working days = 110 interruptions a month — conservatively 28 to 46 hours of lost deep work. Using a simplified $72/hour engineering-cost assumption, that's $2,000-3,300/month — more than the entire CI bill for most teams.</p>
+
+            <p>There's a second-order cost too: deployment latency. If your main branch build is queued behind 6 PR builds, the hotfix you merged at 2:47 PM doesn't reach production until 3:05 PM. For an e-commerce team, that's 18 minutes of a bug being live. For a SaaS team, it's 18 minutes of customer tickets. The <a href="/error-budget-calculator">Error Budget calculator</a> can help you quantify how deployment latency eats into your availability SLO.</p>
+
+            <p>The fixes are structural, not financial. Use <code>concurrency:</code> groups in GitHub Actions to cancel superseded builds on the same branch — if you push twice to a PR, the first build cancels automatically. Use path filters to skip CI when only docs changed. Move long-running jobs (integration tests, nightly releases) to a separate workflow that doesn't block PR checks. And if you're consistently hitting the concurrency cap, that's the signal to either upgrade the plan or add a self-hosted runner — the queueing cost is already higher than the upgrade fee.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Artifact &amp; Storage Drag: The Line Item That Grows While You Sleep</h2>
+            <p>Build artifacts are the cockroaches of CI costs — small, numerous, and impossible to fully eliminate. Every build produces something: a compiled binary, a test coverage report, a Docker image, a log file. GitHub Actions gives you 500 MB of free artifact storage per month and charges $0.25/GB beyond that. GitLab includes 10 GB on Free and 50 GB on Premium. CircleCI gives 2 GB free and charges for more. None of them sound like real money — until you realize artifacts accumulate.</p>
+
+            <p>Consider a team that produces a 150 MB test coverage report and a 300 MB Docker image per build, at 60 builds/month. That's 27 GB/month of new artifacts. If retention is set to the default (90 days on GitHub), at any given time you're storing 81 GB. Beyond the 500 MB free tier: 80.5 GB × $0.25 = $20.13/month. Not catastrophic. That artifact-storage figure is separate from your container registry, which bills on its own: GitHub Packages (GHCR) charges $0.005/GB/month for image storage and $0.005/GB for data transfer out. A 2 GB image pulled 500 times/month by Kubernetes nodes is 1 TB of egress = $5/month, on top of the storage itself. Logs are the sleeper: GitHub stores workflow logs for 90 days by default, and a verbose build can generate 50-200 MB of logs per run. At 60 runs/month, that's 3-12 GB of logs alone.</p>
+
+            <p>The compounding effect is what catches teams. Artifact storage grows linearly with build count. Build count grows with team size. Team size grows with revenue. By the time a startup reaches 20 engineers, they're often storing 200-500 GB of CI artifacts and logs at $50-125/month. It's never the largest line item, but it's also never optimized — because nobody owns it. The fix is mechanical: set artifact retention to 7-14 days for PR builds (you almost never need a PR artifact after merge), keep release artifacts for 90 days, and enable log retention policies. Use the <a href="/log-storage-cost">Log Storage Cost calculator</a> to model what your retained logs actually cost.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Per-Job Overhead: Matrix Builds and the Fixed Cost of Every Step</h2>
+            <p>Every CI job has a fixed cost that has nothing to do with how long your tests take. On GitHub Actions, each job spins up a fresh runner: provision the VM, pull the actions, checkout the code, set up the language toolchain. That's 30-90 seconds of overhead per job, billed at the per-minute rate (rounded up). On CircleCI, Docker layer caching costs 200 credits per job regardless of duration. GitLab's shared runners apply cost factors that scale with machine class — a 4x machine doesn't just run faster, it bills at 4x the minute rate.</p>
+
+            <p>Matrix strategies expose this overhead brutally. A test matrix of <code>node-version: [18, 20, 22]</code> × <code>os: [ubuntu-latest, windows-latest]</code> = 6 jobs. If each job has 60 seconds of fixed overhead and 2 minutes of actual testing, you're paying 6 × 3 minutes = 18 minutes billed, of which 6 minutes (33%) is pure overhead. On Windows ($0.010/min) that overhead is more expensive. Add a third dimension — <code>database: [postgres, mysql]</code> — and you're at 12 jobs, 12 minutes of overhead, and the actual test time hasn't changed at all.</p>
+
+            <p>GitHub proposed a $0.002 per-job control plane fee in late 2025, then postponed it indefinitely after community backlash. But the overhead exists regardless of whether it's itemized: runner provisioning time is billed compute time, and it scales with job count, not build duration. A workflow with 15 tiny jobs (lint, typecheck, unit test per package, build per service) will always cost more than a workflow with 3 jobs that do the same work, even though the total test execution time is identical.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>The Job Consolidation Heuristic:</strong> If a job runs in under 2 minutes, it probably shouldn't be a separate job. This is a heuristic, not a universal rule — parallelism, failure isolation, and permission boundaries can all justify keeping a short job separate. Combine lint + typecheck + unit test into one job. Split only when parallelism actually saves wall-clock time — e.g., integration tests that take 15 minutes and can run concurrently. The <a href="/cron-execution-frequency-per-month">Cron Execution Frequency calculator</a> can help you estimate total job-minutes from your build cadence.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Self-Hosted Break-Even: When to Stop Paying by the Minute</h2>
+            <p>At some volume, renting runners by the minute becomes more expensive than owning them. The break-even math is straightforward but depends entirely on which OS you're building for.</p>
+
+            <p><strong>Linux.</strong> A 4-core 8 GB virtual machine from Hetzner (CX42) costs €21/month (~$23). DigitalOcean's equivalent is $48. GitHub Actions 4-core Linux costs $0.012/min. At $30/month for a VM, the raw-compute break-even is 2,500 minutes/month — about 83 minutes a day, or roughly 17 five-minute builds. A team with more than a handful of engineers clears this on raw compute alone. The catch is that the true break-even sits higher once you add maintenance: runner version updates, disk space management (Docker images fill disks fast), and security patching. Figure 2-4 hours of engineer time per month. For a team already running Kubernetes, adding an Actions Runner Controller (ARC) deployment is a one-day project and gives you auto-scaling self-hosted runners at marginal cost.</p>
+
+            <p><strong>macOS.</strong> As noted earlier, EC2 Mac M1 is ~$1.05/hour ($756/month always-on), GitHub macOS is $3.72/hour equivalent. Break-even at 203 hours/month. But the 24-hour minimum allocation means you can't spin it down on weekends. Mac Stadium dedicated Mac minis start at $99/month and are often the cheapest option for steady macOS CI — but you're responsible for the full software stack. For teams under 4 hours of macOS builds per day, hosted GitHub macOS is still cheaper than self-hosted once you count the Mac's idle time and maintenance overhead.</p>
+
+            <p><strong>Windows.</strong> GitHub Windows 2-core is $0.010/min. A Windows VM in the cloud costs $30-60/month. Break-even at 3,000-6,000 minutes/month. Most teams don't have enough Windows builds to justify self-hosting, and Windows runner maintenance (updates, antivirus, disk bloat) is more painful than Linux.</p>
+
+            <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:0.85rem;">
+                <tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:6px 10px;">OS</th><th style="text-align:right;padding:6px 10px;">Hosted Rate</th><th style="text-align:right;padding:6px 10px;">Self-Hosted Cost/mo</th><th style="text-align:right;padding:6px 10px;">Break-Even</th></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Linux 4-core</td><td style="text-align:right;padding:6px 10px;">$0.012/min</td><td style="text-align:right;padding:6px 10px;">$24-48</td><td style="text-align:right;padding:6px 10px;">2,000-4,000 min/mo</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">macOS (M1)</td><td style="text-align:right;padding:6px 10px;">$0.062/min</td><td style="text-align:right;padding:6px 10px;">$99-756</td><td style="text-align:right;padding:6px 10px;">50-200 hrs/mo</td></tr>
+                <tr style="border-bottom:1px solid var(--border);"><td style="padding:6px 10px;">Windows 2-core</td><td style="text-align:right;padding:6px 10px;">$0.010/min</td><td style="text-align:right;padding:6px 10px;">$30-60</td><td style="text-align:right;padding:6px 10px;">3,000-6,000 min/mo</td></tr>
+            </table>
+        </section>
+
+        <section class="seo-section">
+            <h2>Concrete Steps: The Pipeline Audit</h2>
+
+            <p><strong>1. Pull your actual CI spend by OS and workflow, not the per-minute estimate.</strong> GitHub's billing page shows total Actions minutes but not by OS. Use the Actions usage API (<code>/repos/{owner}/{repo}/actions/timing</code>) or a tool like ci-spend to get per-workflow, per-OS breakdown. You're looking for one number: what percentage of your bill is macOS. If it's over 50% and you're not primarily an iOS company, you have a problem.</p>
+
+            <p><strong>2. Audit cache hit rates across every workflow.</strong> GitHub Actions doesn't show cache hit rate in the UI by default. Add a step that checks if the cache key was restored and logs it, or use the Actions cache API. Any workflow below 80% cache hit rate is costing you 2-5x more than it should. Fix the cache keys (use lockfile hashes, not branch names), split large caches, and delete stale cache entries via the API to free up the 10 GB limit.</p>
+
+            <p><strong>3. Set artifact and log retention to 14 days for PR builds.</strong> The default is 90 days on GitHub. You will never look at a PR build's artifacts 15 days after the PR merged. Change it in the repo settings or via <code>retention-days</code> in the workflow. This alone typically cuts artifact storage by 70%.</p>
+
+            <p><strong>4. Add concurrency groups to cancel superseded builds.</strong> Every PR workflow should have <code>concurrency: group: ci-${{ github.ref }}, cancel-in-progress: true</code>. If you push twice to a branch, the first build cancels. For a team that pushes frequently, this cuts total build minutes by 20-40% with zero quality loss.</p>
+
+            <p><strong>5. Consolidate jobs under 2 minutes.</strong> Walk through your workflow YAML. Any job that runs in under 2 minutes is paying 30-90 seconds of overhead for 30 seconds of work. Merge it into an adjacent job. A workflow that goes from 12 jobs to 6 jobs with the same total test time will cost 20-30% less.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0;"><strong>🧰 Related tools on jslet:</strong> <a href="/vcpu-to-core-hours">vCPU to Core Hours</a> (self-hosted runner sizing) · <a href="/cron-execution-frequency-per-month">Cron Execution Frequency</a> (build minute estimation) · <a href="/container-resource-limit">Container Resource Limit Calculator</a> (runner resource config) · <a href="/log-storage-cost">Log Storage &amp; Retention TCO</a> · <a href="/error-budget-calculator">Error Budget &amp; SLO Burn Rate</a> (deployment latency impact)</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2>Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Is GitHub Actions really free for public repositories?</h3>
+                <p>Yes — public repos get unlimited GitHub Actions minutes on shared runners, with no monthly cap. This is one of the best deals in DevOps and a major reason open-source projects have migrated to GitHub Actions from Travis CI and CircleCI. The caveats: macOS still consumes the included quota much faster than Linux even on public repos (though the free pool is larger), concurrent jobs are capped by plan — 20 for Free, 40 for Pro, 60 for Team — and standard macOS runners top out at 5 concurrent jobs, with a 6-hour maximum job execution time. If you're running a public open-source project with heavy macOS or Windows CI, you may still hit limits during peak times. Private repos get 2,000 minutes/month on the Free plan, which is enough for a 2-3 person team doing Linux-only CI but disappears fast with macOS builds.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How do I estimate my monthly CI minutes before migrating platforms?</h3>
+                <p>Start with your current platform's usage report — GitHub has a billing page, GitLab has a CI/CD analytics dashboard, CircleCI has an insights page. If you're starting fresh: count your average builds per day (PRs × 2 + merges + nightly + deploys), multiply by average build duration, then multiply by 22 working days. A 5-person team with 4 PRs/day, 2 builds/PR, 6-minute average build = 4 × 2 × 6 × 22 = 1,056 minutes/month for Linux. Add macOS at roughly 10x the Linux rate if applicable. The <a href="/cron-execution-frequency-per-month">Cron Execution Frequency calculator</a> on jslet can model scheduled builds, and the <a href="/vcpu-to-core-hours">vCPU to Core Hours calculator</a> converts those minutes into self-hosted infrastructure costs. The most common mistake is forgetting that matrix strategies multiply job count — a 3×2 matrix turns 1 build into 6, and your minute estimate needs to account for that.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Should I use Docker layer caching in CI?</h3>
+                <p>Only if your Docker build is the bottleneck and the cache actually hits. On GitHub Actions, Docker layer caching via <code>actions/cache</code> is free but limited by the 10 GB repo cache cap — a single 2 GB Docker image cache eats 20% of your budget. BuildKit's inline cache (<code>type=inline</code>) stores cache metadata in the image itself and doesn't count against the cache limit, but it only works if you push the image to a registry. On CircleCI, Docker layer caching costs 200 credits per job ($0.12) regardless of hit rate — at 60 jobs/month that's $7.20, which is trivial, but at 600 jobs/month it's $72. The real win for Docker in CI is using a registry with a pull-through cache or building images only when the Dockerfile or base image changes, not on every PR. For most teams, skipping Docker builds on PRs (do it only on merge to main) cuts Docker-related CI costs by 80%.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">What's the actual cost difference between GitHub Actions, GitLab CI, and CircleCI in 2026?</h3>
+                <p>On Linux 2-core, all three converge around $0.006/min: GitHub $0.006, CircleCI $0.006 (10 credits/min), GitLab $0.010 for extra minutes but includes 10,000 with Premium. On macOS, GitHub is cheapest at $0.062/min; GitLab applies 6x-12x factors on top of $0.010 (so $0.06-$0.12/min); CircleCI is most expensive at $0.12-$0.24/min. On Windows, GitHub $0.010/min, CircleCI ~$0.024/min, GitLab ~$0.010/min. The total cost of ownership includes more than per-minute rates: GitLab Premium is $29/user/month (with 10K minutes included), CircleCI Performance starts at $15/month + $15/user, GitHub Actions is included with GitHub Team ($4/user/mo) at 3,000 min. For a 10-person team already on GitHub, Actions is almost always the cheapest option because there's no additional platform fee. For a team on GitLab, staying with GitLab CI avoids integration friction. Migrating CI platforms to save 10-20% on per-minute rates usually costs more in engineer migration time than it saves in the first year.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How much engineering time does self-hosted CI actually require?</h3>
+                <p>For Linux self-hosted runners on Kubernetes with Actions Runner Controller (ARC) or GitLab Runner operator: initial setup is 1-3 days, ongoing maintenance is 1-2 hours/month. This covers runner version updates (automated via ARC), disk cleanup (set up a cron job to prune Docker images), and occasional troubleshooting. For bare-metal macOS: initial setup is 1-2 days (install Xcode, configure runner, set up auto-login), ongoing is 2-4 hours/month for Xcode updates, macOS security patches, and disk management. The maintenance burden is the real cost of self-hosting — a $30/month VM that requires 3 hours/month of a $72/hour engineer costs $246/month in total, not $30. Teams that underestimate this often migrate back to hosted runners after 6 months. The break-even calculations earlier in this article assume you have platform engineering capacity; if your team is all product engineers with no DevOps bandwidth, hosted CI is usually the better choice even at higher per-minute cost.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Pricing data is based on publicly available rate cards accessed in September 2026. GitHub Actions: Linux 2-core $0.006/min (post-January 2026 reduction), Linux 1-core slim $0.002/min, Linux ARM64 $0.005/min, Windows 2-core $0.010/min, macOS $0.062/min. Free tier: 2,000 minutes/month for private repos (Team: 3,000), unlimited for public repos. macOS minute multiplier: roughly 10x the Linux rate against free quota. Cache limit: 10 GB/repo, 7-day inactivity expiry. Artifact storage: 500 MB free, $0.25/GB beyond. GitLab CI: Free 400 min/mo, Premium ($29/user/mo annual) 10,000 min/mo, Ultimate 50,000 min/mo. Extra minutes: $10/1,000 ($0.010/min). macOS cost factor: 6x-12x depending on runner class. CircleCI: Free 30,000 credits/mo, Performance $15/mo + 30,000 credits/user. Linux medium: 10 credits/min ($0.006). macOS M4 Pro Medium: 200 credits/min ($0.120). macOS M4 Pro Large: 400 credits/min ($0.240). Docker layer cache: 200 credits/job. Network egress: 420 credits/GB. Self-hosted infrastructure pricing: Hetzner CX42 €21/mo, DigitalOcean s-4vcpu-8gb $48/mo, AWS EC2 Mac M1 (mac2.metal) ~$1.05/hr, Mac Stadium Mac mini from $99/mo. All break-even calculations assume 730 hours/month and do not include engineer maintenance time.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. This analysis was produced using publicly available pricing data and our own <a href="/vcpu-to-core-hours">vCPU to Core Hours calculator</a>. We are not sponsored by GitHub, GitLab, CircleCI, or any cloud provider, and we have no financial relationship with any vendor discussed in this article.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>GitHub (2026).</strong> "Actions runner pricing." Per-minute rates for Linux, Windows, macOS, and ARM runners. <a href="https://docs.github.com/en/billing/reference/actions-runner-pricing" target="_blank" rel="noopener">docs.github.com</a></li>
+                <li id="ref-2"><strong>GitHub (2026).</strong> "GitHub Actions billing." Free minutes, minute multipliers, artifact storage, and cache limits. <a href="https://docs.github.com/en/billing/concepts/product-billing/github-actions" target="_blank" rel="noopener">docs.github.com</a></li>
+                <li id="ref-3"><strong>GitLab (2026).</strong> "Compute minutes." Quota tiers, cost factors, and overage pricing for shared runners. <a href="https://docs.gitlab.com/ci/pipelines/compute_minutes/" target="_blank" rel="noopener">docs.gitlab.com</a></li>
+                <li id="ref-4"><strong>CircleCI (2026).</strong> "Credit pricing." Per-resource-class credit consumption, Docker layer caching, and network egress charges. <a href="https://circleci.com/pricing/price-list/" target="_blank" rel="noopener">circleci.com</a></li>
+                <li id="ref-5"><strong>AWS (2026).</strong> "Amazon EC2 Mac instances." Pricing and minimum allocation for mac1/mac2/mac3 metal instances. <a href="https://aws.amazon.com/ec2/instance-types/mac/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-6"><strong>GitHub (2026).</strong> "Caching dependencies to speed up workflows." Cache storage limits, eviction policy, and cache key best practices. <a href="https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows" target="_blank" rel="noopener">docs.github.com</a></li>
+                <li id="ref-7"><strong>GitHub (2026).</strong> "Using concurrency." Canceling superseded workflow runs and concurrency groups. <a href="https://docs.github.com/en/actions/using-jobs/using-concurrency" target="_blank" rel="noopener">docs.github.com</a></li>
+                <li id="ref-8"><strong>jslet Research (2026).</strong> "The Observability Tax: Why Your Logs Cost More Than Your Servers." Companion analysis on log storage and retention economics. <a href="/observability-cost-real">jslet.com</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/ci-cd-cost-real&t=The+CI%2FCD+Tax:+Why+Your+Build+Pipeline+Costs+More+Than+Your+Production+Servers" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/ci-cd-cost-real&text=GitHub+Actions+says+%240.006%2Fmin.+Your+bill+says+four+figures+a+month.+Five+hidden+taxes+across+GitHub%2C+GitLab%2C+and+CircleCI+%E2%80%94+with+the+real+math%3A&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/devops/submit?url=https://www.jslet.com/ci-cd-cost-real&title=The+CI%2FCD+Tax%3A+Why+Your+Build+Pipeline+Costs+More+Than+Your+Production+Servers+(2026)" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/devops">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/ci-cd-cost-real&title=The+CI%2FCD+Tax%3A+Why+Your+Build+Pipeline+Costs+More+Than+Your+Production+Servers" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0;"><strong>Preferred Attribution Format:</strong> <code style="font-size:0.82rem; background:var(--bg-card); padding:2px 8px; border-radius:3px;">"The CI/CD Tax: Why Your Build Pipeline Costs More Than Your Production Servers (2026)" — jslet Research, September 2026. https://www.jslet.com/ci-cd-cost-real</code></p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> When the pricing page shows $0.006/minute and your bill shows eighty times that, the difference is a product of five billing dimensions the pricing page excludes. RSS covers one pricing-structure reality check per week. No vendor sponsors. No tracking. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 136 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>
