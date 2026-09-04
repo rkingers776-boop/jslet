@@ -15,7 +15,7 @@
                         '<div class="jslet-hub-panel" id="jslet-hub-panel" role="menu" aria-label="Tool categories">' +
                             '<div class="jslet-hub-head">' +
                                 '<span class="jslet-hub-title">Tool Categories</span>' +
-                                '<span class="jslet-hub-count">14 Categories · 138 Tools</span>' +
+                                '<span class="jslet-hub-count">14 Categories · 112 Tools</span>' +
                             '</div>' +
                             '<div class="jslet-hub-grid">' +
                                 '<a href="/json-tools" class="jslet-hub-item" role="menuitem"><span class="jslet-hub-icon gic-json">{ }</span><span class="jslet-hub-info"><strong>JSON / CSV</strong><span>Format · Validate · Convert</span></span></a>' +
@@ -33,7 +33,7 @@
                                 '<a href="/security-sre" class="jslet-hub-item" role="menuitem"><span class="jslet-hub-icon gic-sec">🔒</span><span class="jslet-hub-info"><strong>Security / SRE</strong><span>SLA · Passwords · Auditing</span></span></a>' +
                                 '<a href="/devops-utilities" class="jslet-hub-item" role="menuitem"><span class="jslet-hub-icon gic-ops">🕐</span><span class="jslet-hub-info"><strong>DevOps</strong><span>Ops · Deploy · Time</span></span></a>' +
                             '</div>' +
-                            '<a href="/" class="jslet-hub-all">View all 136 tools <span aria-hidden="true">→</span></a>' +
+                            '<a href="/" class="jslet-hub-all">View all 112 tools <span aria-hidden="true">→</span></a>' +
                         '</div>' +
                     '</div>' +
                     '<div class="jslet-account-pill">' +
@@ -45,7 +45,7 @@
                 '<div class="jslet-search-container">' +
                     '<div class="jslet-search-bar">' +
                         '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="jslet-search-icon"><path d="M17.33 18.74a10 10 0 1 1 1.41-1.41l4.47 4.47-1.41 1.41zM11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16"></path></svg>' +
-                        '<input type="text" placeholder="Search 136 dev tools, calculators &amp; briefings..." id="jslet-global-search" autocomplete="off">' +
+                        '<input type="text" placeholder="Search 112 dev tools, calculators &amp; briefings..." id="jslet-global-search" autocomplete="off">' +
                     '</div>' +
                 '</div>' +
                 '<div class="jslet-nav-right">' +
