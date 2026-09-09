@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>CI/CD Cost Calculator — GitHub vs GitLab vs CircleCI</title>
+    <meta name="description" content="GitHub quotes $0.006/min; iOS-heavy teams pay ~$1,400/mo. Compare GitHub vs GitLab vs CircleCI by OS mix, matrix, artifacts — find self-hosted break-even.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .os-input-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+        .os-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; background: var(--bg-card); }
+        .os-card.mac { border-top: 3px solid var(--gold); }
+        .os-card.lin { border-top: 3px solid var(--accent); }
+        .os-card.win { border-top: 3px solid var(--success); }
+        .os-card h4 { margin: 0 0 2px; font-size: 0.95rem; display: flex; justify-content: space-between; align-items: center; }
+        .os-rate { font-size: 0.72rem; color: var(--text-muted); font-weight: 400; }
+        .os-note { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 8px; }
+        .compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-top: 14px; }
+        .compare-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; background: var(--bg-card); }
+        .compare-card.gh { border-color: rgba(37,99,235,0.35); }
+        .compare-card .prov { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); }
+        .compare-card .bill { font-size: 1.7rem; font-weight: 700; color: var(--text-heading); margin: 4px 0 2px; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .compare-card .bill-sub { font-size: 0.75rem; color: var(--text-secondary); }
+        .compare-card.best-opt { border-width: 2px; border-color: var(--success); }
+        .compare-card.best-opt .prov { color: var(--success); }
+        .break-even-note { display: flex; gap: 10px; align-items: flex-start; border-radius: var(--radius-sm); padding: 10px 14px; margin-top: 10px; font-size: 0.85rem; line-height: 1.5; }
+        .be-hit { background: var(--success-bg); border: 1px solid rgba(5,150,105,0.35); }
+        .be-miss { background: var(--danger-bg); border: 1px solid rgba(220,38,38,0.3); }
+        .be-idle { background: var(--bg-input); border: 1px solid var(--border); }
+        .mini-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.85rem; }
+        .mini-table th, .mini-table td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--border); }
+        .mini-table th:first-child, .mini-table td:first-child { text-align: left; }
+        .mini-table tr:last-child td { border-bottom: none; font-weight: 600; }
+        .mono { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 620px) { .two-col { grid-template-columns: 1fr; } }
+        .faq-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "CI/CD Cost Calculator",
+      "description": "GitHub quotes $0.006/min; iOS-heavy teams pay ~$1,400/mo. Compare GitHub vs GitLab vs CircleCI by OS mix, matrix, artifacts — find self-hosted break-even.",
+      "url": "https://www.jslet.com/ci-cd-cost-calculator",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
+    <link rel="canonical" href="https://www.jslet.com/ci-cd-cost-calculator">
+    <meta property="og:title" content="CI/CD Cost Calculator — GitHub vs GitLab vs CircleCI">
+    <meta property="og:description" content="GitHub quotes $0.006/min; iOS-heavy teams pay ~$1,400/mo. Compare GitHub vs GitLab vs CircleCI by OS mix, matrix, artifacts — find self-hosted break-even.">
+    <meta property="og:url" content="https://www.jslet.com/ci-cd-cost-calculator">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="CI/CD Cost Calculator — GitHub vs GitLab vs CircleCI">
+    <meta name="twitter:description" content="GitHub quotes $0.006/min; iOS-heavy teams pay ~$1,400/mo. Compare GitHub vs GitLab vs CircleCI by OS mix, matrix, artifacts — find self-hosted break-even.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why does my GitHub Actions bill exceed the $0.006/minute rate?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The $0.006/min rate is for a 2-core Linux x64 runner. Minutes round up to the nearest whole minute per job, so a 20-second install still bills 1 minute. macOS bills at $0.062/min, Windows at $0.010/min, and matrix strategies multiply job count — a 3x2 matrix turns one build into six jobs. Once your account exceeds its included minutes, every job-minute on every OS is billed at that OS rate."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much does macOS CI actually cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "GitHub macOS runners bill $0.062/min, or $3.72/hour. A 30-minute iOS build costs $1.86. A team running roughly 900 macOS build-minutes-heavy jobs a month lands near $1,400/month for macOS compute alone — before Windows, Linux, or artifact storage. macOS is roughly 10x the Linux rate, which is why iOS pipelines dominate CI bills."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which is cheaper: GitHub Actions, GitLab CI, or CircleCI?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "For Linux-only workloads the three converge near $0.006/min once free tiers are exhausted. On macOS, GitHub is cheapest at $0.062/min; GitLab applies a 6-12x factor (roughly $0.06-0.12/min); CircleCI is most expensive at $0.12-0.24/min (M4 Pro Medium/Large). The calculator applies your actual OS mix and volume to all three so the comparison reflects your pipeline, not a rate card."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "When does self-hosting runners break even?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "On raw compute cost alone: a ~$30/month Linux VM (4-core 8GB) breaks even against GitHub 4-core Linux ($0.012/min) at roughly 2,500 billed minutes/month. For macOS, an EC2 Mac M1 at ~$756/month always-on breaks even against GitHub macOS ($3.72/hour) at about 203 build-hours/month. True operational break-even is higher once maintenance, patching, and disk management are included."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do cache misses actually cost money?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A cache miss does not add a surcharge — it adds job time, and job time is billed. With per-job rounding, a warm Node.js install bills 1 minute ($0.006 on Linux) while a cold 6-minute install bills $0.036: a 6x cost increase for that step. On macOS the gap is wider because the rate is higher. GitHub's cache is limited to 10 GB per repository with 7-day expiry, so large monorepos evict caches and pay for the misses."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+<div id="site-nav" data-current="tool">
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 113 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    </div>
+    <div class="container" id="main-content">
+
+        <header style="margin-bottom: 24px;">
+            <h1 style="font-size:1.9rem; line-height:1.2;">CI/CD <span>Cost</span> Calculator</h1>
+            <p style="font-size:1.02rem; color:var(--text-secondary); max-width:760px;">GitHub Actions quotes <strong>$0.006/minute</strong> for Linux. A 5-person iOS team shipping ~900 macOS builds a month still lands near <strong>$1,400</strong> — before Windows, Linux, and artifact storage. This calculator models builds/day per OS, matrix multipliers, artifact retention, and included minutes, then compares the monthly bill across GitHub Actions, GitLab CI, and CircleCI and flags your self-hosted runner break-even.</p>
+        </header>
+
+        <main style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:16px;">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3 style="margin-bottom: 4px;">Build Volume by OS</h3>
+                <p class="card-desc">Set average builds per working day and average duration per OS. Job minutes round up to the nearest whole minute per job (a 20-second install bills 1 minute). Typical iOS-heavy team: ~41 macOS, ~30 Linux, ~6 Windows builds/day on 22 working days ≈ 1,700 jobs/month.</p>
+                <div class="os-input-grid">
+                    <div class="os-card mac">
+                        <h4>macOS <span class="os-rate">$0.062 / min</span></h4>
+                        <div class="os-note">iOS / CocoaPods / Xcode</div>
+                        <div class="input-group">
+                            <label for="mac-builds">Builds per day</label>
+                            <input class="unit-input" type="number" id="mac-builds" value="41" min="0" step="1" inputmode="numeric">
+                        </div>
+                        <div class="input-group">
+                            <label for="mac-min">Avg duration (min)</label>
+                            <input class="unit-input" type="number" id="mac-min" value="25" min="0.5" step="0.5" inputmode="decimal">
+                        </div>
+                    </div>
+                    <div class="os-card lin">
+                        <h4>Linux <span class="os-rate">$0.006 / min</span></h4>
+                        <div class="os-note">Node / Go / backend services</div>
+                        <div class="input-group">
+                            <label for="lin-builds">Builds per day</label>
+                            <input class="unit-input" type="number" id="lin-builds" value="30" min="0" step="1" inputmode="numeric">
+                        </div>
+                        <div class="input-group">
+                            <label for="lin-min">Avg duration (min)</label>
+                            <input class="unit-input" type="number" id="lin-min" value="5" min="0.5" step="0.5" inputmode="decimal">
+                        </div>
+                    </div>
+                    <div class="os-card win">
+                        <h4>Windows <span class="os-rate">$0.010 / min</span></h4>
+                        <div class="os-note">Desktop / .NET / cross-platform</div>
+                        <div class="input-group">
+                            <label for="win-builds">Builds per day</label>
+                            <input class="unit-input" type="number" id="win-builds" value="6" min="0" step="1" inputmode="numeric">
+                        </div>
+                        <div class="input-group">
+                            <label for="win-min">Avg duration (min)</label>
+                            <input class="unit-input" type="number" id="win-min" value="10" min="0.5" step="0.5" inputmode="decimal">
+                        </div>
+                    </div>
+                </div>
+                <div class="two-col" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="workdays">Working days per month</label>
+                        <input class="unit-input" type="number" id="workdays" value="22" min="1" max="31" step="1" inputmode="numeric">
+                    </div>
+                    <div class="input-group">
+                        <label for="matrix">Matrix multiplier</label>
+                        <select class="unit-input" id="matrix">
+                            <option value="1" selected>1x — single workflow per change</option>
+                            <option value="2">2x — e.g. node 18 + 20</option>
+                            <option value="3">3x — e.g. 3 OS variants</option>
+                            <option value="4">4x — 2x2 matrix</option>
+                            <option value="6">6x — 3x2 matrix (OS x version)</option>
+                            <option value="8">8x — 4x2 matrix</option>
+                        </select>
+                    </div>
+                </div>
+                <p class="faq-note">Matrix multiplier applies to every OS. A 3x2 matrix turns one push into six jobs — the most commonly missed line in CI budgets.</p>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3 style="margin-bottom: 4px;">Artifacts &amp; Included Minutes</h3>
+                <div class="two-col">
+                    <div class="input-group">
+                        <label for="artifact-gb">Artifacts per build (GB)</label>
+                        <input class="unit-input" type="number" id="artifact-gb" value="0.2" min="0" step="0.05" inputmode="decimal">
+                    </div>
+                    <div class="input-group">
+                        <label for="retention">Artifact retention (days)</label>
+                        <select class="unit-input" id="retention">
+                            <option value="7" selected>7 days — typical cleanup cadence</option>
+                            <option value="30">30 days</option>
+                            <option value="90">90 days (GitHub default)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="input-group" style="margin-top:12px;">
+                    <label for="included">GitHub included minutes per month (private repos)</label>
+                    <select class="unit-input" id="included">
+                        <option value="0">0 — assume over quota (bill everything)</option>
+                        <option value="2000" selected>2,000 — GitHub Free plan</option>
+                        <option value="3000">3,000 — GitHub Team plan</option>
+                    </select>
+                    <p class="faq-note">Included minutes are deducted Linux-first, then Windows, then macOS. Public repos and open source get unlimited hosted minutes and can ignore this.</p>
+                </div>
+                <button class="btn-calc">Run CI/CD Cost Comparison</button>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 CI/CD Cost Report</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid" style="margin-top:10px;">
+                    <div class="metric-tile"><div class="metric-val" id="val-jobs"></div><div class="metric-label">Jobs / month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-min"></div><div class="metric-label">Billed minutes</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-min-mac"></div><div class="metric-label">macOS minutes</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-min-lin"></div><div class="metric-label">Linux minutes</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-min-win"></div><div class="metric-label">Windows minutes</div></div>
+                </div>
+
+                <h3 style="margin-top:26px;">Platform Monthly Cost</h3>
+                <div class="compare-grid">
+                    <div class="compare-card gh" id="card-gh">
+                        <div class="prov">GitHub Actions</div>
+                        <div class="bill" id="val-gh">$0</div>
+                        <div class="bill-sub" id="sub-gh"></div>
+                    </div>
+                    <div class="compare-card" id="card-gl">
+                        <div class="prov">GitLab CI</div>
+                        <div class="bill" id="val-gl">$0</div>
+                        <div class="bill-sub" id="sub-gl"></div>
+                    </div>
+                    <div class="compare-card" id="card-cc">
+                        <div class="prov">CircleCI</div>
+                        <div class="bill" id="val-cc">$0</div>
+                        <div class="bill-sub" id="sub-cc"></div>
+                    </div>
+                </div>
+                <p class="faq-note" style="margin-top:8px;">GitLab estimate excludes its own free tier (Free 400 min, Premium 10,000 min); CircleCI estimate uses 30,000 free credits (~3,000 Linux min) before paid rates. Rates: GitHub $0.006/.010/.062 · GitLab ~$0.010 Linux, ~$0.09 macOS (6–12x factor) · CircleCI ~$0.006 Linux, ~$0.024 Windows, ~$0.12 macOS M4 Pro Medium.</p>
+
+                <div id="break-even-box" style="margin-top:18px;"></div>
+                <div style="margin-top:18px;" id="artifact-line"></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>Why Your CI Bill Is 100x the Rate Card</h2>
+            <p>The pricing page shows <strong>$0.006 per minute</strong> and the math that follows is honest: 10 minutes of Linux build time costs six cents. What the pricing page cannot show is the shape of real pipelines. Teams do not run 10-minute Linux jobs in isolation. They run short jobs that bill a full minute each, iOS jobs on macOS at ten times the Linux rate, matrix jobs that turn one commit into six, and artifact retention that compounds on top. Multiply those together and a team that "should" cost $18 a month in napkin math lands closer to <strong>$1,400</strong> — the calculator above reproduces that gap with your own numbers.</p>
+            <h3>The macOS Multiplier Is the Budget Killer</h3>
+            <p>macOS runners bill at <strong>$0.062/min</strong> ($3.72/hour) because Apple silicon does not virtualize the way x86 Linux does — every macOS runner is a physical Mac depreciating in a data center. A 25-minute iOS build costs <strong>$1.55</strong>; the equivalent Linux build costs $0.03. Run 40 of those a day and macOS alone is $1,300+ a month. This is why CI/CD spend concentrates in mobile teams, and why the first question for any pipeline audit is: how many of your minutes are macOS?</p>
+            <h3>Per-Job Rounding and Matrix Fan-Out</h3>
+            <p>Two silent multipliers sit between the rate card and the invoice. First, GitHub rounds each job's minutes <strong>up to the nearest whole minute</strong> — a 20-second dependency install is billed as 1 minute, so five short jobs a day quietly cost the same as one 25-minute job. Second, matrix strategies multiply job count, not duration: a 3&times;2 matrix turns one build into six jobs, and each pays the per-job overhead of cache setup and checkout. The calculator's matrix input makes that fan-out visible in the minute total.</p>
+            <h3>Cache Misses, Artifacts, and Storage Drag</h3>
+            <div class="table-scroll">
+<table class="mini-table">
+                <thead><tr><th>Scenario (per job)</th><th>Warm cache</th><th>Cold cache</th><th>Multiplier</th></tr></thead>
+                <tbody>
+                    <tr><td>Node.js install (Linux, $0.006/min)</td><td>1 min &rarr; $0.006</td><td>6 min &rarr; $0.036</td><td>6x</td></tr>
+                    <tr><td>iOS / CocoaPods (macOS, $0.062/min)</td><td>1 min &rarr; $0.062</td><td>12 min &rarr; $0.74</td><td>12x</td></tr>
+                    <tr><td>Docker build (Linux, layer cache)</td><td>2 min &rarr; $0.012</td><td>14 min &rarr; $0.084</td><td>7x</td></tr>
+                    <tr><td>Rust / C++ compile (Linux)</td><td>3 min &rarr; $0.018</td><td>22 min &rarr; $0.132</td><td>7x</td></tr>
+                </tbody>
+            </table>
+</div>
+            <p>Cache misses do not carry a surcharge — they add job time, and job time is billed. GitHub's cache is capped at <strong>10 GB per repository</strong> with a 7-day inactivity expiry, so monorepos with multiple workflows evict each other's caches and pay the difference. Artifact storage is quieter but permanent: GitHub gives 500 MB of shared storage for Actions artifacts and Packages, then bills <strong>$0.25/GB/month</strong> on steady-state volume — daily builds times retention days, not per-build spikes.</p>
+            <p style="margin-top:16px;"><strong>Why this tool matters:</strong> Every CI vendor publishes a rate card; none show your bill. The difference between the two is your workload's OS mix, job count, and retention policy. Model them once here, and the platform comparison plus self-hosted break-even stops being a guess.</p>
+        </section>
+
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/ci-cd-cost-real">📰 The CI/CD Tax: Why Your Pipeline Costs More Than Your Servers (Full Briefing) &rarr;</a>
+                <a href="/vcpu-to-core-hours">vCPU to Core Hours &rarr;</a>
+                <a href="/cron-execution-frequency-per-month">Cron Pattern Trigger Frequency &rarr;</a>
+                <a href="/container-resource-limit">Container Resource Limits &rarr;</a>
+                <a href="/error-budget-calculator">Error Budget Calculator &rarr;</a>
+                <a href="/decision-matrix">Decision Matrix Toolbox &rarr;</a>
+            </div>
+        </div>
+
+    </div>
+<footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 113 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        'use strict';
+        var RATE = { mac: 0.062, lin: 0.006, win: 0.010 };
+        var DAYS_DEFAULT = 22;
+
+        function $(id) { return document.getElementById(id); }
+
+        function num(id, dflt) {
+            var v = parseFloat($(id).value);
+            return isFinite(v) && v >= 0 ? v : dflt;
+        }
+
+        function fmtUSD(n) {
+            if (n < 0.01 && n > 0) return '< $0.01';
+            return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+        }
+        function fmtUSD1(n) {
+            return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+        }
+        function fmtNum(n) {
+            return Math.round(n).toLocaleString('en-US');
+        }
+
+        function compute() {
+            var macB = num('mac-builds', 41), macM = num('mac-min', 25);
+            var linB = num('lin-builds', 30), linM = num('lin-min', 5);
+            var winB = num('win-builds', 6), winM = num('win-min', 10);
+            var days = num('workdays', 22);
+            var matrix = parseFloat($('matrix').value) || 1;
+            var artGB = num('artifact-gb', 0.2);
+            var retention = parseInt($('retention').value) || 30;
+            var included = parseFloat($('included').value) || 0;
+
+            // jobs & minutes per OS (ceil per job)
+            function osCalc(buildsPerDay, minPerJob) {
+                var jobs = buildsPerDay * days * matrix;
+                var ceilMin = Math.max(1, Math.ceil(minPerJob));
+                var minutes = jobs * ceilMin;
+                return { jobs: jobs, minutes: minutes, ceilMin: ceilMin };
+            }
+            var mac = osCalc(macB, macM), lin = osCalc(linB, linM), win = osCalc(winB, winM);
+            var totalJobs = mac.jobs + lin.jobs + win.jobs;
+            var totalMin = mac.minutes + lin.minutes + win.minutes;
+
+            // deduct included minutes Linux -> Windows -> macOS
+            var rem = included;
+            function billable(minutes, os) {
+                if (rem <= 0) return minutes;
+                var take = Math.min(rem, minutes);
+                rem -= take;
+                return minutes - take;
+            }
+            var bLin = billable(lin.minutes, 'lin');
+            var bWin = billable(win.minutes, 'win');
+            var bMac = billable(mac.minutes, 'mac');
+            var billableMin = bLin + bWin + bMac;
+
+            // GitHub cost
+            var ghCost = bLin * RATE.lin + bWin * RATE.win + bMac * RATE.mac;
+
+            // GitLab: extra-min rate approx (Linux .010, Win .012, macOS .09 mid of 6-12x)
+            var glCost = lin.minutes * 0.010 + win.minutes * 0.012 + mac.minutes * 0.090;
+            // CircleCI: Linux .006 (10 credits/min), Win .024, macOS M4 Pro Medium .120
+            var ccCost = lin.minutes * 0.006 + win.minutes * 0.024 + mac.minutes * 0.120;
+
+            // Artifact steady-state storage beyond 500MB free (shared Actions+Packages)
+            var buildsPerDay = macB + linB + winB;
+            var steadyGB = buildsPerDay * artGB * retention;
+            var artBill = Math.max(0, steadyGB - 0.5) * 0.25;
+
+            var ghTotal = ghCost + artBill;
+            var glTotal = glCost + artBill;
+            var ccTotal = ccCost + artBill;
+
+            // display
+            $('results-card').style.display = 'block';
+            var shareTxt = 'Total minutes: ' + fmtNum(totalMin) + ' (Linux ' + fmtNum(lin.minutes) + ' + Windows ' + fmtNum(win.minutes) + ' + macOS ' + fmtNum(mac.minutes) + ')';
+            if (included > 0 && totalMin > included) {
+                shareTxt += ' · included ' + fmtNum(included) + ' deducted → ' + fmtNum(billableMin) + ' billed';
+            } else if (included > 0) {
+                shareTxt += ' · fully covered by included ' + fmtNum(included) + ' min';
+            }
+            $('results-params').textContent = shareTxt;
+
+            $('val-jobs').textContent = fmtNum(totalJobs);
+            $('val-min').textContent = fmtNum(billableMin);
+            $('val-min-mac').textContent = fmtNum(bMac);
+            $('val-min-lin').textContent = fmtNum(bLin);
+            $('val-min-win').textContent = fmtNum(bWin);
+
+            $('val-gh').textContent = fmtUSD(ghTotal);
+            var ghSub = 'compute ' + fmtUSD(ghCost) + ' + storage ' + fmtUSD(artBill);
+            if (billableMin < totalMin) ghSub = fmtNum(billableMin) + ' billed min · ' + ghSub;
+            $('sub-gh').textContent = ghSub;
+            $('val-gl').textContent = fmtUSD(glTotal);
+            $('sub-gl').textContent = 'compute ' + fmtUSD(glCost) + ' + storage ' + fmtUSD(artBill) + ' · est.';
+            $('val-cc').textContent = fmtUSD(ccTotal);
+            $('sub-cc').textContent = 'compute ' + fmtUSD(ccCost) + ' + storage ' + fmtUSD(artBill) + ' · est.';
+
+            // best value badge
+            $('card-gh').classList.remove('best-opt');
+            $('card-gl').classList.remove('best-opt');
+            $('card-cc').classList.remove('best-opt');
+            var best = Math.min(ghTotal, glTotal, ccTotal);
+            if (best === ghTotal) $('card-gh').classList.add('best-opt');
+            else if (best === glTotal) $('card-gl').classList.add('best-opt');
+            else $('card-cc').classList.add('best-opt');
+
+            // artifact line
+            var artTxt = '<strong>Artifact storage:</strong> steady-state ≈ ' + fmtNum(steadyGB) + ' GB (shared Actions + Packages) → ' + fmtUSD(artBill) + '/mo beyond the 500 MB free tier.';
+            $('artifact-line').innerHTML = '<div style="font-size:0.85rem; color:var(--text-secondary); border-top:1px solid var(--border); padding-top:12px;">' + artTxt + '</div>';
+
+            // self-hosted break-even (raw compute, same workload)
+            var be = [];
+            // Linux: VM ~$30/mo @ GitHub 4-core $0.012/min -> 2,500 min
+            var linMinFull = lin.minutes;
+            if (linMinFull >= 1) {
+                var linRatio = linMinFull / 2500;
+                var linHit = linRatio >= 1;
+                be.push('<div class="break-even-note ' + (linHit ? 'be-hit' : 'be-idle') + '"><span>🖥️</span><span><strong>Linux self-host:</strong> your ~' + fmtNum(linMinFull) + ' Linux min/mo is ' + (linHit ? '<strong>above</strong>' : '<strong>below</strong>') + ' the ~2,500-min raw-compute break-even (VM ~$30/mo vs GitHub 4-core $0.012/min). ' + (linHit ? 'Raw compute favors self-hosting.' : 'Hosted Linux remains cheaper on raw compute.') + ' Maintenance (patching, disk) pushes the true break-even higher.</span></div>');
+            }
+            // macOS: EC2 Mac ~$756/mo @ GitHub $3.72/h -> ~203h/mo = 12,180 min
+            var macMinFull = mac.minutes;
+            if (macMinFull >= 1) {
+                var macHit = macMinFull >= 12180;
+                be.push('<div class="break-even-note ' + (macHit ? 'be-hit' : 'be-idle') + '"><span>🖥️</span><span><strong>macOS self-host:</strong> your ~' + fmtNum(macMinFull) + ' macOS min/mo is ' + (macHit ? '<strong>above</strong>' : '<strong>below</strong>') + ' the ~203h/mo break-even for an always-on EC2 Mac (~$756/mo vs $3.72/h hosted). ' + (macHit ? 'A dedicated Mac (EC2 or Mac Stadium) likely pays for itself.' : 'Hosted macOS stays cheaper unless you exceed ~6.8 build-hours/day.') + '</span></div>');
+            }
+            $('break-even-box').innerHTML = '<h3 style="font-size:0.95rem; margin-bottom:6px;">Self-Hosted Runner Break-Even</h3>' + be.join('');
+
+            $('results-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() { compute(); });
+        document.querySelector('.btn-calc').addEventListener('click', compute);
+    })();
+    </script>
+
+</body>
+</html>
