@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Self-Hosted LLM vs API Cost — Breakeven Calculator</title>
+    <meta name="description" content="A 70B model on one A100 costs $1,307/month before MLOps time. The same traffic via hosted API: $176. Model VRAM, GPU count and ops cost — find where self-hosting wins.">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .llm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+        .vs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+        @media (max-width: 620px) { .vs-grid { grid-template-columns: 1fr; } }
+        .vs-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; background: var(--bg-card); }
+        .vs-card.win { border-width: 2px; border-color: var(--success); }
+        .vs-card.lose { border-color: var(--border); opacity: 0.92; }
+        .vs-card .cap { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); }
+        .vs-card .amount { font-size: 1.75rem; font-weight: 700; color: var(--text-heading); margin: 4px 0 2px; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .vs-card .sub { font-size: 0.75rem; color: var(--text-secondary); line-height: 1.5; }
+        .breakeven-box { border: 1px solid var(--accent); border-radius: var(--radius); padding: 16px 18px; background: var(--accent-soft); margin-top: 14px; }
+        .breakeven-box .big { font-size: 1.35rem; font-weight: 700; color: var(--accent); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .mini-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.85rem; }
+        .mini-table th, .mini-table td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--border); }
+        .mini-table th:first-child, .mini-table td:first-child { text-align: left; }
+        .note { font-size: 0.78rem; color: var(--text-muted); line-height: 1.55; }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Self-Hosted LLM vs API Cost Breakeven Calculator",
+      "description": "Model GPU VRAM requirements, GPU count, rental and MLOps cost for self-hosting an open-weight LLM, compare against hosted API pricing for the same token volume, and find the monthly token volume where self-hosting becomes cheaper.",
+      "url": "https://www.jslet.com/llm-selfhost-vs-api-breakeven",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+
+    <link rel="canonical" href="https://www.jslet.com/llm-selfhost-vs-api-breakeven">
+    <meta property="og:title" content="Self-Hosted LLM vs API Cost — Breakeven Calculator">
+    <meta property="og:description" content="A 70B model on one A100 costs $1,307/month before MLOps time. The same traffic via hosted API: $176. Model VRAM, GPU count and ops cost — find where self-hosting wins.">
+    <meta property="og:url" content="https://www.jslet.com/llm-selfhost-vs-api-breakeven">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Self-Hosted LLM vs API Cost — Breakeven Calculator">
+    <meta name="twitter:description" content="A 70B model on one A100 costs $1,307/month before MLOps time. The same traffic via hosted API: $176. Model VRAM, GPU count and ops cost — find where self-hosting wins.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is self-hosting an LLM actually cheaper than using an API?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Usually not at typical traffic levels. A 70B model in INT4 needs about 39 GiB of VRAM, so one A100 80GB at $1.79/hour costs roughly $1,307/month before MLOps time. Serving the same traffic through a hosted API for the same 70B-class model (DeepSeek-V3 at $0.27/M input, $1.10/M output) costs about $176/month at 432 million tokens. The GPU line alone is 7x the API bill. Self-hosting only wins once monthly token volume passes roughly 3 billion — the calculator computes that exact crossover for your configuration."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much VRAM does a self-hosted LLM need?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "VRAM scales with parameters and quantization: weights = parameters x bits / 8, plus scale overhead for quantized formats, plus about 15% for runtime and fragmentation. A 70B model is roughly 150 GiB at FP16, 76 GiB at INT8, and 39 GiB at INT4 with group size 128 — that is the difference between a two-GPU A100 node and a single card. VRAM decides the floor on GPU count before any throughput calculation starts."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What costs do people forget when self-hosting?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Three: GPU idle time (you rent 730 hours but serve bursts), MLOps labor (model updates, quantization, autoscaling, monitoring — typically 4-10 engineer-hours a month), and peak provisioning, because throughput capacity must cover the busiest hour, not the monthly average. The calculator includes an explicit MLOps line and a peak-throughput check so the comparison is not just raw GPU rental."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "When does self-hosting make sense?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Four cases: (1) token volume high enough to pass the crossover, typically billions of tokens per month; (2) data cannot leave your infrastructure for compliance or privacy reasons; (3) you run a fine-tuned model no provider hosts; (4) latency or availability requirements a shared API cannot meet. Cost alone rarely justifies it — the calculator shows the volume threshold for your exact configuration."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does the comparison use equal-quality models?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Pick an API row in the same class as the model you would self-host, otherwise the comparison is meaningless. Comparing a self-hosted 70B against a frontier reasoning model overstates API cost, and comparing it against a small distilled model understates it. The calculator defaults to a 70B-class hosted API for a 70B self-hosted model, and the API table can be switched to the frontier model you actually use."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+<div id="site-nav" data-current="tool">
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 114 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    </div>
+    <div class="container" id="main-content">
+
+        <header style="margin-bottom: 24px;">
+            <h1 style="font-size:1.9rem; line-height:1.2;">Self-Hosted LLM <span>vs API</span></h1>
+            <p style="font-size:1.02rem; color:var(--text-secondary); max-width:760px;">One A100 80GB rents for $1,307/month whether or not a single request arrives. The same 70B-class traffic through a hosted API costs <strong>$176/month</strong> — and you still have to operate the GPU. Self-hosting is not a cost decision at this scale; it is a control decision. This calculator sizes the VRAM, counts the GPUs against peak load, prices the MLOps time, and finds the monthly token volume where self-hosting actually wins.</p>
+        </header>
+
+        <main style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:16px;">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3 style="margin-bottom: 4px;">Model &amp; Serving</h3>
+                <p class="card-desc">Pick the open-weight model you would host and its quantization. VRAM drives the GPU count: weights plus quantization scale overhead plus ~15% runtime headroom.</p>
+                <div class="llm-grid">
+                    <div class="input-group">
+                        <label for="params">Model size</label>
+                        <select class="unit-input" id="params">
+                            <option value="8">8B (Llama 3.1 8B, Mistral 7B)</option>
+                            <option value="13">13B class</option>
+                            <option value="32">32B (Qwen 2.5 32B)</option>
+                            <option value="70" selected>70B (Llama 3.3 70B)</option>
+                            <option value="123">123B (Mistral Large 2)</option>
+                            <option value="405">405B (Llama 3.1 405B)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="quant">Quantization</label>
+                        <select class="unit-input" id="quant">
+                            <option value="16">FP16 / BF16 — full precision</option>
+                            <option value="8">INT8 — minimal quality loss</option>
+                            <option value="4" selected>INT4 — standard serving quant</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="gpu">GPU type (rental)</label>
+                        <select class="unit-input" id="gpu">
+                            <option value="h100|80|2.99">H100 SXM 80GB — $2.99/hr</option>
+                            <option value="h100pcie|80|2.49">H100 PCIe 80GB — $2.49/hr</option>
+                            <option value="a100|80|1.79" selected>A100 80GB — $1.79/hr</option>
+                            <option value="a100|40|1.19">A100 40GB — $1.19/hr</option>
+                            <option value="l40s|48|1.09">L40S 48GB — $1.09/hr</option>
+                            <option value="mi300x|192|2.29">MI300X 192GB — $2.29/hr</option>
+                            <option value="4090|24|0.44">RTX 4090 24GB — $0.44/hr</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="hours">GPU hours per month</label>
+                        <select class="unit-input" id="hours">
+                            <option value="730" selected>730 — always on</option>
+                            <option value="500">500 — ~68% utilization</option>
+                            <option value="300">300 — business hours only</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3 style="margin-bottom: 4px;">Traffic</h3>
+                <div class="llm-grid">
+                    <div class="input-group">
+                        <label for="req-day">Requests per day</label>
+                        <input class="unit-input" type="number" id="req-day" value="4000" min="1" step="any" inputmode="numeric">
+                    </div>
+                    <div class="input-group">
+                        <label for="in-tok">Input tokens per request</label>
+                        <input class="unit-input" type="number" id="in-tok" value="3000" min="1" step="any" inputmode="numeric">
+                    </div>
+                    <div class="input-group">
+                        <label for="out-tok">Output tokens per request</label>
+                        <input class="unit-input" type="number" id="out-tok" value="600" min="1" step="any" inputmode="numeric">
+                    </div>
+                    <div class="input-group">
+                        <label for="mlops">MLOps hours per month</label>
+                        <input class="unit-input" type="number" id="mlops" value="6" min="0" step="1" inputmode="numeric">
+                    </div>
+                </div>
+                <div class="llm-grid" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="eng-rate">Engineer cost ($/hour)</label>
+                        <input class="unit-input" type="number" id="eng-rate" value="120" min="0" step="5" inputmode="numeric">
+                    </div>
+                    <div class="input-group">
+                        <label for="api-model">Compare against API</label>
+                        <select class="unit-input" id="api-model">
+                            <option value="deepseek-v3|DeepSeek-V3 (70B-class open weights)|0.27|1.10" selected>DeepSeek-V3 — $0.27 / $1.10 per M</option>
+                            <option value="llama4-scout|Llama 4 Scout via Groq|0.15|0.50">Llama 4 Scout (Groq) — $0.15 / $0.50 per M</option>
+                            <option value="mistral-small|Mistral Small|1.00|3.00">Mistral Small — $1.00 / $3.00 per M</option>
+                            <option value="mistral-large|Mistral Large 2|3.00|9.00">Mistral Large 2 — $3.00 / $9.00 per M</option>
+                            <option value="gpt-4o|GPT-4o (frontier)|2.50|10.00">GPT-4o — $2.50 / $10.00 per M</option>
+                            <option value="claude-opus|Claude Opus 4 (frontier)|15.00|75.00">Claude Opus 4 — $15 / $75 per M</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="peak">Peak multiplier (busiest hour vs average)</label>
+                        <select class="unit-input" id="peak">
+                            <option value="2">2x — flat traffic</option>
+                            <option value="3" selected>3x — typical consumer load</option>
+                            <option value="5">5x — spiky, batch + interactive</option>
+                            <option value="8">8x — strong diurnal peak</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-calc">Compare Self-Host vs API</button>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>📊 Cost Comparison</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid" style="margin-top:10px;">
+                    <div class="metric-tile"><div class="metric-val" id="val-vram"></div><div class="metric-label">VRAM needed</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-gpus"></div><div class="metric-label">GPUs (VRAM)</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-gpus-peak"></div><div class="metric-label">GPUs (peak I/O)</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="val-tokens"></div><div class="metric-label">Tokens / month</div></div>
+                </div>
+
+                <div class="vs-grid">
+                    <div class="vs-card" id="card-self">
+                        <div class="cap">Self-hosted</div>
+                        <div class="amount" id="val-self">$0</div>
+                        <div class="sub" id="sub-self"></div>
+                    </div>
+                    <div class="vs-card" id="card-api">
+                        <div class="cap">Hosted API</div>
+                        <div class="amount" id="val-api">$0</div>
+                        <div class="sub" id="sub-api"></div>
+                    </div>
+                </div>
+
+                <div class="breakeven-box" id="breakeven-box"></div>
+                <div id="verdict" style="margin-top:12px;"></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>Why Self-Hosting Rarely Wins on Cost</h2>
+            <p>The pitch for self-hosting sounds reasonable: renting a GPU costs less per hour than paying per token, so at volume you must come out ahead. The arithmetic says otherwise, because you pay for the GPU <em>whether or not tokens flow through it</em>. An A100 80GB at $1.79/hour for 730 hours is <strong>$1,307/month</strong> before a single request. A hosted 70B-class API serving the same traffic at $0.27 per million input tokens and $1.10 per million output tokens costs about <strong>$176/month</strong> at 432 million tokens. The GPU is not cheaper — it is 7x more expensive, because the API provider spreads that same hardware across thousands of customers while you amortize it over one workload.</p>
+            <h3>What Actually Drives the Number</h3>
+            <div class="table-scroll">
+<table class="mini-table">
+                <thead><tr><th>Model size</th><th>FP16 VRAM</th><th>INT4 VRAM</th><th>Cheapest viable GPU</th><th>Monthly rental</th></tr></thead>
+                <tbody>
+                    <tr><td>8B</td><td>17 GiB</td><td>4.4 GiB</td><td>RTX 4090 24GB</td><td>$321</td></tr>
+                    <tr><td>32B</td><td>68 GiB</td><td>17.7 GiB</td><td>L40S 48GB</td><td>$796</td></tr>
+                    <tr><td>70B</td><td>150 GiB</td><td>39 GiB</td><td>A100 80GB</td><td>$1,307</td></tr>
+                    <tr><td>405B</td><td>868 GiB</td><td>224 GiB</td><td>2&times; MI300X 192GB</td><td>$3,343</td></tr>
+                </tbody>
+            </table>
+</div>
+            <p>Quantization is what makes self-hosting possible at all: INT4 cuts a 70B model from 150 GiB to 39 GiB, the difference between a two-GPU node and a single A100. VRAM is only the entry ticket though. Throughput decides the real fleet size, because capacity must cover your busiest hour, not your monthly average — a 3x peak multiplier triples the concurrency you have to provision for.</p>
+            <h3>The Costs That Do Not Appear on the GPU Invoice</h3>
+            <p>Three items flip marginal self-hosting cases back to the API. <strong>Idle capacity:</strong> you rent 730 hours and serve bursts; utilization below 50% doubles your effective cost per token. <strong>MLOps labor:</strong> model updates, re-quantization, autoscaling policy, evaluation, and incident response typically run 4-10 engineer-hours a month — at $120/hour that is $480-1,200, often more than the GPU line itself at small scale. <strong>Evaluation drift:</strong> a quantized local model is not the API model, so quality regressions become your problem to detect. The calculator prices the first two explicitly rather than pretending they are free.</p>
+            <h3>When Self-Hosting Is the Right Answer</h3>
+            <p>Four situations justify it, and only one is about cost. <strong>Data residency:</strong> regulated data cannot leave your infrastructure, and no discount on an API fixes a compliance finding. <strong>Custom weights:</strong> you fine-tuned a model no provider hosts, so there is no API price to compare against. <strong>Latency and control:</strong> you need guarantees a shared API cannot offer. <strong>Scale:</strong> monthly token volume past the crossover, typically in the billions — where the fixed GPU cost finally amortizes across enough tokens that the per-token economics invert. Run your own numbers above; the answer for most teams is that the API is cheaper and the decision should be made on control, not cost.</p>
+        </section>
+
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/llm-api-pricing-real">📰 LLM API Pricing: The 100x Spread Between Providers (Full Briefing) &rarr;</a>
+                <a href="/llm-api-pricing-calculator">LLM API Pricing Calculator &rarr;</a>
+                <a href="/parameters-to-vram-int4">Parameters to VRAM (INT4) &rarr;</a>
+                <a href="/parameters-to-vram-fp16">Parameters to VRAM (FP16) &rarr;</a>
+                <a href="/context-window-vram-inflation">Context Window VRAM Inflation &rarr;</a>
+                <a href="/llm-fine-tuning-cost">LLM Fine-tuning Cost &rarr;</a>
+                <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven &rarr;</a>
+                <a href="/ai-gpu-compute">AI &amp; GPU Toolbox &rarr;</a>
+            </div>
+        </div>
+
+    </div>
+<footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 114 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    <script src="nav.js"></script>
+    <script>
+    (function() {
+        'use strict';
+        function $(id) { return document.getElementById(id); }
+        function num(id, dflt) {
+            var v = parseFloat($(id).value);
+            return isFinite(v) && v >= 0 ? v : dflt;
+        }
+        function fmtUSD(n) {
+            if (n > 0 && n < 0.01) return '< $0.01';
+            return '$' + Math.round(n).toLocaleString('en-US');
+        }
+        function fmtUSD2(n) {
+            if (n > 0 && n < 0.01) return '< $0.01';
+            return '$' + n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+        }
+        function fmtNum(n) {
+            return Math.round(n).toLocaleString('en-US');
+        }
+        function fmtTokens(n) {
+            if (n >= 1e12) return (n / 1e12).toFixed(2) + 'T';
+            if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+            if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+            return fmtNum(n);
+        }
+
+        // VRAM model — identical to parameters-to-vram-int4 (weights + scale overhead, 15% headroom)
+        function vramGiB(paramsB, bits, groupSize) {
+            var w = paramsB * 1e9 * bits / 8 / 1073741824;
+            var s = bits < 16 ? (paramsB * 1e9 / (groupSize || 128)) * 2 / 1073741824 : 0;
+            return (w + s) * 1.15;
+        }
+
+        function compute() {
+            var paramsB = parseFloat($('params').value) || 70;
+            var bits = parseFloat($('quant').value) || 4;
+            var gpuParts = $('gpu').value.split('|');
+            var gpuVram = parseFloat(gpuParts[1]) || 80;
+            var gpuRate = parseFloat(gpuParts[2]) || 1.79;
+            var gpuName = gpuParts[0];
+            var hours = parseFloat($('hours').value) || 730;
+
+            var reqDay = num('req-day', 4000);
+            var inTok = num('in-tok', 3000);
+            var outTok = num('out-tok', 600);
+            var mlopsHours = num('mlops', 6);
+            var engRate = num('eng-rate', 120);
+            var peakMult = parseFloat($('peak').value) || 3;
+
+            var apiParts = $('api-model').value.split('|');
+            var apiName = apiParts[1];
+            var apiIn = parseFloat(apiParts[2]);
+            var apiOut = parseFloat(apiParts[3]);
+
+            // tokens
+            var reqMonth = reqDay * 30;
+            var inMonth = reqMonth * inTok;
+            var outMonth = reqMonth * outTok;
+            var tokensMonth = inMonth + outMonth;
+            var peakTokPerSec = (tokensMonth / (30 * 86400)) * peakMult;
+
+            // VRAM / GPU count
+            var vram = vramGiB(paramsB, bits);
+            var gpusVram = Math.max(1, Math.ceil(vram / gpuVram));
+
+            // throughput: assume a rough serving rate per GPU scaled by model size
+            // 8B ~ 3000 tok/s, 70B ~ 900 tok/s, 405B ~ 250 tok/s (batched aggregate, single node)
+            var perGpuTps = Math.max(80, Math.round(30000 / Math.pow(paramsB, 0.72)));
+            var gpusPeak = Math.max(1, Math.ceil(peakTokPerSec / perGpuTps));
+            var gpus = Math.max(gpusVram, gpusPeak);
+
+            // costs
+            var gpuCost = gpus * gpuRate * hours;
+            var mlopsCost = mlopsHours * engRate;
+            var selfCost = gpuCost + mlopsCost;
+            var apiCost = (inMonth / 1e6) * apiIn + (outMonth / 1e6) * apiOut;
+
+            // breakeven: (selfCost - mlopsCost) / api blended per-token  [ops cost is traffic-independent, so it sets the floor]
+            var apiPerToken = (apiCost > 0 && tokensMonth > 0) ? apiCost / tokensMonth : 0;
+            var breakevenTokens = apiPerToken > 0 ? gpuCost / apiPerToken : Infinity;
+            var breakevenTotal = apiPerToken > 0 ? selfCost / apiPerToken : Infinity;
+
+            // unit economics: effective $/M tokens as provisioned, vs the marginal cost at full utilisation
+            var apiPerM = apiPerToken * 1e6;
+            var selfPerM = tokensMonth > 0 ? (gpuCost / tokensMonth) * 1e6 : 0;
+            var marginalPerM = (gpuRate / (perGpuTps * 3600)) * 1e6;
+            var utilPct = gpus > 0 && perGpuTps > 0 ? (peakTokPerSec / (gpus * perGpuTps)) * 100 : 0;
+            var throughputBound = gpusPeak > gpusVram;
+
+            // render
+            $('results-card').style.display = 'block';
+            $('results-params').textContent =
+                paramsB + 'B model · ' + bits + '-bit · ' + gpus + '× ' + gpuName.toUpperCase() +
+                ' @ $' + gpuRate + '/hr × ' + hours + 'h · ' + fmtTokens(tokensMonth) + ' tokens/month (' +
+                fmtNum(reqMonth) + ' requests)';
+
+            $('val-vram').textContent = vram.toFixed(0) + ' GiB';
+            $('val-gpus').textContent = gpusVram + '×';
+            $('val-gpus-peak').textContent = gpusPeak + '×';
+            $('val-tokens').textContent = fmtTokens(tokensMonth);
+
+            $('val-self').textContent = fmtUSD(selfCost);
+            $('sub-self').textContent = 'GPU ' + fmtUSD(gpuCost) + ' + MLOps ' + fmtUSD(mlopsCost) +
+                ' · ' + gpus + '× ' + gpuName.toUpperCase() + ' · needs ' + vram.toFixed(0) + ' GiB, peak load ' +
+                fmtNum(peakTokPerSec) + ' tok/s vs ' + fmtNum(gpus * perGpuTps) + ' tok/s capacity';
+
+            $('val-api').textContent = fmtUSD(apiCost);
+            $('sub-api').textContent = apiName + ' · ' + fmtTokens(inMonth) + ' in @ $' + apiIn.toFixed(2) +
+                '/M + ' + fmtTokens(outMonth) + ' out @ $' + apiOut.toFixed(2) + '/M · ' + fmtUSD2(apiPerToken * 1e6) + ' per M tokens blended';
+
+            $('card-self').className = 'vs-card ' + (selfCost <= apiCost ? 'win' : 'lose');
+            $('card-api').className = 'vs-card ' + (apiCost < selfCost ? 'win' : 'lose');
+
+            var ratio = apiCost > 0 ? selfCost / apiCost : Infinity;
+            var beTxt;
+            if (throughputBound) {
+                var unitVerdict = selfPerM < apiPerM
+                    ? 'At full utilisation the marginal cost (' + fmtUSD2(marginalPerM) + '/M) is below the API, so raising utilisation — queueing bursts, smoothing peaks — is what makes this fleet pay off.'
+                    : 'The API unit cost is lower and stays lower as volume grows, so there is no scale at which this fleet wins on cost alone.';
+                beTxt = '<div class="big">' + fmtUSD2(selfPerM) + ' / M tokens</div>' +
+                    '<div style="font-size:0.82rem; color:var(--text-secondary); margin-top:6px;">Self-hosted effective unit cost with capacity provisioned for peak — full load at the busiest hour, roughly <strong>' + (utilPct / peakMult).toFixed(0) + '% average utilisation</strong> across the month — versus <strong>' + fmtUSD2(apiPerM) + '/M</strong> on ' + apiName + '. Peak throughput (' + fmtNum(peakTokPerSec) + ' tok/s) already needs ' + gpusPeak + ' GPUs, so cost scales with traffic instead of amortising against a fixed fleet: there is no single fixed-cost crossover. ' + unitVerdict + '</div>';
+            } else {
+                beTxt = isFinite(breakevenTokens)
+                    ? '<div class="big">' + fmtTokens(breakevenTokens) + ' tokens / month</div>' +
+                      '<div style="font-size:0.82rem; color:var(--text-secondary); margin-top:6px;">GPU rental only — the crossover where hosted API cost overtakes ' + gpus + '× ' + gpuName.toUpperCase() + ' at $' + gpuRate + '/hr, with VRAM (' + vram.toFixed(0) + ' GiB) setting the fleet size and throughput still leaving headroom. Including MLOps labor the bar rises to <strong>' + fmtTokens(breakevenTotal) + ' tokens/month</strong>.</div>'
+                    : '<div class="big">—</div>';
+            }
+            $('breakeven-box').innerHTML = '<div class="cap" style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.6px;">' + (throughputBound ? 'Unit cost (throughput-bound)' : 'Breakeven volume') + '</div>' + beTxt;
+
+            var verdict;
+            if (ratio > 1) {
+                var closing = throughputBound
+                    ? 'Peak throughput already forces ' + gpusPeak + ' GPUs, so the bill scales with traffic rather than amortising — the API stays cheaper at every volume unless you raise utilisation or the workload needs data residency, custom weights, or latency control.'
+                    : 'Self-hosting needs roughly ' + fmtTokens(breakevenTotal) + ' tokens/month to win on cost alone, so justify it with data residency, custom weights, or latency control instead.';
+                verdict = '<div style="border:1px solid var(--success); background:var(--success-bg); border-radius:var(--radius); padding:12px 16px; font-size:0.9rem; line-height:1.55;">' +
+                    '<strong>Hosted API is cheaper.</strong> At ' + fmtTokens(tokensMonth) + ' tokens/month you would spend ' +
+                    fmtUSD(apiCost) + ' on ' + apiName + ' versus ' + fmtUSD(selfCost) + ' self-hosting — the API is ' +
+                    (isFinite(ratio) ? ratio.toFixed(1) : '∞') + '× cheaper. ' + closing + '</div>';
+            } else {
+                verdict = '<div style="border:1px solid var(--accent); background:var(--accent-soft); border-radius:var(--radius); padding:12px 16px; font-size:0.9rem; line-height:1.55;">' +
+                    '<strong>Self-hosting wins on cost here.</strong> At ' + fmtTokens(tokensMonth) + ' tokens/month the ' +
+                    gpus + '× ' + gpuName.toUpperCase() + ' fleet costs ' + fmtUSD(selfCost) + ' versus ' + fmtUSD(apiCost) +
+                    ' for ' + apiName + ' — ' + (apiCost > 0 ? (selfCost / apiCost) : 0).toFixed(2) + '× the self-hosted spend. Keep the throughput check in view: ' +
+                    fmtNum(peakTokPerSec) + ' tok/s at peak needs ' + gpusPeak + ' GPUs for concurrency, not just VRAM.</div>';
+            }
+            $('verdict').innerHTML = verdict;
+
+            $('results-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            compute();
+            ['params','quant','gpu','hours','req-day','in-tok','out-tok','mlops','eng-rate','api-model','peak'].forEach(function(id) {
+                var el = $(id);
+                if (el) { el.addEventListener('input', compute); el.addEventListener('change', compute); }
+            });
+        });
+        document.querySelector('.btn-calc').addEventListener('click', compute);
+    })();
+    </script>
+
+</body>
+</html>
