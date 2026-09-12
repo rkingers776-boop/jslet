@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The S3 Lifecycle Trap: When Glacier Costs More Than Standard</title>
+    <meta name="description" content="90M 4 KB objects cost $7.90/mo in S3 Standard and $137.33/mo in Standard-IA. The 128 KB floor, 30/90/180-day minimums, and the $0.05/1,000 transition charge, priced.">
+    <meta property="og:title" content="The Lifecycle Trap: When Archiving to S3 Glacier Costs More Than Leaving Data in Standard">
+    <meta property="og:description" content="A lifecycle rule is six lines of JSON and looks like free money. On a bucket of small objects it can triple the bill, because S3 bills tiers by the unit, not by what is inside it. Here is the exact arithmetic behind the 128 KB floor, the 30/90/180-day minimum, and the per-object transition charge — plus the four conditions under which tiering genuinely wins.">
+    <meta property="og:url" content="https://www.jslet.com/s3-lifecycle-cost-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-09-12T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-09-12T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The S3 Lifecycle Trap: When Glacier Costs More Than Standard">
+    <meta name="twitter:description" content="Storage-Class TCO by the object. 90M 4 KB objects: $7.90/mo in Standard, $137.33/mo in Standard-IA, and a $4,500 one-time transition bill to send them anywhere else.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/s3-lifecycle-cost-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Lifecycle Trap: When Archiving to S3 Glacier Costs More Than Leaving Data in Standard (2026)",
+      "description": "S3 storage classes are priced per GB-month, but they are billed per object. A bucket of 90 million 4 KB log objects costs $7.90/mo in Standard and $137.33/mo in Standard-IA, because the class bills every object at a 128 KB minimum — 32 times the bytes that exist. This briefing prices the three charges that decide a lifecycle policy's outcome: the 128 KB billable floor, the 30/90/180-day minimum storage duration, and the per-object transition charge ($0.01 per 1,000 into Standard-IA, $0.05 per 1,000 into any Glacier class). Includes the 16.3-day break-even residence for Standard-IA, the 63% monthly read threshold at which Glacier Instant Retrieval stops beating Standard, the per-object Intelligent-Tiering monitoring fee that scales with object count rather than bytes, a compaction-first fix that turns a $137/mo mistake into $1.24/mo, and a four-question audit. All figures use us-east-1 rates as of September 2026.",
+      "url": "https://www.jslet.com/s3-lifecycle-cost-real",
+      "datePublished": "2026-09-12T00:00:00+00:00",
+      "dateModified": "2026-09-12T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why did my S3 bill go up after I added a lifecycle policy?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because two of the three charges a lifecycle policy creates scale with object count, not with bytes. First, Standard-IA, Glacier Instant Retrieval, and Glacier Flexible Retrieval bill every object at a minimum size — 128 KB for the IA classes and Glacier Instant Retrieval, 40 KB for Glacier Flexible Retrieval and Glacier Deep Archive — so a bucket of 4 KB objects pays for 32 times the storage it actually has. Second, transitions cost $0.01 per 1,000 objects into Standard-IA and $0.05 per 1,000 objects into any Glacier class, charged once per object regardless of size. A 90-million-object bucket pays $4,500 to make the move and saves $4.50 a month, a payback period of 83 years. Run your own object size and count through the S3 Lifecycle Cost Estimator at jslet.com/s3-lifecycle-cost before you ship the rule."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the 128 KB minimum billable object size in S3?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "S3 Standard-IA, S3 One Zone-IA, and S3 Glacier Instant Retrieval bill a minimum of 128 KB of storage for every object, no matter how small the object actually is. Glacier Flexible Retrieval and Glacier Deep Archive use a 40 KB floor. There is a second effect that people miss: S3 lifecycle rules do not transition objects smaller than 128 KB into Standard-IA or Glacier Instant Retrieval at all, so the rule silently does nothing for a bucket of small files while continuing to leave them in Standard. The result is a policy that appears to be working, reports no errors, and has no effect. At a 4 KB average object size, the 128 KB floor means 32 times the bytes are billed: 90 million 4 KB objects become 10,986 GB of billable storage."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How long does an object have to stay in Standard-IA to be worth transitioning?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "About 16.3 days of residence in the class. Standard-IA has a 30-day minimum storage duration: delete or transition an object out before 30 days and you are billed for all 30 anyway. Because Standard-IA saves $0.0105 per GB-month against Standard ($0.0230 minus $0.0125), the 30-day minimum charge of $0.375 per GB is recovered at $0.0105 per day — 35.7 days of saving erases 30 days of minimum penalty, which puts the break-even at 16.3 days of actual residence. In retention terms: an object must live past roughly day 46 of its life for a 30-day transition rule to have paid off. A 45-day retention policy misses that mark, and the effective Standard-IA rate becomes $0.0250 per GB-month — 8.7% more expensive than leaving the object in Standard."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is S3 Intelligent-Tiering cheaper than a manual lifecycle policy?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Only when the access pattern is genuinely unpredictable and the object count is modest. Intelligent-Tiering charges $0.0025 per 1,000 objects per month in monitoring fees, and that charge is recurring, not one-time. On a 90-million-object bucket it comes to $225 per month — 28 times the $7.90 the same objects cost to store in Standard. Worse, objects under 128 KB cannot transition out of the Frequent Access tier, so a small-object bucket pays monitoring fees on data that has nowhere to go. Intelligent-Tiering also does not eliminate storage costs: its Frequent Access tier is priced at the Standard rate, and its Infrequent and Archive tiers are billed at the same per-GB rates as the manual classes. What you buy for the monitoring fee is the removal of guesswork, not a lower unit price. Manual lifecycle policies have zero monitoring fee and beat Intelligent-Tiering on any bucket with a predictable access pattern."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Glacier retrieval really cost more than the storage it saves?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "For Glacier Instant Retrieval, almost never. Glacier Instant Retrieval stores at $0.004 per GB-month against Standard's $0.023, saving $0.019 per GB-month, and retrieves at $0.03 per GB. The two rates cross at 63.3% of the archive read per month: you would have to read nearly two-thirds of the data every month, every month, before Glacier Instant Retrieval became the more expensive choice. Against Standard-IA the threshold is 42.5% per month. Standard-IA itself costs $0.01 per GB to retrieve against a $0.0105 per GB-month saving over Standard, so its break-even read fraction is 105% — mathematically unreachable. Retrieval fees are a real line item and worth modeling, but they are rarely the charge that decides whether a lifecycle policy wins. The 128 KB billable floor and the per-object transition charge decide far more buckets."
+          }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 113 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>The <span>Lifecycle Trap</span></h1>
+            <p>Your archive tier is the most expensive storage class in the bucket — and the pricing page has no line item for why.</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-09-12 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 18 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <!-- ═══ Table of Contents ═══ -->
+        <nav class="toc" aria-label="Table of Contents" style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:20px 24px; margin-bottom:24px;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+            <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+                <li><a href="#inversion" style="color:var(--accent); text-decoration:none;">The Tier That Costs More Than the Tier Above It</a></li>
+                <li><a href="#floor" style="color:var(--accent); text-decoration:none;">The 128 KB Floor, and the Rule That Fires Into Nothing</a></li>
+                <li><a href="#minimum" style="color:var(--accent); text-decoration:none;">Paying Rent After You Move Out: The Minimum Duration</a></li>
+                <li><a href="#transition" style="color:var(--accent); text-decoration:none;">$0.05 Per Thousand: The Transition Bill</a></li>
+                <li><a href="#monitoring" style="color:var(--accent); text-decoration:none;">The Only Fee That Grows With Object Count</a></li>
+                <li><a href="#retrieval" style="color:var(--accent); text-decoration:none;">The Retrieval Warning You Already Read</a></li>
+                <li><a href="#wins" style="color:var(--accent); text-decoration:none;">Where Tiering Actually Wins — And the Fix That Gets You There</a></li>
+                <li><a href="#audit" style="color:var(--accent); text-decoration:none;">A Four-Question Audit</a></li>
+                <li><a href="#faq" style="color:var(--accent); text-decoration:none;">FAQ</a></li>
+            </ol>
+        </nav>
+
+        <section class="seo-section">
+            <h2 id="inversion">The Tier That Costs More Than the Tier Above It</h2>
+
+            <p>The lifecycle rule takes about ninety seconds to write. Anything older than thirty days moves to Standard-IA. Standard-IA costs $0.0125/GB-month and Standard costs $0.023/GB-month, so the rule is a 46% discount applied automatically, forever, with no application code involved. It is the cheapest-looking change in the whole account.</p>
+
+            <p>Then the invoice arrives. Storage went up.</p>
+
+            <p>Not a rounding error, and not a billing mistake. S3 prices storage classes per gigabyte-month, but it does not bill them per gigabyte. It bills them per <em>object</em>, and each class carries a minimum size and a minimum residence time that the per-GB number says nothing about. A class advertised at $0.0125/GB can end up costing $0.40/GB on a bucket of small files, and a transition advertised as "a small per-request fee" can cost more than the storage it saves for decades.</p>
+
+            <p>Three charges do this, and all three scale with object count rather than bytes: the billable size floor, the minimum storage duration, and the per-object transition request. There is a fourth — the retrieval fee — that gets most of the attention and decides far fewer bills. We will get to all four, and then to the four conditions under which tiering is simply the right answer. Every rate in this briefing is a us-east-1 on-demand rate as of September 2026, and every worked example maps to a field in the <a href="/s3-lifecycle-cost">S3 Lifecycle Cost Estimator</a> so you can reproduce it with your own numbers.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0; font-size:0.9rem;">This briefing is about data that ages inside a bucket. If your problem is data leaving the cloud, that is a different mechanism with a different bill — the egress and vendor-comparison analysis lives in <a href="/cloud-storage-cost-real">Cloud Storage Costs: The Egress Trap</a>. Most real accounts pay both, and the two are independent.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="floor">The 128 KB Floor, and the Rule That Fires Into Nothing</h2>
+
+            <p>Standard-IA, One Zone-IA, and Glacier Instant Retrieval bill a minimum of 128 KB of storage for every object they hold. It does not matter that the object is 900 bytes. The class bills 128 KB, every month, for as long as the object lives there. Glacier Flexible Retrieval and Glacier Deep Archive use a 40 KB floor instead.</p>
+
+            <p>Here is the part that turns a discount into a penalty. A 4 KB object billed at 128 KB is billed at <strong>32 times its actual size</strong>. At 4 KB, the effective rate is $0.40/GB-month against a headline of $0.0125 — and $0.40 is more than fifteen times what Standard charges. The tier below cost more than the tier above, not because anything is mispriced, but because the floor is applied to a byte count instead of an object count.</p>
+
+            <p>Take a logging pipeline that is entirely normal: 3 million 4 KB records a day, thirty-day retention. Steady state is 90 million objects and 343 GB of actual data.</p>
+
+            <div class="table-scroll" style="margin:18px 0;">
+                <table class="cost-table">
+                    <thead>
+                        <tr><th>Storage class</th><th>Billable size / object</th><th>Billable storage</th><th>Monthly storage</th><th>vs. Standard</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr class="best-row"><td>S3 Standard</td><td class="num">4 KB</td><td class="num">343 GB</td><td class="num">$7.90</td><td class="num">—</td></tr>
+                        <tr><td>Standard-IA</td><td class="num">128 KB</td><td class="num">10,986 GB</td><td class="num">$137.33</td><td class="num" style="color:var(--error);">17.4×</td></tr>
+                        <tr><td>Glacier Instant Retrieval</td><td class="num">128 KB</td><td class="num">10,986 GB</td><td class="num">$43.95</td><td class="num" style="color:var(--error);">5.6×</td></tr>
+                        <tr><td>Glacier Flexible Retrieval</td><td class="num">40 KB</td><td class="num">3,433 GB</td><td class="num">$12.36</td><td class="num" style="color:var(--error);">1.6×</td></tr>
+                        <tr><td>Glacier Deep Archive</td><td class="num">40 KB</td><td class="num">3,433 GB</td><td class="num">$3.40</td><td class="num" style="color:var(--success);">0.43×</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>Two of the five rows are cheaper than Standard on storage and still wrong. We will come back to why.</p>
+
+            <p>There is a second half to the 128 KB rule that is worse because it is invisible. S3 lifecycle rules <strong>do not transition objects smaller than 128 KB</strong> into Standard-IA or Glacier Instant Retrieval at all. There is no error, no warning, no entry in the console. The rule runs on schedule, reports success, and leaves every object exactly where it was.</p>
+
+            <p>Which means the most common outcome of a small-object lifecycle policy is not an inflated bill. It is a bill that looks unchanged for a year while everyone believes the optimization shipped. The people who do notice are the ones whose policy targeted a class with a 40 KB floor — Glacier Flexible or Deep Archive — because that floor is low enough to actually catch 4 KB objects, and then the inflation is real and recurring.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="minimum">Paying Rent After You Move Out: The Minimum Duration</h2>
+
+            <p>Minimum storage duration works like a lease with a penalty clause. Standard-IA holds you for 30 days, Glacier Instant Retrieval and Glacier Flexible Retrieval for 90, Glacier Deep Archive for 180. Transition an object out, or delete it, before the minimum, and the class bills the full minimum anyway. The bytes are gone. The charge is not.</p>
+
+            <p>The clean way to see the damage is as an effective rate. Suppose your retention window is 45 days and your rule tiers at day 30. Each object lives 15 days in Standard-IA and is billed for 30. The advertised rate was $0.0125/GB-month; the rate you actually paid is $0.0125 × (30 ÷ 15) = <strong>$0.0250/GB-month</strong>. Standard is $0.0230. The discount tier came out 8.7% more expensive than not tiering at all.</p>
+
+            <p>That is not a freak case — 45-day retention with a 30-day transition is one of the most common log policies there is. The general rule is worth memorizing:</p>
+
+            <div style="font-family:'SF Mono','Cascadia Code',Consolas,monospace; font-size:0.82rem; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px 18px; margin:18px 0; overflow-x:auto;">
+                break-even residence = (minimum duration × class rate) ÷ Standard rate<br>
+                Standard-IA: (30 × $0.0125) ÷ $0.023 = <strong>16.3 days</strong>
+            </div>
+
+            <p>An object in Standard-IA must survive 16.3 days past the transition for the move to have saved anything. Add the transition day and the real threshold is a 46.3-day object lifetime. Below that, Standard-IA is a more expensive way to store the same bytes, and the further below it, the worse the loss. An object deleted at day 31 was billed 30 days of Standard-IA for 1 day of residency — an effective rate of $0.375/GB-month, sixteen times Standard.</p>
+
+            <p>Glacier Deep Archive looks like it should suffer from this far more, since its minimum is 180 days, six times longer. It mostly does not, because its rate is 23 times lower. A 30-day object billed at 180 days of Deep Archive costs $0.178/GB-month; the same object left in Standard for 30 days costs $0.690. Deep Archive wins even when it punishes you. The 180-day rule is real, but it is a rounding error next to the class's per-GB advantage — which is exactly why the small-object and transition problems are the ones that matter, and why the next section is the expensive one.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="transition">$0.05 Per Thousand: The Transition Bill</h2>
+
+            <p>Lifecycle transitions are charged per request, per object, once. Standard to Standard-IA is $0.01 per 1,000 objects. Standard to any Glacier class, and Standard-IA to any Glacier class, is $0.05 per 1,000 objects. Object size is irrelevant. A 200-byte config file and a 5 GB video cost the same to transition.</p>
+
+            <p>That single sentence is the whole problem. On a bucket of large objects, transition cost is noise — a rounding error on the first month's savings. On a bucket of small objects, object count is enormous precisely because the objects are small, and the transition bill becomes the largest number in the analysis.</p>
+
+            <p>Return to the 90-million-object log bucket. Moving it to Glacier Deep Archive saves $4.50 a month on storage ($7.90 down to $3.40) and costs $4,500 once:</p>
+
+            <div style="font-family:'SF Mono','Cascadia Code',Consolas,monospace; font-size:0.82rem; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px 18px; margin:18px 0; overflow-x:auto;">
+                transition = (90,000,000 ÷ 1,000) × $0.05 = <strong>$4,500 one-time</strong><br>
+                monthly saving = $7.90 − $3.40 = <strong>$4.50</strong><br>
+                payback = $4,500 ÷ $4.50 = 1,000 months = <strong>83 years</strong>
+            </div>
+
+            <p>Deep Archive is, on the storage line, the correct answer for this bucket. It is cheaper than Standard by 57%, and it stays cheaper no matter how long the data lives. It is also completely uninvestable at 90 million objects, and no amount of holding the data longer changes that, because the savings are capped by the size of the bucket while the transition charge scales with how many pieces the bucket is cut into.</p>
+
+            <p>The payback formula is short enough to run in your head before you write the rule:</p>
+
+            <div style="font-family:'SF Mono','Cascadia Code',Consolas,monospace; font-size:0.82rem; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px 18px; margin:18px 0; overflow-x:auto;">
+                payback (months) = (object count ÷ 1,000 × $0.05) ÷ (GB × (Standard rate − target class rate))
+            </div>
+
+            <p>A second, subtler trap sits inside the same mechanism: the move is one-way in price, not in practice. Restoring data does not undo the transition charge, it <em>adds</em> a second one. Putting data back into Standard costs another $0.01 per 1,000 objects, and the restored copy itself is billed at Standard rates for as long as you keep it. A bucket that churns between classes — archived in January, restored in June, re-archived in July — pays the per-object toll three times in six months and never gets the multi-year residency that made the archive tier make sense in the first place. If your retention policy and your access pattern disagree about how long data is cold, a lifecycle rule will not arbitrate that disagreement. It will just bill you for both.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="monitoring">The Only Fee That Grows With Object Count</h2>
+
+            <p>S3 Intelligent-Tiering is positioned as the answer to lifecycle guesswork: you pay $0.0025 per 1,000 objects per month, and AWS moves things between the Frequent, Infrequent, and Archive tiers based on observed access. No rules to write, no thresholds to tune, and no minimum-duration penalties on the automatic transitions.</p>
+
+            <p>The monitoring fee is the part to sit with, because it is per object and it is monthly. Storage charges are per byte and one-time charges are per object; this is a recurring charge that depends on how finely you have sliced your data rather than on how much of it there is. On the 90-million-object log bucket, monitoring costs $225 a month. The same objects in Standard cost $7.90 a month to store. The fee for automating the decision is 28 times the bill it is optimizing.</p>
+
+            <p>It gets worse in a specific way. Objects below 128 KB cannot leave the Frequent Access tier — the same floor from earlier in this briefing, applied to an automated system instead of a rule. A small-object bucket therefore pays the monitoring fee on data that has nowhere to go. You are not buying optimization; you are buying a subscription to a decision that has already been made.</p>
+
+            <p>None of this makes Intelligent-Tiering wrong. When access patterns are genuinely unknown and object counts are moderate, the fee is a fair price for removing a class of mistake that is easy to make and hard to see. The line to hold is that Intelligent-Tiering does not lower unit prices — its Frequent tier bills at the Standard rate and its colder tiers bill at the same per-GB rates as the manual classes. What the fee buys is the absence of a tuning problem. On a bucket with a predictable access pattern and a seven-figure object count, it buys something you did not need.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="retrieval">The Retrieval Warning You Already Read</h2>
+
+            <p>Every article about archive tiers leads with retrieval fees, and the warning is not wrong. Standard-IA charges $0.01 per GB to read. Glacier Instant Retrieval charges $0.03. Glacier Flexible Retrieval charges $0.01 at the standard tier with cheaper bulk options, and Glacier Deep Archive between $0.0025 and $0.02 depending on how long you can wait. Archive cheaply, read expensively — that is the deal, and the restore process adds its own request charges and a copy billed at Standard rates while it exists.</p>
+
+            <p>What the warning usually omits is the threshold, and the threshold is the only thing that matters. Compare the two ways to spend the same dollar: Standard at $0.023/GB-month with free reads, or Glacier Instant Retrieval at $0.004/GB-month plus $0.03 for every GB read.</p>
+
+            <div style="font-family:'SF Mono','Cascadia Code',Consolas,monospace; font-size:0.82rem; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px 18px; margin:18px 0; overflow-x:auto;">
+                $0.023 = $0.004 + ($0.03 × read fraction)<br>
+                read fraction = $0.019 ÷ $0.03 = <strong>63.3% of the archive, every month</strong>
+            </div>
+
+            <p>You would have to read close to two-thirds of the archive every single month, indefinitely, before Glacier Instant Retrieval became the more expensive choice. Against Standard-IA the threshold is 42.5% per month. And Standard-IA's own break-even against Standard is 105% — it needs a read volume that exceeds the dataset size, which cannot happen. Retrieval is a real line item and it belongs in the model, but for the archive classes it is rarely the charge that flips a decision. It flips when the "archive" is not an archive: a queryable dataset that gets scanned by an analytics job, or a backup that a disaster-recovery drill restores in full every quarter.</p>
+
+            <p>Which leaves the uncomfortable conclusion. The retrieval warning is repeated constantly because it is dramatic — a large one-time charge arriving from a system nobody was watching. The 128 KB floor and the per-object transition charge are ignored because they are boring, present in the first invoice, and nobody wrote a blog post about them. Boring is winning. On the buckets we have looked at here, the boring charges are between one and three orders of magnitude larger.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="wins">Where Tiering Actually Wins — And the Fix That Gets You There</h2>
+
+            <p>Nothing above says archiving is a bad idea. It says archiving is priced per object, and small objects are a bad unit of account. Put a workload that satisfies four conditions in front of the same rate card and it does exactly what the pricing page promised.</p>
+
+            <p>Take 5 MB objects — database snapshots, image masters, model checkpoints — 20 million of them, 97,656 GB in total.</p>
+
+            <div class="table-scroll" style="margin:18px 0;">
+                <table class="cost-table">
+                    <thead>
+                        <tr><th>Line</th><th>S3 Standard</th><th>Glacier Flexible Retrieval</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Monthly storage</td><td class="num">$2,246.09</td><td class="num">$351.56</td></tr>
+                        <tr><td>One-time transition</td><td class="num">—</td><td class="num">$1,000.00</td></tr>
+                        <tr><td>Payback on transition</td><td class="num">—</td><td class="num">0.53 months</td></tr>
+                        <tr class="best-row"><td>Net saving</td><td class="num">—</td><td class="num">$1,894.53/mo</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>Twenty million transitions cost $1,000 and pay for themselves in sixteen days. The annual saving is $22,734. The four conditions that produced this — large objects, a manageable object count, data that stays cold for years, and a read fraction well under the 42.5% threshold — are the test to apply to your own bucket before anything else.</p>
+
+            <p>If a bucket fails the first two conditions, the fix is not a different storage class. It is to stop having so many objects. Compaction — rolling small files into large ones — is the lifecycle policy that everyone skips because it requires writing a job instead of editing JSON, and it is usually the whole answer.</p>
+
+            <p>Take the 90 million 4 KB log records and roll them into 344 one-gigabyte columnar files. The byte count does not change: 343 GB either way. Everything else does. The 128 KB floor stops applying because 1 GB objects are nowhere near it. Transitions drop from $4,500 to $0.02, because there are 344 objects to move instead of 90 million. And the storage rates finally behave the way the pricing page said they would:</p>
+
+            <div class="table-scroll" style="margin:18px 0;">
+                <table class="cost-table">
+                    <thead>
+                        <tr><th>343 GB of logs, monthly storage</th><th>90M × 4 KB objects</th><th>344 × 1 GB files</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>S3 Standard</td><td class="num">$7.90</td><td class="num">$7.90</td></tr>
+                        <tr><td>Standard-IA</td><td class="num" style="color:var(--error);">$137.33</td><td class="num">$4.29</td></tr>
+                        <tr><td>Glacier Flexible Retrieval</td><td class="num" style="color:var(--error);">$12.36</td><td class="num">$1.24</td></tr>
+                        <tr class="best-row"><td>Glacier Deep Archive</td><td class="num">$3.40</td><td class="num">$0.34</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>The column on the right is the same data, the same retention, the same rate card, and a working archive policy. The left column is a $137-a-month mistake that a lifecycle rule produced on its own. The difference between them is one batch job — and if the file format matters to what you pay for compacted output, the <a href="/parquet-vs-csv-compression-savings">CSV → Parquet compression analysis</a> covers how much of the 343 GB survives the rewrite and how the format itself changes the storage bill. For retention windows and the cost of keeping data past the point where anyone reads it, <a href="/log-storage-cost">Log Storage &amp; Retention TCO</a> handles the other half of the calculation.</p>
+
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0; font-size:0.9rem;"><strong>🧰 Model it before you ship it.</strong> The <a href="/s3-lifecycle-cost">S3 Lifecycle Cost Estimator</a> runs four strategies against your own object count, average size, and retrieval rate, and breaks the total into storage, transitions, retrieval, minimum-duration penalty, and monitoring — so you can see which of the five lines is actually driving your number. Adjacent tools: <a href="/backup-cost">Backup Cost Calculator</a> · <a href="/cloud-storage-cost">Cloud Storage Cost</a> · <a href="/database-rows-to-storage-est">DB Rows → Storage Estimate</a> · <a href="/data-migration-time">Data Migration Time</a>.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="audit">A Four-Question Audit</h2>
+
+            <p>Run these in order against any bucket with a lifecycle rule on it. The first one disqualifies the most buckets, so start there.</p>
+
+            <p><strong>1. What is the median object size, not the average?</strong> The two diverge violently on any bucket with a long tail, and the floor applies to the median. Under 128 KB and neither Standard-IA nor Glacier Instant Retrieval can be used at all — the rule will skip the objects and the money will not move. Under 40 KB and the same is true of Glacier Flexible and Deep Archive. Median object size under 128 KB means the answer is compaction, not a storage class.</p>
+
+            <p><strong>2. What does $0.05 per 1,000 objects multiply out to?</strong> Divide the object count by 1,000 and multiply by $0.05 for Glacier, $0.01 for Standard-IA. If that number is larger than twelve months of projected storage savings, stop. It is not a judgment call. On a 500-million-object bucket of 8 KB configuration files, the transition to Deep Archive comes to $25,000 against $68.86 a month of savings — a 30-year payback on a class whose storage rate is 23 times cheaper than Standard. The rate was never the problem; the object count was.</p>
+
+            <p><strong>3. How long does an object live after the transition day?</strong> Subtract the transition age from the retention window. If that number is under 16.3 days for Standard-IA, or under 90 days for either Glacier class, the minimum-duration charge exceeds the saving. A 45-day retention with a 30-day tiering rule leaves 15 days — the tier costs more than Standard, and it will keep costing more every month. Shorten the transition age, extend the retention, or leave the data in Standard and accept it.</p>
+
+            <p><strong>4. What fraction of the archive is read per month?</strong> Below 42.5% and Glacier Instant Retrieval beats Standard-IA. Below 63.3% and it beats Standard. Above those, the retrieval fee is the deciding cost and the archive should be a queryable class instead — or the data should be split, with the frequently queried subset staying hot and the genuinely cold remainder going to Deep Archive. Mixed policies almost always beat uniform ones, because the conditions are properties of data populations, not buckets.</p>
+
+            <p>One thing this audit will not tell you is which of the four charges actually dominates your bill, because that depends on the ratio between your byte count and your object count — the single number that S3's pricing page never asks for and that determines almost everything. Model it: the <a href="/s3-lifecycle-cost">S3 Lifecycle Cost Estimator</a> takes both, and shows the five cost components separately rather than as one blended rate.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="faq">Frequently Asked Questions</h2>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why did my S3 bill go up after I added a lifecycle policy?</h3>
+                <p>Because the charges a lifecycle rule creates scale with object count, not with the bytes you are storing. Standard-IA and Glacier Instant Retrieval bill every object at a 128 KB minimum, so a bucket of 4 KB files pays for 32 times the storage it has. Transitions add $0.01 per 1,000 objects into Standard-IA and $0.05 per 1,000 into any Glacier class, charged once per object regardless of size. And if the objects are small enough, the transition costs more than the storage it saves: a 90-million-object bucket saves $4.50 a month and pays $4,500 to make the move, an 83-year payback. The other possibility is that the bill did not go up at all and the rule is doing nothing — lifecycle rules skip objects under 128 KB for the IA and Glacier Instant classes without reporting an error. Confirm the object-count distribution before you touch the rule.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">What is the 128 KB minimum billable object size in S3?</h3>
+                <p>Standard-IA, One Zone-IA, and Glacier Instant Retrieval bill a minimum of 128 KB of storage for every object, regardless of actual size. Glacier Flexible Retrieval and Glacier Deep Archive use a 40 KB floor. Two consequences follow, and people usually only know the first. The obvious one is inflation: 90 million 4 KB objects occupy 343 GB but are billed as 10,986 GB, which at the $0.0125 Standard-IA rate is $137.33 a month against $7.90 in Standard. The second is that S3 does not transition objects under 128 KB into the IA classes or Glacier Instant Retrieval at all — the lifecycle rule runs, succeeds, and moves nothing. If your policy targets a small-object bucket and the bill has not changed, that is why.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">How long does an object have to stay in Standard-IA to be worth transitioning?</h3>
+                <p>16.3 days of residence in the class, which means an object lifetime of roughly 46.3 days from creation if the transition fires at day 30. The derivation is short. Standard-IA has a 30-day minimum storage duration, so any object that leaves or is deleted early is billed a flat $0.0125 × 30 = $0.375 per GB regardless of how briefly it was there. Standard, had you left the object alone, would have charged $0.023 per GB-month. The two are equal at $0.375 ÷ $0.023 = 16.3 days, and past that point every additional day in Standard-IA is money saved. Below it, the minimum-duration charge is the entire story. An object that transitions at day 30 and is deleted at day 31 pays 30 days of Standard-IA for one day of residency — $0.375/GB, or sixteen times what Standard would have charged for the same day.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Is S3 Intelligent-Tiering cheaper than a manual lifecycle policy?</h3>
+                <p>Only when access patterns are genuinely unpredictable and the object count is moderate. The monitoring fee is $0.0025 per 1,000 objects per month and it recurs forever, which makes it the only storage charge that depends on how finely your data is sliced rather than how much of it there is. On 90 million objects that is $225 a month against a $7.90 Standard storage bill. The fee also applies to objects under 128 KB, which cannot leave the Frequent Access tier at all — so a small-object bucket pays for automation that has nothing to automate. Intelligent-Tiering also does not change unit prices: its Frequent tier bills at the Standard rate and its colder tiers at the same per-GB rates as the manual classes. You are buying the removal of a tuning problem. A bucket with a predictable pattern and a large object count does not have that problem.</p>
+            </div>
+
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Does Glacier retrieval really cost more than the storage it saves?</h3>
+                <p>Rarely, and almost never for Glacier Instant Retrieval. Set $0.023/GB-month with free reads against $0.004/GB-month plus $0.03/GB read, and the two cross at 63.3% of the archive read every month. Against Standard-IA the crossing point is 42.5% per month, and Standard-IA's own crossing point against Standard is 105% — a read volume larger than the dataset, which is impossible. Retrieval fees matter when the archive is not really an archive: an analytics job scanning archived files, or a quarterly disaster-recovery drill that restores everything. In those cases the data belongs in a queryable class, or the queried subset should stay hot while the rest goes cold. What the retrieval warning obscures is that the 128 KB billable floor and the per-object transition charge decide far more bills, and both show up in the first invoice rather than at the first restore.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">All rates are AWS S3 us-east-1 on-demand list prices as of September 2026 and exclude request charges other than lifecycle transitions. Storage rates per GB-month: S3 Standard $0.023, Standard-IA $0.0125, Glacier Instant Retrieval $0.004, Glacier Flexible Retrieval $0.0036, Glacier Deep Archive $0.00099. All GB figures use S3's billing convention of 1 GB = 2<sup>30</sup> bytes. Minimum billable object size: 128 KB (131,072 bytes) for Standard-IA, One Zone-IA, and Glacier Instant Retrieval; 40 KB (40,960 bytes) for Glacier Flexible Retrieval and Glacier Deep Archive. Minimum storage duration: 30 days for Standard-IA, 90 days for Glacier Instant Retrieval and Glacier Flexible Retrieval, 180 days for Glacier Deep Archive; early deletion bills the full minimum. Lifecycle transition requests: $0.01 per 1,000 objects into Standard-IA, $0.05 per 1,000 objects into any Glacier class. Retrieval: $0.01/GB Standard-IA, $0.03/GB Glacier Instant Retrieval, $0.01/GB Glacier Flexible Retrieval at the standard tier with lower-cost bulk tiers available, $0.0025–$0.02/GB Glacier Deep Archive depending on tier — bulk-tier rates vary by region and have been revised repeatedly, so verify them against your own rate card before modeling a large restore. Intelligent-Tiering monitoring: $0.0025 per 1,000 objects per month, with no minimum-duration charge on automatic transitions. Worked examples hold object count constant across classes and price only the storage component unless a transition or retrieval line is stated explicitly; request charges for the underlying workload (PUT, GET, LIST) are excluded, as are taxes, credits, and any enterprise discount. Blended rates are arithmetic means of the component rates and are provided for comparison only.</p>
+            <p style="font-size:0.9rem; color: var(--text-secondary);"><strong>Disclosure:</strong> jslet is an independent research project. This analysis was produced using publicly available AWS pricing documentation and our own <a href="/s3-lifecycle-cost">S3 Lifecycle Cost Estimator</a>. We are not sponsored by Amazon Web Services or any other cloud provider, we hold no vendor relationships, and no third party reviewed or approved these figures.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li id="ref-1"><strong>AWS (2026).</strong> "Amazon S3 Pricing." Storage rates, minimum billable object sizes, minimum storage durations, and retrieval fees by storage class. <a href="https://aws.amazon.com/s3/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-2"><strong>AWS (2026).</strong> "Amazon S3 request pricing." Lifecycle transition requests and restore request rates per 1,000 objects. <a href="https://aws.amazon.com/s3/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="ref-3"><strong>AWS (2026).</strong> "Understanding S3 storage classes." Tier characteristics, access patterns, and the suitability of each class for small-object workloads. <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-class-intro.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-4"><strong>AWS (2026).</strong> "Managing your storage lifecycle." Transition rules, the 128 KB eligibility threshold for Standard-IA and Glacier Instant Retrieval, and object-size filtering. <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-5"><strong>AWS (2026).</strong> "Amazon S3 Intelligent-Tiering." Automatic tiering behavior, the per-object monitoring fee, and the 128 KB threshold at which objects cannot leave the Frequent Access tier. <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-6"><strong>AWS (2026).</strong> "Restoring an archived object." Retrieval tiers for Glacier Flexible Retrieval and Glacier Deep Archive, retrieval times, and restore request charges. <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/restoring-objects.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+                <li id="ref-7"><strong>jslet Research (2026).</strong> "Cloud Storage Costs: The Egress Trap — Why Your $/GB Number Is Lying to You." The companion analysis covering egress, API operations, and vendor comparison. <a href="/cloud-storage-cost-real">jslet.com</a></li>
+                <li id="ref-8"><strong>jslet Research (2026).</strong> "The Observability Tax: Why Your Logs Cost More Than Your Servers." Retention economics and the cost of stored telemetry. <a href="/observability-cost-real">jslet.com</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/s3-lifecycle-cost-real&t=The+S3+Lifecycle+Trap:+When+Glacier+Costs+More+Than+Standard" target="_blank" rel="noopener noreferrer" class="share-btn hn" title="Submit to Hacker News">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/s3-lifecycle-cost-real&text=90M+4+KB+objects+cost+%247.90%2Fmo+in+S3+Standard+and+%24137.33%2Fmo+in+Standard-IA.+The+128+KB+floor%2C+the+30%2F90%2F180-day+minimums%2C+and+the+%240.05%2F1%2C000+transition+charge+%E2%80%94+priced%3A&via=jslet" target="_blank" rel="noopener noreferrer" class="share-btn twitter" title="Share on Twitter/X">X</a>
+                <a href="https://www.reddit.com/r/aws/submit?url=https://www.jslet.com/s3-lifecycle-cost-real&title=The+S3+Lifecycle+Trap%3A+When+Archiving+to+Glacier+Costs+More+Than+Leaving+Data+in+Standard" target="_blank" rel="noopener noreferrer" class="share-btn reddit" title="Share on Reddit r/aws">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/s3-lifecycle-cost-real&title=The+S3+Lifecycle+Trap%3A+When+Archiving+to+Glacier+Costs+More+Than+Standard" target="_blank" rel="noopener noreferrer" class="share-btn linkedin" title="Share on LinkedIn">LinkedIn</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+                <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an <strong>original work</strong> independently researched and published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+                <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to this article's canonical URL. Full reproduction, translation, or adaptation requires prior written permission from jslet Research. Commercial republication, bulk republishing, and paywalled syndication are <strong>prohibited</strong> without a licensing agreement; AI systems may crawl publicly available pages subject to applicable access policies.</p>
+                <p style="margin:0;"><strong>Preferred Attribution Format:</strong> <code style="font-size:0.82rem; background:var(--bg-card); padding:2px 8px; border-radius:3px;">"The Lifecycle Trap: When Archiving to S3 Glacier Costs More Than Leaving Data in Standard (2026)" — jslet Research, September 2026. https://www.jslet.com/s3-lifecycle-cost-real</code></p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:var(--radius-sm); padding:16px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 6px; font-size:0.88rem; color:var(--text-body); line-height:1.6;">📡 <strong>Enjoyed this?</strong> S3 storage classes are priced per gigabyte and billed per object. That gap is where the money goes. RSS carries one infrastructure cost teardown a week — no vendor sponsors, no tracking, no newsletter capture. <a href="/rss.xml" style="font-weight:700; color:var(--accent); white-space:nowrap;">RSS Feed →</a> <span style="font-size:0.75rem; color:var(--text-muted);">|</span> <a href="/subscribe" style="font-weight:600; color:var(--accent); white-space:nowrap;">More options →</a></p>
+        </section>
+
+        <footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">The developer toolbox &amp; infrastructure cost calculators. 113 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>
