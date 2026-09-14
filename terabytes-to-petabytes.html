@@ -144,6 +144,38 @@
             <p>Storage vendors quote capacity in decimal terabytes (10¹² bytes), while operating systems report in binary tebibytes (2⁴⁰ bytes). The 1,024 multiplier between TB and PB is the binary standard used by filesystems, volume managers, and RAID controllers — 1 PB = 1,024 TB = 1,125,899,906,842,624 bytes.</p>
             <p>When provisioning a 10 PB Ceph cluster, you need at least 10,240 TB of raw capacity before erasure-coding overhead. With 8+3 EC, the usable capacity drops to ~72% of raw — meaning a 10 PB target actually requires ~14.2 PB raw, or ~14,540 TB of physical disk. This tool lets you run those back-of-the-envelope calculations in seconds.</p>
         </section>
+
+        <section class="seo-section">
+            <h2>What Actually Changes at Petabyte Scale</h2>
+            <p>Crossing 1 PB is not a bigger version of 100 TB. Three things break at the same moment: the unit arithmetic the procurement spreadsheet uses, the redundancy ratio that decides how many raw drives get bought, and the backup window that used to fit inside a single night. Each one is a budget line, not an engineering curiosity.</p>
+
+            <h3>The unit gap widens as you go up, and nobody re-checks it</h3>
+            <p>A drive sold as 16 TB holds 16,000,000,000,000 bytes — the decimal terabyte that every vendor price list uses. Filesystems, RAID controllers and Ceph count in binary tebibytes, so the same drive reports <strong>14.55 TiB</strong>. The conversion factor is 0.9766 per magnitude step (1,000 &divide; 1,024), which means the discrepancy is not a fixed 6.9% — it compounds:</p>
+            <ul>
+                <li>Gigabyte scale: 1 GB = 0.9313 GiB &mdash; a 6.9% gap</li>
+                <li>Terabyte scale: 1 TB = 0.9095 TiB &mdash; a 9.1% gap</li>
+                <li>Petabyte scale: 1 PB = 0.8882 PiB &mdash; an <strong>11.2% gap</strong></li>
+            </ul>
+            <p>Most capacity plans are built at gigabyte scale, where the error is small enough to absorb, and then applied unchanged to petabytes, where it is not. A fleet of 1,000 &times; 16 TB drives is 16 PB on the invoice and <strong>14.21 PiB</strong> in the cluster. The 1.79 PB difference is 11% of everything you bought, and it stays invisible until someone compares the purchase order against <code>ceph df</code>.</p>
+            <p>The practical rule: write the unit into the number, every time. "16 PB" is ambiguous and will be read differently by the vendor, the storage engineer and the finance team — "16 PB raw / 14.21 PiB reported" is not.</p>
+
+            <h3>Redundancy ratio decides the raw drive count, not capacity</h3>
+            <p>Usable capacity is set by the protection scheme, and the schemes differ by more than 2&times;. For 1 PB usable:</p>
+            <ul>
+                <li><strong>3&times; replication</strong> &mdash; 33.3% efficient, needs 3.0 PB raw</li>
+                <li><strong>Erasure coding 4+2</strong> &mdash; 66.7% efficient, needs 1.50 PB raw</li>
+                <li><strong>Erasure coding 8+3</strong> &mdash; 72.7% efficient, needs 1.375 PB raw</li>
+                <li><strong>Erasure coding 10+4</strong> &mdash; 71.4% efficient, needs 1.40 PB raw</li>
+            </ul>
+            <p>On 16 TB drives that is the difference between 188 drives and 86 drives for the same 1 PB of usable storage. At roughly $17/TB for enterprise nearline HDD, moving from replication to 8+3 removes about <strong>$28,000 of media</strong> — before the JBOD shelves, the power draw, and the rack units that go with the 102 drives you no longer buy.</p>
+            <p>The bill for that saving arrives as rebuild time. Losing one 16 TB member of an 8+3 pool means reading 8 surviving fragments to reconstruct it; at a realistic 150 MB/s of aggregate rebuild bandwidth on a working HDD pool, that is roughly <strong>30 hours</strong> of running one drive short. Replication rebuilds from a single peer and finishes in a fraction of that. If you cannot tolerate a 30-hour degraded window, the erasure coding saving is not available to you at this drive size — which is a capacity-planning decision, not a storage-admin preference.</p>
+
+            <h3>What a petabyte costs to back up and to move</h3>
+            <p>A full copy of 1 PB is 8 &times; 10<sup>15</sup> bits. At a dedicated 10 Gbps circuit running at line rate with zero overhead, that single copy takes <strong>9.3 days</strong>. At 1 Gbps, 93 days. The nightly full backup therefore dies at this scale, and the only number that matters is the daily change rate.</p>
+            <p>A 2% daily change on 1 PB is 20 TB of modified blocks. That is 160,000 gigabits: 4.4 hours at 10 Gbps, and <strong>44 hours at 1 Gbps</strong> — a circuit that cannot keep up with its own data, falling 20 hours further behind every single day. This is the arithmetic that forces incremental-forever plus synthetic fulls, and it is why the first thing to check on a petabyte deployment is the product of change rate and link speed rather than the disk count.</p>
+            <p>Moving the data out has its own tiered price. S3 egress to the internet is $0.09/GB for the first 10 TB, $0.085 to 50 TB, $0.07 to 150 TB, and $0.05 beyond that. One petabyte therefore bills out at roughly <strong>$53,900 in a single month</strong> — per copy, so a migration rehearsal doubles it. Archive tiers relocate the cost rather than remove it: Deep Archive retrieval runs $0.02/GB against a 180-day minimum storage commitment, so pulling 1 PB back costs about $20,000 before any egress charge is applied.</p>
+        </section>
+
         <!-- ── Related Tools ── -->
         <div class="related-tools">
             <h3>Related Tools</h3>
