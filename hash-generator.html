@@ -82,9 +82,36 @@
             <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
                 <table class="claims-table"><tr><th scope="row">MD5</th><td>128-bit, fast, <strong>NOT cryptographically secure</strong>. Use only for checksums and data integrity, never for passwords or security.</td></tr><tr><th scope="row">SHA-1</th><td>160-bit, <strong>deprecated</strong> since 2017 (SHAttered collision). Do not use for new systems.</td></tr><tr><th scope="row">SHA-256</th><td>256-bit, member of the SHA-2 family. Current industry standard. Used in TLS/SSL, Bitcoin, JWT signing.</td></tr><tr><th scope="row">SHA-512</th><td>512-bit, SHA-2 family. Larger output, slightly slower. Preferred for long-term archival hashing.</td></tr></table>
                 <p><strong>HMAC</strong> (Hash-based Message Authentication Code) combines a secret key with the hash function. Use HMAC-SHA256 for API request signing and message authentication.</p>
-                <p>See also: <a href="/base64-encode-decode">Base64 Encode/Decode</a> · <a href="/password-crack-time-estimator">Password Crack Estimator</a> · <a href="/jwt-decoder">JWT Decoder</a> · <a href="/number-base-converter">Number Base Converter</a></p>
             </div>
         </section>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2>🔐 A fingerprint, not a lock</h2>
+            <p>"Hash" gets used for two jobs that have opposite requirements, and the confusion is where most security bugs begin. A checksum answers <em>did this file change?</em> A password hash answers <em>is this person who they claim to be?</em> Both produce a fixed-length digest, but everything else about them differs.</p>
+            <p>A checksum may be fast, unsalted, and even weak — MD5 is still perfectly serviceable for spotting a truncated download. A password hash must be slow and salted. SHA-256 is a poor password hash for the same reason it is an excellent checksum: commodity hardware computes it at absurd speed. A single RTX 4090 sustains roughly <strong>20 billion SHA-256 hashes per second</strong>. Against an 8-character lowercase password there are <code>26^8</code> = 208 billion candidates, so the entire space falls in about <strong>10 seconds</strong>. Run the same search against bcrypt at cost factor 12 — roughly 250 ms per attempt — and it takes over 1,600 years.</p>
+            <p><strong>Salting changes the attack, not the speed.</strong> A salt does not make guessing one password slower; it makes precomputation worthless. Unsalted, a single rainbow table cracks every account it contains at once. Salted per user, the attacker must redo the full search for each account individually. That is the whole point, and it is why "we hash passwords with SHA-256 plus a salt" is still the wrong answer.</p>
+        </section>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2>⚠️ Why <code>hash(secret + message)</code> is not authentication</h2>
+            <p>A common way to sign an API request is to concatenate a shared secret with the payload and hash the result: <code>sig = SHA256(secret + message)</code>. It looks sound. It is forgeable.</p>
+            <p>MD5, SHA-1 and the SHA-2 family all use the Merkle–Damgård construction, which means the digest is a function of the algorithm's <em>final internal state</em> — and that state is fully recoverable from the digest. An attacker who knows <code>hash(secret + message)</code> and can guess the length of <code>secret</code> can compute <code>hash(secret + message + padding + extra)</code> for any <code>extra</code> they choose, without ever learning the secret. The padding is deterministic: a <code>0x80</code> byte, zero fill, then the total bit length as a 64-bit integer. Guessing the secret length means trying values from 1 to 64 — 64 attempts, not a brute-force search.</p>
+            <p><strong>HMAC exists precisely to close this.</strong> It hashes the message twice, with the key mixed in at both ends, so the internal state an attacker recovers is useless for extending anything. SHA-3 sidesteps the issue structurally — its sponge construction has no such extension property — but HMAC-SHA256 remains the correct default for request signing, and it is what the HMAC toggle on this page computes.</p>
+        </section>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2>📏 Digest length, storage, and comparison</h2>
+            <p>The digest is raw bytes; what you store is an encoding of them. SHA-256 produces 32 bytes, which is 64 hex characters or 44 Base64 characters including one <code>=</code> of padding. Hex is the convention everywhere, but the encoding you pick changes the column width you need:</p>
+            <ul>
+                <li><strong>MD5</strong> — 16 bytes → 32 hex chars</li>
+                <li><strong>SHA-1</strong> — 20 bytes → 40 hex chars (this is why Git object IDs are 40 characters)</li>
+                <li><strong>SHA-256</strong> — 32 bytes → 64 hex chars</li>
+                <li><strong>SHA-512</strong> — 64 bytes → 128 hex chars</li>
+            </ul>
+            <p>Two mistakes show up in production. The first is comparing digests with a plain string equality check: <code>==</code> in most languages short-circuits on the first differing byte, so the time it takes to reject a guess leaks how many leading bytes were correct. That is a real (if narrow) side channel; use a constant-time comparison such as <code>hmac.compare_digest()</code> instead. The second is case: this tool emits lowercase hex, most tools do, but a value pasted from a Java <code>BigInteger.toString(16)</code> or a certificate fingerprint may arrive uppercase. Normalise before comparing, or you will reject correct hashes.</p>
+            <p>See also: <a href="/base64-encode-decode">Base64 Encode/Decode</a> · <a href="/password-crack-time-estimator">Password Crack Estimator</a> · <a href="/jwt-decoder">JWT Decoder</a> · <a href="/number-base-converter">Number Base Converter</a></p>
+        </section>
+
         <footer class="jslet-footer-box">
             <div class="jslet-footer-inner">
                 <div class="jslet-footer-top">

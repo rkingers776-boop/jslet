@@ -83,9 +83,31 @@
             <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
                 <p><strong>encodeURIComponent</strong> encodes <em>all</em> special characters — including <code>/ ? & = #</code>. Use this for encoding individual query parameter values. <strong>encodeURI</strong> preserves URL structure characters — use it for encoding a full URL string, not component values.</p>
                 <p><strong>Common mistake:</strong> using <code>encodeURI</code> on query values. It won't encode <code>&amp;</code> or <code>=</code>, which breaks query string parsing. Always use <code>encodeURIComponent</code> for query parameter values. The "Auto Detect" button checks whether input contains <code>%XX</code> patterns indicating pre-encoded text.</p>
-                <p>See also: <a href="/base64-encode-decode">Base64 Encode/Decode</a> · <a href="/html-entity-encode-decode">HTML Entity Encoder</a> · <a href="/jwt-decoder">JWT Decoder</a></p>
             </div>
         </section>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2>➕ The space character has two encodings, and they are not interchangeable</h2>
+            <p>Percent-encoding has a reserved set, and knowing which characters are in it explains most encoding bugs. RFC 3986 marks four characters unreserved — <code>A</code>–<code>Z</code>, <code>a</code>–<code>z</code>, <code>0</code>–<code>9</code>, and <code>-</code> <code>_</code> <code>.</code> <code>~</code> — and those never need encoding. Everything else is either a delimiter that carries structural meaning (<code>/</code> <code>?</code> <code>#</code> <code>&amp;</code> <code>=</code>) or a character that must be escaped when it appears as data.</p>
+            <p>Space is the interesting one, because it has two valid representations that mean different things. In a URL path, space is <code>%20</code>. In a query string submitted as <code>application/x-www-form-urlencoded</code> — which is what an HTML form does by default — space is <code>+</code>. Both decode to a space on the server, but only in their own context. Put a literal <code>+</code> in a query value and a form-aware parser turns it into a space; to send an actual plus sign you must write <code>%2B</code>.</p>
+            <p>This produces a specific, recognisable failure. Base64 values contain <code>+</code>. Pass one as a query parameter without encoding it, and every <code>+</code> arrives as a space, so the decoded bytes are wrong and the value fails to parse — while the same string works fine in a request body. <code>encodeURIComponent('a+b')</code> returns <code>a%2Bb</code>, which is why that function, not <code>encodeURI</code>, belongs anywhere a value is being placed into a URL.</p>
+        </section>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2>🔁 Double encoding: when <code>%2520</code> shows up in your logs</h2>
+            <p>The percent sign is itself a character that needs encoding — it becomes <code>%25</code>. That creates a familiar failure mode: a space becomes <code>%20</code>, gets encoded a second time, and becomes <code>%2520</code>.</p>
+            <p>Nothing in a single application usually does this deliberately. It happens when two layers both believe they own encoding: an API gateway that normalises and re-emits a URL, a redirect handler that appends an already-encoded value to a new query string, a logging pipeline that serialises a URL into another URL. The symptom is unmistakable once you know to look for it — a search for <code>hello world</code> returns results for the literal text <code>%20</code>, because the server decoded once and stopped.</p>
+            <p>Diagnosis is a matter of counting the passes. Decode the fragment in front of you: if <code>%2520</code> becomes <code>%20</code>, there is one more encoding step than the consumer expects. The fix belongs at whichever layer is doing the second pass, not in the value itself.</p>
+        </section>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2>⚠️ Encoding is not sanitisation, and it is not free</h2>
+            <p><strong>Percent-encoding prevents a value from being misread as syntax. It prevents nothing else.</strong> A SQL injection payload survives percent-encoding intact — the database driver decodes it before parsing, which is precisely why parameterised queries, not encoding, are the defence. The same is true of cross-site scripting: <code>%3Cscript%3E</code> is decoded by whatever reads it, so the protection has to live at the point of output, in the correct escaping for that context.</p>
+            <p>One historical exception is worth knowing because it still appears in older stacks: <code>%00</code>, a percent-encoded null byte. Languages that treat strings as C-style byte arrays read a null as a terminator, so a filename like <code>shell.php%00.jpg</code> could pass an extension check and then be truncated to <code>shell.php</code> when opened. Modern runtimes reject null bytes in paths outright, but the pattern is a reminder that encoding interacts with the parser, not just with the transport.</p>
+            <p><strong>Multi-byte characters expand by a factor of nine.</strong> Percent-encoding operates on UTF-8 bytes, and each byte costs three characters. One CJK character is 3 bytes and therefore 9 characters; one emoji is 4 bytes and 12 characters. A query of twenty Chinese characters becomes roughly 180 characters of URL before any other parameters. Since proxies, CDNs and servers commonly cap request lines in the low kilobytes, a long query built from non-Latin text can be truncated in transit — and the failure looks like a malformed request rather than a length problem.</p>
+            <p>See also: <a href="/base64-encode-decode">Base64 Encode/Decode</a> · <a href="/html-entity-encode-decode">HTML Entity Encoder</a> · <a href="/jwt-decoder">JWT Decoder</a> · <a href="/encoding-tools">Encoding Tools</a></p>
+        </section>
+
         <footer class="jslet-footer-box">
             <div class="jslet-footer-inner">
                 <div class="jslet-footer-top">

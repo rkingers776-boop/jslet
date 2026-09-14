@@ -152,9 +152,37 @@
                 <p><strong>UTC offsets are not timezones.</strong> <code>UTC-5</code> could be Eastern Standard Time, Central Daylight Time, or Peru Time — only the IANA identifier disambiguates. Always store IANA names in your database alongside UTC timestamps.</p>
                 <p><strong>DST transitions</strong> create two edge cases: the "spring forward" gap (e.g., 02:00—3:00 does not exist in US Eastern) and the "fall back" overlap (01:00—2:00 occurs twice). This converter uses the browser's built-in Intl API which handles these according to the host system's locale data.</p>
                 <table class="claims-table" style="margin-top:12px;"><tr><th scope="row">Best practice</th><td>Store all times as UTC. Convert to local timezone only at the presentation layer.</td></tr><tr><th scope="row">Common pitfall</th><td>Using fixed offsets (<code>+05:30</code>) instead of IANA names — DST rules change over time.</td></tr></table>
-                <p>See also: <a href="/unix-timestamp-converter">Unix Timestamp Converter</a> · <a href="/iso-8601-formatter">ISO 8601 Formatter</a></p>
             </div>
         </section>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2>🌍 Daylight saving is a political decision, not a geographic one</h2>
+            <p>It is tempting to treat DST as a property of latitude — long summer days, clocks shift. It is actually a policy that individual jurisdictions adopt, repeal, and occasionally change on short notice, which is why no rule of thumb survives contact with a real calendar.</p>
+            <p><strong>Large countries opt out.</strong> China observed daylight saving from 1986 to 1991 and abolished it; the entire country now runs on a single offset, UTC+8, so the sun rises in Ürümqi around 10 a.m. in winter. Japan has not observed DST since 1952. Russia ran permanent summer time from 2011 to 2014 and then reverted to permanent standard time — Moscow sits at UTC+3 year-round.</p>
+            <p><strong>Parts of countries opt out individually.</strong> In the United States, Arizona (with the exception of the Navajo Nation, which does observe it), Hawaii, Puerto Rico, Guam, American Samoa and the U.S. Virgin Islands all skip the change. So a meeting scheduled "9 a.m. Mountain Time" lands an hour apart depending on which side of a state line the attendee sits.</p>
+            <p><strong>The southern hemisphere runs it backwards.</strong> Australia, New Zealand and Chile shift clocks forward in October and back in April, because their summer falls in the northern winter. And offsets are not always whole hours: India is UTC+5:30, Nepal is UTC+5:45, and the Chatham Islands are UTC+12:45. Forty-five-minute offsets are real, and code that assumes an integer hour breaks on them.</p>
+        </section>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2>📦 Timezone rules are software, and they get updated</h2>
+            <p>Every rule above is stored in the IANA time zone database — <code>tzdata</code> — which is revised several times a year as governments change their minds. The database is not a historical record that has settled; it is closer to a news feed.</p>
+            <p>Recent editions of that feed include Mexico abolishing daylight saving nationwide in 2022, Lebanon announcing a delay to its DST start days before it was due to take effect in 2023, Kazakhstan collapsing two zones into a single UTC+5 in 2024, and Brazil dropping DST entirely in 2019. Each change means every system that converts a date across that boundary is wrong until it receives the update.</p>
+            <p>The practical consequence is that <strong>a stale <code>tzdata</code> produces confidently wrong results without raising an error</strong>. A container image built two years ago will happily convert a date using rules that no longer apply. This converter relies on the browser's <code>Intl</code> API, which reads the host system's zone data — so its accuracy is tied to whichever machine is running it. If you are scheduling something consequential across a jurisdiction that has recently changed its rules, verify against a current source rather than trusting any single tool, including this one.</p>
+        </section>
+
+        <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+            <h2>📅 The two weeks a year when the time difference is wrong</h2>
+            <p>Because regions switch on different dates, there are short windows each year when the interval between two cities is not what the usual table says.</p>
+            <p>In 2026, the United States moves to daylight saving on <strong>March 8</strong> and the European Union on <strong>March 29</strong>. Between those dates, New York is UTC−4 while London is still UTC+0, so the gap is <strong>4 hours instead of the usual 5</strong>. The same thing happens in reverse each autumn: the EU falls back on <strong>October 25</strong> and the US on <strong>November 1</strong>, producing a second week-long window at 4 hours.</p>
+            <p>A worked conversion shows why the check matters. A 09:00 Monday meeting in New York:</p>
+            <ul>
+                <li><strong>During EDT (UTC−4)</strong> → 13:00 UTC → <strong>21:00 Monday</strong> in Shanghai (UTC+8)</li>
+                <li><strong>During EST (UTC−5)</strong> → 14:00 UTC → <strong>22:00 Monday</strong> in Shanghai</li>
+            </ul>
+            <p>One hour of drift, invisible to anyone who assumed a fixed offset. The reliable procedure is to convert everything to UTC first, apply the target zone's rules for that specific date, and only then check whether the local date has rolled over — a 22:00 Monday meeting in Shanghai is Tuesday morning for nobody, but a 09:00 Monday meeting in Los Angeles is already <strong>01:00 Tuesday</strong> in Tokyo.</p>
+            <p>See also: <a href="/unix-timestamp-converter">Unix Timestamp Converter</a> · <a href="/iso-8601-formatter">ISO 8601 Formatter</a> · <a href="/timestamp-tools">Timestamp Tools</a></p>
+        </section>
+
         <footer class="jslet-footer-box">
             <div class="jslet-footer-inner">
                 <div class="jslet-footer-top">

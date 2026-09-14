@@ -136,6 +136,30 @@
         </div>
     </section>
 
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2>⏳ The 2038 problem is a width problem, not a date problem</h2>
+        <p>A Unix timestamp is a signed integer. When that integer is 32 bits wide, it can hold values up to <strong>2,147,483,647</strong> — which corresponds to <strong>2038-01-19 03:14:07 UTC</strong>. One second later the value overflows, wraps to a large negative number, and the same clock reads 1901-12-13.</p>
+        <p>This is not a hypothetical about ancient hardware. <code>time_t</code> is 32 bits on any system built with a 32-bit ABI, which includes plenty of long-lived embedded controllers, industrial equipment, and routers still in service. MySQL's <code>TIMESTAMP</code> column type uses a 4-byte integer internally, so its documented range ends at the same moment — a row holding a date past January 2038 cannot be represented in that type at all.</p>
+        <p>The second-based format itself is not the constraint. Ten digits carry you to <strong>2286</strong>, and switching to 64-bit integers extends the range by a factor no application will ever exhaust. The failure is entirely about signed width: the same value in a 64-bit integer is simply a date in 2038.</p>
+    </section>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2>⏱️ Unix time ignores leap seconds, on purpose</h2>
+        <p>POSIX time defines every day as exactly 86,400 seconds. Earth's rotation does not cooperate with that definition, so civil timekeeping inserts leap seconds to stay aligned with the Sun — <strong>27 of them since 1972</strong>, most recently at the end of 2016.</p>
+        <p>Because Unix time refuses to count them, it drifts from UTC by the accumulated total, currently 37 seconds once you include the initial offset. Different systems paper over this differently: some repeat the final second of the day, so the timestamp <code>1483228799</code> can occur twice and two distinct events share a numeric value; others smear the extra second across a window — Google spreads it over 20 hours, so time runs imperceptibly slow rather than jumping.</p>
+        <p>For an application that stores timestamps and sorts them, none of this is usually visible. It becomes visible when you require strict monotonicity or when you assume a fixed number of seconds between two dates across a leap-second boundary. In 2022 the international metrology bodies agreed to stop inserting leap seconds by 2035, which removes the source rather than solving the arithmetic — the 37-second offset will simply remain.</p>
+    </section>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2>⚠️ Parsing a date string is where the off-by-one-day bugs live</h2>
+        <p>Converting in the other direction — string to timestamp — is less uniform than it looks, and the differences are specified rather than accidental.</p>
+        <p><strong>A date-only string is parsed as UTC.</strong> Per the ECMAScript specification, <code>new Date("2026-09-15")</code> is midnight UTC. For anyone west of Greenwich that renders as September 14 in local time, so a date picked from a calendar and round-tripped through a timestamp can come back as the previous day. Attaching a time and an offset — <code>"2026-09-15T00:00:00-05:00"</code> — removes the ambiguity.</p>
+        <p><strong>Month numbers start at zero.</strong> In <code>new Date(2026, 8, 15)</code> the <code>8</code> means September, not August. This constructor form is not affected by string parsing rules at all, which is why the two mistakes are often found in the same file.</p>
+        <p><strong>Seconds and milliseconds are different units.</strong> <code>Date.now()</code> returns milliseconds, and Unix timestamps conventionally mean seconds, so the conversion divides by 1000 and must floor rather than round — rounding turns a timestamp into the following second roughly half the time, which is enough to break an equality check.</p>
+        <p>The durable fix is a storage rule rather than a parsing trick: persist UTC (as an integer or as ISO 8601 with an explicit <code>Z</code>), store the IANA timezone separately, and format for display at the edge. Never store a local wall-clock time without the zone it belongs to.</p>
+        <p>See also: <a href="/timezone-converter">Timezone Converter</a> · <a href="/iso-8601-formatter">ISO 8601 Formatter</a> · <a href="/uuid-generator">UUID Generator</a> · <a href="/timestamp-tools">Timestamp Tools</a></p>
+    </section>
+
     <footer class="jslet-footer-box">
             <div class="jslet-footer-inner">
                 <div class="jslet-footer-top">

@@ -129,6 +129,34 @@
         </div>
     </section>
 
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2>📐 The 33% figure is an average, and it is wrong for small payloads</h2>
+        <p>Base64 maps 3 input bytes onto 4 output characters, which is where the familiar "about 33% larger" comes from. That ratio holds exactly when the input length is a multiple of three. It does not hold otherwise, because Base64 has no way to emit a partial character — it pads with <code>=</code> instead.</p>
+        <p>Watch what happens at each remainder:</p>
+        <ul>
+            <li><code>"f"</code> (1 byte) → <code>"Zg=="</code> — 4 characters, <strong>300% overhead</strong></li>
+            <li><code>"fo"</code> (2 bytes) → <code>"Zm8="</code> — 4 characters, 100% overhead</li>
+            <li><code>"foo"</code> (3 bytes) → <code>"Zm9v"</code> — 4 characters, 33% overhead</li>
+        </ul>
+        <p>The padding is not decoration. Those <code>=</code> characters are how a decoder recovers the original length — without them, <code>"Zg"</code> and <code>"Zg=="</code> would both decode to one byte and the decoder could not tell whether a trailing byte was real or an artefact of the block boundary.</p>
+        <p>This matters when you encode many small values rather than one large file. A JSON payload carrying twenty 8-byte identifiers pays a 33% block tax <em>per field</em>, not on the total, so the aggregate overhead lands well above a third.</p>
+    </section>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2>🔓 It is an encoding, and that changes what you can put in it</h2>
+        <p>Base64 provides no confidentiality whatsoever. Decoding requires only the alphabet, which is public and printed on this page. Anything encoded with it should be treated as plaintext that happens to be inconvenient to read.</p>
+        <p>Two long-standing practices ignore this. HTTP Basic Auth sends <code>Authorization: Basic base64(user:password)</code> — obfuscated credentials, protected only by TLS, which is why it is acceptable over HTTPS and indefensible without it. And a JWT's payload is Base64URL, not encryption, so every claim inside is legible to anything that touches the token, including your own log aggregator.</p>
+        <p>There is also a subtler cost specific to inline images. A Data URL embeds the encoded bytes directly in the document, so a 1 MB image becomes roughly 1.33 MB of text inside your HTML. The markup itself is usually cacheable, but the image is no longer separable from it: change one character of the page and the entire encoded image is re-downloaded. The browser also must hold both the Base64 string and the decoded binary in memory to render it. For icons this is a reasonable trade — it removes a request — but it scales badly, and the crossover arrives earlier than most people expect.</p>
+    </section>
+
+    <section style="margin-top: 32px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2>⚠️ Three ways decoding fails</h2>
+        <p><strong>The alphabet collides with URLs.</strong> Standard Base64 uses <code>+</code> and <code>/</code>, both of which carry meaning in a URL path and query string. The URL-safe variant — defined in RFC 4648 §5 and used by JWT — substitutes <code>-</code> and <code>_</code> and usually drops the padding. The bytes are identical; only the alphabet changes. Feeding a URL-safe string to a standard decoder produces garbage or an error at exactly those two characters, which is the most common cause of a token that decodes fine in one tool and fails in another.</p>
+        <p><strong><code>atob()</code> is stricter than you expect.</strong> In JavaScript it throws <code>InvalidCharacterError</code> on any character outside the alphabet, including whitespace and newlines. Since MIME Base64 — the kind email uses — wraps output at 76 characters, a value copied out of a message body will contain line breaks and fail. Strip whitespace before decoding.</p>
+        <p><strong>Unicode is a two-step problem.</strong> Base64 operates on bytes, not characters. A string like <code>"café"</code> must first be encoded to UTF-8 (5 bytes here, since <code>é</code> takes two) and only then to Base64. Skipping the first step is why some tools round-trip ASCII perfectly but mangle accents, emoji, and CJK text — the emoji <code>🙂</code> alone is 4 UTF-8 bytes and becomes 8 Base64 characters.</p>
+        <p>See also: <a href="/url-encode-decode">URL Encode/Decode</a> · <a href="/hash-generator">Hash Generator</a> · <a href="/jwt-decoder">JWT Decoder</a> · <a href="/encoding-tools">Encoding Tools</a></p>
+    </section>
+
     <footer class="jslet-footer-box">
             <div class="jslet-footer-inner">
                 <div class="jslet-footer-top">
