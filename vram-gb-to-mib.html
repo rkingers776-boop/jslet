@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
     <meta name="referrer" content="strict-origin-when-cross-origin">
-    <title>VRAM GB to GiB/MiB Converter</title>
-    <meta name="description" content="GPU says 80 GB; CUDA says 74.5 GiB — the GB/GiB gap, not a bug. Diagnose OOM, fragmentation and allocation errors before the 3 AM crash.">
+    <title>VRAM GB to GiB Converter — What Your GPU Actually Allocates</title>
+    <meta name="description" content="An A100 80GB reports 81,920 MiB in nvidia-smi: GPU labels are binary, not decimal. Convert GB/GiB and budget for ECC, context and fragmentation overhead.">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="manifest" href="/manifest.json">
     <link rel="stylesheet" href="style.css">
@@ -15,8 +15,8 @@
     {
       "@context": "https://schema.org",
       "@type": "WebApplication",
-      "name": "VRAM GB to GiB/MiB Converter",
-      "description": "Your GPU says 80 GB. CUDA says 74.5 GiB. It is not a driver bug — it is the GB vs GiB gap. Close the gap before your training run crashes at 3 AM. Diagnose OOM, memory fragmentation, and allocation errors.",
+      "name": "VRAM GB to GiB Converter",
+      "description": "GPU capacity labels are binary: an 80 GB A100 reports 81,920 MiB in nvidia-smi, which is 80 GiB — about 7% more bytes than the label implies. Convert GB/GiB and MiB correctly, then budget the ECC rows, CUDA context, library workspace and allocator fragmentation that eat into it before your first tensor.",
       "url": "https://www.jslet.com/vram-gb-to-mib",
       "applicationCategory": "EngineeringApplication",
       "operatingSystem": "Any",
@@ -30,8 +30,8 @@
     </script>
 
     <link rel="canonical" href="https://www.jslet.com/vram-gb-to-mib">
-    <meta property="og:title" content="VRAM GB to GiB/MiB Converter — jslet">
-    <meta property="og:description" content="GPU says 80 GB; CUDA says 74.5 GiB — the GB/GiB gap, not a bug. Diagnose OOM, fragmentation and allocation errors before the 3 AM crash.">
+    <meta property="og:title" content="VRAM GB to GiB Converter — jslet">
+    <meta property="og:description" content="An A100 80GB reports 81,920 MiB in nvidia-smi: GPU labels are binary, not decimal. Convert GB/GiB and budget for ECC, context and fragmentation overhead.">
     <meta property="og:url" content="https://www.jslet.com/vram-gb-to-mib">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="jslet">
@@ -40,8 +40,8 @@
     <meta property="og:image:height" content="630">
     <meta property="og:locale" content="en_US">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="VRAM GB to GiB/MiB Converter — jslet">
-    <meta name="twitter:description" content="GPU says 80 GB; CUDA says 74.5 GiB — the GB/GiB gap, not a bug. Diagnose OOM, fragmentation and allocation errors before the 3 AM crash.">
+    <meta name="twitter:title" content="VRAM GB to GiB Converter — jslet">
+    <meta name="twitter:description" content="An A100 80GB reports 81,920 MiB in nvidia-smi: GPU labels are binary, not decimal. Convert GB/GiB and budget for ECC, context and fragmentation overhead.">
     <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
     <meta name="twitter:site" content="@jslet">
 
@@ -52,26 +52,26 @@
   "mainEntity": [
     {
       "@type": "Question",
-      "name": "Why does my 80 GB GPU show only 74.5 GiB?",
+      "name": "Why does my 80 GB GPU report 81,920 MiB instead of 80 GB?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "GPU memory is marketed in decimal GB but reported by CUDA in binary GiB — 80 GB = 74.5 GiB. It is not a driver bug; it is the same GB-vs-GiB gap as storage. The calculator converts both ways and references common GPUs so your training-run planning uses the number CUDA actually reports."
+        "text": "Because NVIDIA labels VRAM in binary. The 80 GB on an A100 is 80 GiB, which nvidia-smi reports as 81,920 MiB and which equals 85.9 decimal GB — roughly 7% more bytes than the label implies. The GB-vs-GiB gap is real, but on GPU capacity it runs in your favour rather than against you. Applying the storage conversion here makes every card look 7% smaller than it is."
       }
     },
     {
       "@type": "Question",
-      "name": "How does the GB/GiB gap cause OOM at 3 AM?",
+      "name": "How much of an 80 GiB card can a training run actually use?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "If you plan a training run against the marketing 80 GB but CUDA budgets 74.5 GiB — and fragmentation and allocations add overhead — the run OOMs at the worst moment. The calculator closes the gap by giving you the binary capacity up front, plus the reference table of common GPU memory sizes."
+        "text": "Less than 80 GiB, but not because of units. ECC and reserved rows hold back a few hundred MiB (an H100 80GB reports 81,559 MiB against the A100's 81,920), the CUDA context costs 300 to 600 MiB per process, cuBLAS and cuDNN workspaces take 0.5 to 2 GiB depending on the algorithm selected, and the caching allocator fragments 5 to 15% under variable sequence shapes. A workable planning rule is to budget about 90% of the nvidia-smi total as the design ceiling."
       }
     },
     {
       "@type": "Question",
-      "name": "What should I account for beyond raw VRAM capacity?",
+      "name": "Does a 7B model fit on a single 80 GiB GPU for fine-tuning?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "CUDA context overhead, fragmentation, and concurrent allocations reduce usable memory below even the GiB figure. The calculator's analysis explains the allocation reality so you size batch sizes and quantization with headroom, not at the edge of the reported number."
+        "text": "Full fine-tuning with Adam does not. Mixed precision needs bf16 weights at 14 GB, gradients at 14 GB, fp32 master weights at 28 GB, and two Adam moments at 28 GB each — 112 GB in total, well past the roughly 72 GiB design ceiling. Switching to 8-bit Adam drops the optimizer state to 7 GB each, giving about 70 GB or 65 GiB, which fits with roughly 7 GiB left for activations. That is enough only for short sequences and modest batch sizes; sharded optimizers are the usual answer when it is not."
       }
     }
   ]
@@ -88,24 +88,24 @@
     <div class="container" id="main-content">
         <header>
             <h1>VRAM <span>GB → GiB / MiB</span></h1>
-            <p>Your GPU box says 80 GB on the box. PyTorch OOMs at 74.5 GB. That is not a driver bug — it is the GB vs GiB gap. Vendors sell decimal gigabytes. CUDA allocates binary gibibytes. A 6.9% haircut at every scale. Close the gap before your training run hits a wall at 3 AM.</p>
+            <p>An 80 GB A100 reports 81,920 MiB in nvidia-smi — about 7% more bytes than the label implies, because GPU vendors have always meant GiB when they print GB. The capacity that disappears before your first tensor is not a unit trick: it is ECC rows, the CUDA context, library workspace and allocator fragmentation. Get that arithmetic right and the 3 AM OOM stops being a mystery.</p>
         </header>
 
         <main class="matrix-grid">
             <div class="calculator-card">
-                <h3>Bidirectional VRAM Converter</h3>
-                <p class="card-desc">Put in the number printed on the GPU box. Get the number CUDA actually gives you. The difference is why your 16 GB card reports 14.9 GiB — and why your 80 GB A100 shows 74.5 GiB.</p>
+                <h3>Bidirectional GB ⇄ GiB Converter</h3>
+                <p class="card-desc">Converts a decimal-GB capacity into the binary GiB and MiB that filesystems, allocators and nvidia-smi report. Mind the direction: drive and RAM labels are decimal, but GPU VRAM labels are already binary — an 80 GB card is 80 GiB, not 74.5 GiB. The reference table below shows which is which.</p>
                 <div class="input-group">
-                    <label for="gb-input">GPU VRAM (Decimal GB)</label>
-                    <input type="number" class="input-val unit-input" id="gb-input" value="16" step="any">
+                    <label for="gb-input">Quoted Capacity (decimal GB)</label>
+                    <input type="number" class="input-val unit-input" id="gb-input" value="1000" step="any">
                 </div>
                 <div class="input-group">
-                    <label for="gib-input">GPU VRAM (Binary GiB)</label>
-                    <input type="number" class="input-val unit-input" id="gib-input" value="14.9012" step="any">
+                    <label for="gib-input">Binary Equivalent (GiB)</label>
+                    <input type="number" class="input-val unit-input" id="gib-input" value="931.3226" step="any">
                 </div>
                 <button class="btn-calc">Run Conversion</button>
                 <div class="result-display result-box" style="display: none;">
-                    <h4>BINARY ALLOCATION</h4>
+                    <h4>BINARY CAPACITY</h4>
                     <ul>
                         <li>Exact Binary Capacity: <span class="res-output res-main" id="res-main">--</span></li>
                         <li>Equivalent in MiB: <span class="res-output" id="res-mib">--</span></li>
@@ -115,24 +115,28 @@
 
             <div class="calculator-card">
                 <h3>Common GPU Reference Table</h3>
-                <p class="card-desc">Standard consumer and datacenter GPU VRAM specs with binary-equivalent values.</p>
+                <p class="card-desc">What the vendor prints, what nvidia-smi actually reports, and the same capacity expressed in decimal GB. Note the direction of the gap: every one of these delivers <strong>more</strong> bytes than the label implies, because the label is binary.</p>
                 <div class="table-scroll">
 <table style="width:100%; border-collapse: collapse; font-family: monospace; font-size: 0.85rem; margin-top: 10px;">
                     <thead>
                         <tr style="border-bottom: 1px solid var(--border); color: var(--accent); text-align: left;">
                             <th style="padding: 8px;">GPU</th>
-                            <th style="padding: 8px;">GB (Dec)</th>
-                            <th style="padding: 8px;">GiB (Bin)</th>
+                            <th style="padding: 8px;">Label</th>
+                            <th style="padding: 8px;">nvidia-smi</th>
+                            <th style="padding: 8px;">Actual (GiB)</th>
+                            <th style="padding: 8px;">In decimal GB</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">RTX 4060</td><td style="padding: 8px;">8</td><td style="padding: 8px;">7.45 GiB</td></tr>
-                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">RTX 4070</td><td style="padding: 8px;">12</td><td style="padding: 8px;">11.18 GiB</td></tr>
-                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">RTX 4090</td><td style="padding: 8px;">24</td><td style="padding: 8px;">22.35 GiB</td></tr>
-                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">RTX 5090</td><td style="padding: 8px;">32</td><td style="padding: 8px;">29.80 GiB</td></tr>
-                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">H100 SXM</td><td style="padding: 8px;">80</td><td style="padding: 8px;">74.51 GiB</td></tr>
-                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">H200 SXM</td><td style="padding: 8px;">141</td><td style="padding: 8px;">131.32 GiB</td></tr>
-                        <tr><td style="padding: 8px;">B200</td><td style="padding: 8px;">192</td><td style="padding: 8px;">178.81 GiB</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">T4</td><td style="padding: 8px;">16 GB</td><td style="padding: 8px;">15,360 MiB</td><td style="padding: 8px;">15.00</td><td style="padding: 8px;">16.11</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">A10</td><td style="padding: 8px;">24 GB</td><td style="padding: 8px;">23,028 MiB</td><td style="padding: 8px;">22.49</td><td style="padding: 8px;">24.15</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">L4</td><td style="padding: 8px;">24 GB</td><td style="padding: 8px;">23,034 MiB</td><td style="padding: 8px;">22.49</td><td style="padding: 8px;">24.15</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">RTX 4090</td><td style="padding: 8px;">24 GB</td><td style="padding: 8px;">24,564 MiB</td><td style="padding: 8px;">23.99</td><td style="padding: 8px;">25.76</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">A100 SXM4</td><td style="padding: 8px;">40 GB</td><td style="padding: 8px;">40,960 MiB</td><td style="padding: 8px;">40.00</td><td style="padding: 8px;">42.95</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">L40S</td><td style="padding: 8px;">48 GB</td><td style="padding: 8px;">46,068 MiB</td><td style="padding: 8px;">44.99</td><td style="padding: 8px;">48.31</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">H100 SXM</td><td style="padding: 8px;">80 GB</td><td style="padding: 8px;">81,559 MiB</td><td style="padding: 8px;">79.65</td><td style="padding: 8px;">85.52</td></tr>
+                        <tr style="border-bottom: 1px solid var(--border);"><td style="padding: 8px;">A100 SXM4</td><td style="padding: 8px;">80 GB</td><td style="padding: 8px;">81,920 MiB</td><td style="padding: 8px;">80.00</td><td style="padding: 8px;">85.90</td></tr>
+                        <tr><td style="padding: 8px;">H200 SXM</td><td style="padding: 8px;">141 GB</td><td style="padding: 8px;">143,771 MiB</td><td style="padding: 8px;">140.40</td><td style="padding: 8px;">150.75</td></tr>
                     </tbody>
                 </table>
 </div>
@@ -140,9 +144,26 @@
         </main>
 
         <section class="seo-section">
-            <h2>Why GB ≠ GiB Matters for ML Engineering</h2>
-            <p>Memory vendors use decimal gigabytes: 1 GB = 10⁹ bytes = 1,000,000,000 bytes. Operating systems and CUDA drivers allocate in binary gibibytes: 1 GiB = 2³⁰ bytes = 1,073,741,824 bytes. The 7.4% discrepancy compounds on large models — a 70B parameter model in FP16 expects ~140 GB of weights, but if you spec a 160 GB card thinking it covers the allocation, you will hit an OOM at the CUDA driver level because the runtime sees only ~149 GiB.</p>
-            <p>This tool computes the exact binary capacity from your hardware spec so you can right-size your model sharding, gradient accumulation, and KV-cache budget before launching training or inference jobs.</p>
+            <h2>Why GB ≠ GiB Still Matters — Just Not Where You Expect</h2>
+            <p>The decimal-versus-binary gap is real: 1 GB is 10⁹ bytes, 1 GiB is 2³⁰ bytes (1,073,741,824), and the difference is 6.87%. It wrecks capacity plans for drives and system RAM on a weekly basis. But the version of this story that circulates in ML circles — "your 80 GB GPU only gives you 74.5 GiB" — is backwards, and it is worth knowing why before you size a cluster against it.</p>
+
+            <h3>GPU vendors print GB and mean GiB</h3>
+            <p>nvidia-smi is the ground truth, and it reports in MiB. An A100 80GB reports exactly <strong>81,920 MiB</strong>, which is 80 GiB — not 74.5. A T4 labelled 16 GB reports 15,360 MiB, exactly 15 GiB. An H200 labelled 141 GB reports 143,771 MiB, or 140.40 GiB. In every case the label is the binary figure, and in several cases the card physically carries more bytes than the decimal reading of its own label.</p>
+            <p>So the 0.9313 multiplier is the wrong tool here. Applied to a GPU label it understates capacity by about 7%, which is not a harmless rounding error at fleet scale: 64 cards at 80 GiB hold 5,120 GiB of real memory, and the same fleet written off as "64 × 74.5 = 4,768 GiB" understates it by 352 GiB — more than four cards' worth. Use the multiplier on drives, RAM sticks and data-sheet figures; read the GPU number straight off nvidia-smi.</p>
+
+            <h3>Where the memory actually goes before your first tensor</h3>
+            <p>Capacity is not the same as allocatable memory, and the distance between them has nothing to do with units. Four things take a cut:</p>
+            <ul>
+                <li><strong>ECC and reserved rows</strong> — an H100 80GB reports 81,559 MiB where the A100 reports 81,920, so 361 MiB never reaches the allocator.</li>
+                <li><strong>CUDA context</strong> — 300 to 600 MiB per process, consumed the moment a context is created.</li>
+                <li><strong>Library workspace</strong> — cuBLAS and cuDNN reserve 0.5 to 2 GiB depending on which algorithms are selected at runtime, and that selection shifts with input shape.</li>
+                <li><strong>Caching-allocator fragmentation</strong> — 5 to 15% under variable sequence lengths, and the usual reason a run that fit yesterday does not fit today.</li>
+            </ul>
+            <p>On a single-process job the first three are noise against 80 GiB. On a node running four MPS processes they are not: 4 × 500 MiB of context plus a gigabyte of workspace is roughly 3 GiB gone before any weights are loaded. The planning rule that survives contact with all of this is to design against <strong>90% of the nvidia-smi total</strong> — 72 GiB on an 80 GiB card — and treat the remainder as the buffer that stops fragmentation from killing an overnight run.</p>
+
+            <h3>Worked example: does 7B fine-tuning fit in 80 GiB?</h3>
+            <p>Mixed-precision fine-tuning with Adam holds five things in memory at once. For a 7B model: bf16 weights 14 GB, bf16 gradients 14 GB, fp32 master weights 28 GB, and the two Adam moments at 28 GB each — <strong>112 GB in total</strong>, which does not fit 80 GiB by a wide margin. That arithmetic decides the question, and no unit conversion changes it.</p>
+            <p>Swap in 8-bit Adam and the optimizer state falls to 7 GB per moment: 14 + 14 + 28 + 7 + 7 = 70 GB, or 65 GiB. Against the 72 GiB design ceiling that leaves roughly 7 GiB for activations — workable for short sequences and modest batch sizes, and not workable for long-context training, where the KV cache alone claims several gigabytes per sequence. When it does not fit, the answer is a sharded optimizer (ZeRO stage 2 or FSDP), which partitions exactly the three components that dominate that 112 GB — not a bigger card.</p>
         </section>
         <!-- ── Related Tools ── -->
         <div class="related-tools">
@@ -244,7 +265,7 @@
 
             var gbVal, gibVal;
 
-            if (document.activeElement === gbInput || gbInput.value !== '') {
+            if (document.activeElement === gbInput) {
                 gbVal = parseFloat(gbInput.value);
                 if (isNaN(gbVal) || gbVal < 0) { alert("Invalid GB value."); return; }
                 gibVal = gbVal * GB_TO_GIB;
