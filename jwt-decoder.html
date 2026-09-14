@@ -129,6 +129,33 @@
         </div>
     </section>
 
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🔓 Decoding is not verification</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p>The signature is not a seal you can inspect. It is a value that only the issuer can produce and only a holder of the key can check. This page decodes the header and the payload; it cannot verify the third segment, and it does not claim to. A token that displays cleanly above may be entirely forged.</p>
+            <p>The classic exploit targets the header's <code>alg</code> field, which is attacker-controlled like the rest of the token. Set <code>alg</code> to <code>none</code>, delete the signature, and any library that reads the algorithm from the token will accept it as valid. The mirror image of that mistake is algorithm confusion: a service that signs with RS256 and lets the client pick the verification algorithm can be induced to verify with HS256 using the public key as the HMAC secret — and the public key is, by definition, public.</p>
+            <p>Both attacks reduce to one root cause: trusting the token to describe how it should be checked. Server-side verification has to pin the expected algorithm explicitly, reject <code>none</code> outright, and complete the signature check before it reads a single claim.</p>
+        </div>
+    </section>
+
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">⏱️ The claims that cause incidents</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p><strong>exp, nbf, and iat are Unix timestamps in seconds.</strong> Not milliseconds. JavaScript's <code>Date.now()</code> returns milliseconds, so the standard bug is a token whose expiry appears to fall roughly 55,000 years from now because a seconds value was compared against a millisecond clock. Compare against <code>Math.floor(Date.now() / 1000)</code>, and permit a small skew — 30 to 60 seconds — between issuer and verifier, or tokens will be rejected exactly at the boundary they were designed for.</p>
+            <p><strong>aud and iss are checks, not decoration.</strong> A token minted for one service is not valid at another. If the verifier skips <code>aud</code>, a token issued by a low-privilege application can be replayed against a high-privilege one inside the same issuer's ecosystem. This is a real pattern in multi-tenant systems where every service shares one signing key and each assumes the others are doing the checking.</p>
+            <p><strong>The payload is readable by anyone holding the token.</strong> Base64URL is an encoding, not encryption. Every claim — personal data, internal identifiers, feature flags — is legible to anything that touches the token: a log line, a proxy, browser storage. This is why claims accumulate data they should not. If the contents genuinely need to be confidential, that requires JWE; a plain JWS provides no confidentiality at all, no matter how long the signature is.</p>
+        </div>
+    </section>
+
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">📏 Size, storage, and the logout problem</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p>If you decode a token by hand, note that JWT uses Base64URL rather than plain Base64: <code>+</code> and <code>/</code> become <code>-</code> and <code>_</code>, and the trailing <code>=</code> padding is stripped. Swapping the alphabet back is the first thing to check when a manual decode produces gibberish at the end of a segment.</p>
+            <p>Size is not a minor concern. Every claim is carried on every request, and Base64URL adds about 33% on top of the underlying JSON — a token is always noticeably longer than the data inside it. Browsers cap a cookie at roughly 4 KB, so a large JWT plus a few session attributes reaches the limit and the cookie is dropped, usually without an error the frontend can see. The common workaround, storing the token in <code>localStorage</code>, trades that ceiling for a worse problem: anything able to run JavaScript on the page can read it, which turns any XSS into a full account takeover.</p>
+            <p>The structural cost is revocation. A JWT is self-contained, which is exactly why the server can trust it without a lookup — and also why you cannot log anyone out. Nothing about an issued token changes when a session ends; it stays valid until <code>exp</code> passes. Short lifetimes of 5 to 15 minutes paired with a refresh token are the usual answer, and they reintroduce state on the refresh side, where revocation is actually possible. If instant logout is a requirement, you need a denylist, and a denylist is a lookup — at which point part of the stateless advantage is gone by design rather than by accident.</p>
+        </div>
+    </section>
+
     <footer class="jslet-footer-box">
             <div class="jslet-footer-inner">
                 <div class="jslet-footer-top">

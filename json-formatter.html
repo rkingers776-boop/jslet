@@ -145,6 +145,33 @@
         </div>
     </section>
 
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🔢 The precision trap: big integers change value</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p>JSON defines exactly one number type. There is no integer, no decimal, no 64-bit type — and every parser that matters reads numbers as IEEE 754 double-precision floats. That gives you 15 to 17 significant digits and no more.</p>
+            <p>So IDs drift. Paste <code>1234567890123456789</code> through a formatter built on a JavaScript parser and it comes back as <code>1234567890123456800</code>. Twitter/X, Discord, and Snowflake-style identifiers all live in this range, which is precisely why those APIs return IDs as strings. Pass a raw numeric ID through any float-based parser and the value you get out is not the value you put in — it will match no row in the database, and the failure is silent.</p>
+            <p>Money has the same problem from the other direction. <code>0.1 + 0.2</code> evaluates to <code>0.30000000000000004</code> in every double-based parser, so storing currency as a JSON number invites rounding drift that surfaces months later in a reconciliation. Store amounts as minor units — cents as an integer — or as decimal strings.</p>
+            <p>Two smaller number rules that catch people: leading zeros are illegal, so <code>{"id": 007}</code> is invalid JSON and so are <code>+1</code> and <code>.5</code>. A number may begin with a digit or a minus sign, and a decimal point must be followed by at least one digit.</p>
+        </div>
+    </section>
+
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🕳️ Two failures JSON never reports</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p><strong>Duplicate keys are permitted and resolved silently.</strong> Nothing in the spec requires a parser to reject <code>{"a": 1, "a": 2}</code>. <code>JSON.parse</code> keeps the last value, so a config file that defines a key twice behaves as though the first definition never existed — and a formatter that round-trips through a parsed object destroys the evidence. When two systems both generate the same config, this is how a setting disappears with no error anywhere in either pipeline.</p>
+            <p><strong>A trailing comma is not the same failure as a missing comma.</strong> Missing punctuation stops the parser at an exact character, which is easy to fix. A trailing comma is subtler: the spec forbids it, but JSON5, JSONC, and JavaScript object literals all allow it. The same text is valid in your editor's <code>settings.json</code> and invalid the moment it crosses the wire. VS Code configuration files and <code>tsconfig.json</code> are the main reason people paste something that looks correct into a strict validator and get an error they cannot see.</p>
+        </div>
+    </section>
+
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">📦 Pretty-printing costs bytes — usually a fair trade</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p>Indenting two spaces per level inflates a payload by roughly 10–30%. For a config file that is irrelevant; for a response body served a million times a day it is not. That asymmetry is the whole reason APIs ship minified JSON while their documentation shows indented examples.</p>
+            <p>The bigger risk at the boundary is encoding, not whitespace. A file saved as UTF-8 with a byte order mark fails in parsers that do not skip the BOM, and the error surfaces as an unexpected character at position 0 — which reads like corruption rather than an encoding problem. The same content re-saved as UTF-16 fails almost everywhere. If a payload is rejected and looks perfect, check the first three bytes before you check the braces.</p>
+            <p>For logs, the practical alternative to pretty-printed JSON is NDJSON: one complete object per line, no enclosing array. It streams, it greps, and a truncated final line damages one record instead of invalidating the whole file. Format for humans when a human will read it; minify and stream when only a machine will.</p>
+        </div>
+    </section>
+
     <footer class="jslet-footer-box">
             <div class="jslet-footer-inner">
                 <div class="jslet-footer-top">

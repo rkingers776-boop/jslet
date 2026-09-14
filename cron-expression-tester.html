@@ -141,6 +141,34 @@
                 <p><strong>Day-of-week numbering:</strong> 0=Sunday, 1=Monday, ..., 6=Saturday. Some cron implementations use 7 for Sunday. This tool accepts both.</p>
                 <p><strong>Day-of-month vs. day-of-week:</strong> When both are specified (not <code>*</code>), the cron job runs when <em>either</em> condition is met. For example, <code>0 0 1 * 1</code> runs at midnight on the 1st of the month <strong>and</strong> every Monday.</p>
                 <p><strong>Common pitfalls:</strong> 1) Using <code>0</code> for month (months start at 1, not 0). 2) Forgetting that <code>*/N</code> starts from the minimum value, not from current time —<code>*/15</code> in minutes means 0, 15, 30, 45. 3) Assuming 7-field cron (with seconds and year) — this tool uses the standard 5-field format.</p>
+            </div>
+        </section>
+        <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:16px;">
+            <h2 style="font-size:1rem;">🕐 Daylight saving: cron reads the wall clock</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p>Cron schedules against the system's local wall clock rather than against elapsed time. Twice a year that distinction produces a discrepancy nobody notices until a job is missing from the results.</p>
+                <p>In spring, when 02:00 jumps directly to 03:00, anything scheduled inside that hour is skipped for the day — <code>30 2 * * *</code> does not run on the switchover date. In autumn, when 02:00 occurs twice, the same job runs twice.</p>
+                <p>What to do depends on the job. A nightly aggregation can simply move outside the transition hour: <code>0 4 * * *</code> is safe in every timezone that shifts by one hour at 02:00. A job that must run exactly once per calendar day regardless of clock changes should be scheduled in UTC — set <code>CRON_TZ=UTC</code> at the top of the crontab where the implementation supports it, and convert inside the job.</p>
+            </div>
+        </section>
+        <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:16px;">
+            <h2 style="font-size:1rem;">🧩 Why it works when you type it and fails in cron</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p>Cron starts jobs with a minimal environment: no login shell, no <code>~/.bashrc</code>, and a <code>PATH</code> that is usually just <code>/usr/bin:/bin</code>. Four consequences account for almost every "it runs fine from the terminal" report.</p>
+                <ul>
+                    <li><strong>Command not found.</strong> A binary in <code>/usr/local/bin</code>, or anything managed by a version manager, is not on cron's PATH. Use the absolute path in the crontab rather than exporting PATH and hoping it propagates.</li>
+                    <li><strong>Environment variables are gone.</strong> API keys, virtualenv activation, <code>NODE_ENV</code> — none of it exists. Define what the job needs at the top of the crontab, or source a file from inside the script.</li>
+                    <li><strong>Output goes to email.</strong> A job that fails silently is usually mailing its error somewhere nobody reads. Redirect both streams explicitly: <code>&gt;&gt; /var/log/job.log 2&gt;&amp;1</code>. Without that, failures vanish.</li>
+                    <li><strong>Percent signs are special.</strong> In a crontab, <code>%</code> is interpreted as a newline and everything after it becomes the job's standard input. A date like <code>date +%Y-%m-%d</code> has to be written <code>date +\%Y-\%m-\%d</code>. This single rule has broken more log-rotation scripts than any other.</li>
+                </ul>
+            </div>
+        </section>
+        <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:16px;">
+            <h2 style="font-size:1rem;">🔁 Overlap, and counting runs before you commit</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p>Cron has no concept of a job that is still running. Let a backup take 90 minutes while the schedule fires hourly and you get two processes competing for the same files, then three. The standard guard is a lock — wrap the command so an overlapping run exits instead of stacking: <code>flock -n /var/lock/backup.lock /usr/local/bin/backup.sh</code>.</p>
+                <p>It is worth multiplying a schedule out before deploying it. Take <code>*/15 9-17 * * 1-5</code>: four firings per hour, nine hours in the window, about 21.7 weekdays in an average month. That lands at <strong>4 × 9 × 21.7 ≈ 782 runs per month</strong>, or roughly 9,400 a year. If a run costs a few cents of API calls or occupies a worker for a minute, that arithmetic — not the code — decides the bill. The run-count panel above does the multiplication for you.</p>
+                <p>If an expression is hard to read, treat that as a signal. <code>0 3 * * 0</code> and <code>0 3 * * 7</code> both mean Sunday at 03:00 in most implementations, which is exactly the kind of ambiguity a named macro avoids: <code>@daily</code>, <code>@weekly</code>, <code>@reboot</code> all work in Vixie cron. For anything needing retries, dependencies, or logging by default, a systemd timer is the better tool — cron's advantage is that it exists everywhere and asks you to learn nothing.</p>
                 <p>See also: <a href="/cron-execution-frequency-per-month">Cron Execution Frequency Per Month</a> · <a href="/unix-timestamp-converter">Unix Timestamp Converter</a> · <a href="/chmod-calculator">Chmod Calculator</a></p>
             </div>
         </section>

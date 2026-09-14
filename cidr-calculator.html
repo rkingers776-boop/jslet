@@ -157,6 +157,41 @@
         </div>
     </section>
 
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">📖 Where the &ldquo;minus two&rdquo; rule breaks</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p>Every subnetting tutorial teaches <code>2^(32-prefix) - 2</code>. The formula assumes a classic broadcast domain, and it stops being true at both ends of the prefix range — and inside a cloud VPC.</p>
+            <p><strong>/31 — two hosts, nothing wasted.</strong> RFC 3021 defines /31 for point-to-point links. A /31 contains exactly two addresses and has no network or broadcast address, because there is no third party to broadcast to. Two routers on a serial link simply use both. The textbook formula says a /31 has zero usable hosts.</p>
+            <p><strong>/32 — one host, by definition.</strong> A /32 is a single address, and that is how host routes are written everywhere: <code>203.0.113.7/32</code> in a firewall rule or a route table means that one machine, not a range. The formula returns a negative number here.</p>
+            <p><strong>Cloud subnets reserve more than two.</strong> AWS removes five addresses from every subnet: the network address, the VPC router at base+1, the DNS resolver at base+2, one held for future use at base+3, and the broadcast address at the top. A <code>/24</code> in a VPC therefore yields <strong>251</strong> assignable addresses, not 254, and a <code>/28</code> yields <strong>11</strong>, not 14. Azure reserves five as well; GCP reserves four. Size subnets from the textbook number and your smallest subnets will come up short by exactly the amount you did not account for.</p>
+        </div>
+    </section>
+
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">📐 Worked example: splitting a /22 into four</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p>Take <code>10.0.0.0/22</code> — 1,024 addresses, of which 1,022 are usable on paper and 1,019 are assignable in AWS — and suppose you need four subnets of comparable size.</p>
+            <p>A /22 leaves 10 host bits. Moving to a /24 borrows two of them for the network, which gives <code>2^2 = 4</code> subnets of <code>2^8 - 2 = 254</code> usable addresses each:</p>
+            <ul>
+                <li><code>10.0.0.0/24</code> → 10.0.0.1 – 10.0.0.254</li>
+                <li><code>10.0.1.0/24</code> → 10.0.1.1 – 10.0.1.254</li>
+                <li><code>10.0.2.0/24</code> → 10.0.2.1 – 10.0.2.254</li>
+                <li><code>10.0.3.0/24</code> → 10.0.3.1 – 10.0.3.254</li>
+            </ul>
+            <p>Notice what happened to the third octet: it went 0, 1, 2, 3. That is not a coincidence — each borrowed bit doubles the subnet count and halves the size, so the boundary always lands on a power of two. That is the whole of VLSM. Decide how many subnets you need, round up to the next power of two, borrow that many bits.</p>
+            <p>The same arithmetic in reverse explains why a /23 is awkward to split evenly: it is already two /24s, so you get two subnets or four /25s, never three.</p>
+        </div>
+    </section>
+
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">⚠️ Three mistakes this calculator catches</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p><strong>1. Budgeting the address count instead of the host range.</strong> <code>192.168.1.0/24</code> holds 256 addresses but 254 hosts. Teams that plan for 256 devices per /24 run out two addresses early, every time. The near-miss version is worse: writing <code>192.168.1.1/24</code> as though .1 were the network. The network is <code>192.168.1.0</code>; .1 is simply the first host.</p>
+            <p><strong>2. Overlapping ranges nobody compared.</strong> <code>10.0.0.0/16</code> and <code>10.0.128.0/17</code> look like different networks until you see that the second sits entirely inside the first. This is the usual cause of a VPN or peering link that sends half its traffic to the wrong side. Check every pair of CIDRs before you connect two networks, not just the pairs you suspect.</p>
+            <p><strong>3. Picking a prefix with no room to grow.</strong> A VPC created at /24 is one subnet with nothing left to divide. AWS's own guidance is to start a VPC at /16 and carve /24s out of it. Changing that decision later means re-creating the VPC and re-addressing everything inside it, so it is worth ten seconds now.</p>
+        </div>
+    </section>
+
     <footer class="jslet-footer-box">
             <div class="jslet-footer-inner">
                 <div class="jslet-footer-top">

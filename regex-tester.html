@@ -166,6 +166,40 @@
         </div>
     </section>
 
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">✂️ Greedy vs lazy: why &lt;.*&gt; matches too much</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p>Quantifiers are greedy by default. They consume as much as possible and only give characters back when the rest of the pattern cannot otherwise be satisfied. Run <code>&lt;.*&gt;</code> against <code>&lt;a&gt;&lt;b&gt;&lt;c&gt;</code> and you get one match — the entire string — not three. The engine took everything available, then satisfied the closing bracket with the last one it could find.</p>
+            <p>Appending <code>?</code> makes the quantifier lazy, so it consumes as little as possible: <code>&lt;.*?&gt;</code> returns <code>&lt;a&gt;</code>, <code>&lt;b&gt;</code>, and <code>&lt;c&gt;</code> as separate matches. This is the most common single-character correction in real regexes. It is also where the usual advice runs out — a lazy dot still crosses newlines under the <code>s</code> flag, and it will happily match across boundaries that a real parser would treat as structure.</p>
+            <p>Greedy is not a bug, it is answering a different question. To take the last path segment of <code>/a/b/c</code>, the greedy <code>/[^/]*$</code> is correct. Character classes like <code>[^/]</code> are the safer instrument whenever you know what the field cannot contain, because they physically cannot overrun the delimiter the way <code>.*</code> can.</p>
+        </div>
+    </section>
+
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">💥 Catastrophic backtracking: the regex that hangs a process</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <p>A backtracking engine explores alternatives. When a pattern admits several ways to divide the same input, that exploration can grow exponentially with input length. Take <code>^(a+)+$</code> against a run of <code>a</code> characters followed by a single <code>!</code>. The engine tries every partition of the input among the nested quantifiers before it can conclude that the anchor will never be satisfied.</p>
+            <p>The numbers do not degrade gracefully. At 20 <code>a</code>s the work is on the order of 2^20 — milliseconds. At 30 it is 2^30, about a billion steps, and the thread stops responding. Thirty-one characters is enough to occupy a CPU core. This is the mechanism behind ReDoS, and it applies to every engine that backtracks: JavaScript, Python, Java, and PCRE alike.</p>
+            <p>Patterns that trigger it share one shape — nested quantifiers over overlapping alternatives, such as <code>(a+)+</code>, <code>(a|a)*</code>, or <code>(\w+\s?)*</code>. Untrusted input reaching one of those is a denial-of-service waiting for a request.</p>
+            <p>Three ways out. Rewrite so the alternatives cannot overlap: <code>^a+$</code> accepts exactly the strings <code>^(a+)+$</code> accepts and runs in linear time. Bound the input length before matching, which caps the worst case even when the expression cannot be rewritten. Or move the check to an engine with a different design — RE2, Go's <code>regexp</code>, and Rust's <code>regex</code> crate guarantee linear time by giving up backreferences and lookaround. That trade is usually acceptable for validation, which is where the untrusted input actually arrives.</p>
+        </div>
+    </section>
+
+    <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:20px;">
+        <h2 style="font-size:1rem;">🎯 Flags, and the stateful /g bug</h2>
+        <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+            <ul>
+                <li><code>i</code> — case-insensitive.</li>
+                <li><code>u</code> — Unicode mode. Fixes surrogate-pair handling so that <code>.</code> and quantifiers operate on code points rather than UTF-16 units. Without it, a single emoji counts as two characters.</li>
+                <li><code>m</code> — multiline. Makes <code>^</code> and <code>$</code> match at line breaks instead of only at the start and end of the whole string. Without it, <code>^foo</code> against multi-line text matches at most once, which is the usual explanation for "it only found the first one".</li>
+                <li><code>s</code> — dotall. Without it, <code>.</code> excludes <code>\n</code>, which is why a pattern that works on one line fails on two.</li>
+                <li><code>g</code> — global. This is the one that causes bugs.</li>
+            </ul>
+            <p>A regex carrying <code>g</code> keeps a <code>lastIndex</code> cursor between calls. That makes <code>re.test()</code> return alternating results when the same compiled object is reused — the symptom is a validation function that accepts a value, rejects the identical value on the next call, then accepts it again. Either omit <code>g</code> when you are only testing, or reset <code>re.lastIndex = 0</code> before each use.</p>
+            <p>One more thing the tester cannot tell you: dialects are not interchangeable. Lookbehind arrived in JavaScript with ES2018 but does not exist in RE2 or Go. Backreferences are unavailable in RE2. Possessive quantifiers and atomic groups work in PCRE and Java but not in JavaScript. A pattern verified here can still fail in a Go service, for reasons this page has no way to display.</p>
+        </div>
+    </section>
+
     <footer class="jslet-footer-box">
             <div class="jslet-footer-inner">
                 <div class="jslet-footer-top">

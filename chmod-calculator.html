@@ -131,6 +131,27 @@
             <h2 style="font-size:1rem;">🟢📖 The Bit Math</h2>
             <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
                 <p>Each digit is <code>read(4) + write(2) + execute(1)</code>. The three digits are owner, group, others. So <code>755</code> = owner <code>7</code> (rwx), group <code>5</code> (r-x), others <code>5</code> (r-x). Directories need the execute bit (<code>x</code>) to be <em>traversable</em> — that is why <code>644</code> on a directory makes it inaccessible.</p>
+            </div>
+        </section>
+        <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:16px;">
+            <h2 style="font-size:1rem;">🔐 The leading digit: setuid, setgid, sticky</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p>Most chmods are three digits, but the mode can take a fourth. The leading digit is the special-bits octet, and it redefines the position it occupies.</p>
+                <ul>
+                    <li><strong>4 — setuid.</strong> The program runs with the permissions of its owner instead of the user who invoked it. <code>/usr/bin/passwd</code> is mode 4755 for exactly this reason: anyone may run it, but it can only rewrite <code>/etc/shadow</code> because it briefly becomes root. Note that setuid on a shell script does nothing on Linux — the kernel ignores the bit, which surprises people who test it and conclude the feature is broken.</li>
+                    <li><strong>2 — setgid, on a directory.</strong> This is the bit that still earns its keep. Files created inside a setgid directory inherit the directory's group rather than the creator's primary group. A shared <code>/srv/project</code> at 2775 means every teammate's output stays group-readable without anyone running chgrp afterwards. Without it you get the familiar shared-directory mess where half the files belong to the wrong group and nobody can tell why.</li>
+                    <li><strong>1 — sticky.</strong> When set on a directory, only a file's owner (or root) may delete or rename it, even though everyone can write there. <code>/tmp</code> is 1777 for this reason. A 777 directory without the sticky bit lets any user delete any other user's files, which is a quiet way to break a multi-tenant machine.</li>
+                </ul>
+                <p>Related, and usually confused with chmod: <code>umask</code> is why new files appear as 644 and not 666. The kernel starts from the maximum (666 for files, 777 for directories) and subtracts the umask. With the conventional <code>umask 022</code>, 666 becomes 644 and 777 becomes 755. If a process creates files that are group-writable without you asking, the umask of that process is the thing to change — chmod on the parent directory will not help.</p>
+            </div>
+        </section>
+        <section style="margin-top: 24px; border-top:2px solid var(--border); padding-top:16px;">
+            <h2 style="font-size:1rem;">⚠️ Four ways chmod bites</h2>
+            <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
+                <p><strong>chmod -R 755 on a source tree.</strong> The recursive flag applies one mode to everything, files and directories alike, so every file underneath becomes executable. What you actually want is 644 for files and 755 for directories. The symbolic form does that in one pass: <code>chmod -R u=rwX,go=rX</code>. A capital <code>X</code> sets execute only where it is already set, or where the target is a directory.</p>
+                <p><strong>SSH keys that are too open.</strong> <code>ssh</code> refuses a private key any other user can read, with the message <em>Permissions 0644 for 'id_rsa' are too open</em>. The expected mode is 600 on the key and 700 on <code>~/.ssh</code>. This is the rare case where a group-read bit is a hard failure rather than a style question.</p>
+                <p><strong>777 as a debugging move.</strong> Making a directory world-writable to silence a permission error usually means the real cause is ownership, or a missing execute bit on a parent directory in the path. What you get instead is a directory anyone can drop a file into — and on a web root that is a direct route to running someone else's code. CI scanners flag it because the failure mode is severe, not because the number is unlucky.</p>
+                <p><strong>Expecting Git to track modes.</strong> Git records exactly one permission bit: whether a file is executable. Everything enters the index as 100644 or 100755, and nothing else. Group and other permissions are not versioned at all, so a checkout on another machine can produce a mode you never set. <code>core.fileMode=false</code> hides that difference; it does not resolve it.</p>
                 <p>See also: <a href="/cron-expression-tester">Cron Expression Tester</a> · <a href="/hash-generator">Hash Generator</a> · <a href="/password-generator">Password Generator</a> · <a href="/devops-utilities">DevOps Utilities</a> · <a href="/security-sre">Security &amp; SRE</a></p>
             </div>
         </section>
