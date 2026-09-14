@@ -145,6 +145,26 @@
             <p>ISPs market bandwidth in megabits per second (Mbps). Every storage metric — NVMe throughput, S3 egress, CDN logs — reports in megabytes per second (MB/s). The conversion is straightforward (÷8) but the implications compound: protocol overhead (TCP/IP headers, Ethernet framing, TLS negotiation) consumes ~3–7% of the wire rate. A 10 Gbps link theoretically delivers 1,250 MB/s; in practice, expect ~1,160 MB/s for bulk transfer with jumbo frames.</p>
             <p>For cloud egress planning, this gap directly impacts your monthly bill: AWS charges per GB transferred, and underestimating payload size by the bit/byte factor of 8 means you'll provision 8× less bandwidth than needed — or pay 8× more in overage fees than budgeted.</p>
         </section>
+
+        <section class="seo-section">
+            <h2>Where the 8&times; conversion breaks: decimal vs binary, and why a link never hits its rating</h2>
+            <p>The &divide;8 conversion is exact only in decimal units. 1 Mbps is 1,000,000 bits per second and 1 MB/s is 1,000,000 bytes per second, so 1 Mbps = 0.125 MB/s. But storage and operating systems report in binary units: 1 MiB/s is 1,048,576 bytes per second. If your target metric is MiB/s — and inside Linux, on NVMe datasheets and in most cloud volume specs it is — the divisor is 8.389, not 8. At 10 Gbps that 4.6% gap is 54 MB/s of capacity you planned for and never had.</p>
+
+            <h3>Worked example: a 10 Gbps link is not 1,250 MB/s</h3>
+            <p>10 Gbps &divide; 8 gives 1,250 MB/s on paper. Nothing on a real network delivers that, because the rating is a wire rate and the payload is smaller than the frame:</p>
+            <p><strong>Ethernet framing.</strong> A 1,500-byte MTU carries a 1,460-byte TCP payload, and 1,460 &divide; 1,538 including headers is 94.9% efficiency. Raising MTU to 9,000 bytes (jumbo frames) lifts payload efficiency to 99.1%, which is why every bulk-transfer path argues about MTU.<br>
+            <strong>TLS.</strong> Record headers and padding cost roughly 0.5&ndash;1% on top of framing.<br>
+            <strong>Protocol dynamics.</strong> TCP slow-start after idle, congestion window recovery and ACK traffic consume a few percent on anything shorter than a long-lived bulk transfer.</p>
+            <p>Stack those and a 10 Gbps link yields about <strong>1,175 MB/s</strong> for sustained bulk transfer with jumbo frames, and closer to 1,150 MB/s without them. The 1,250 MB/s figure is a marketing number; the deliverable number is 92&ndash;94% of it.</p>
+
+            <h3>Why cloud specs are ambiguous on purpose</h3>
+            <p>AWS describes EC2 network performance in Gbps and EBS volume throughput in MB/s — and the two do not share a denominator. A gp3 volume rated at 1,000 MB/s means 1,000 MiB/s of <em>usable payload</em>, because AWS measures block storage in binary units. Moving that payload over the wire needs about 8.6 Gbps of line rate once framing and protocol overhead are added. Size an instance's network bandwidth against a volume's throughput rating by dividing by 8 and you under-provision the instance by roughly 7%.</p>
+            <p>The practical rule: <strong>storage throughput is payload, network bandwidth is line rate.</strong> Crossing between them, divide by 8 and then add back 6&ndash;8% for overhead.</p>
+
+            <h3>A backup window that misses its slot</h3>
+            <p>The classic failure is planning a window from the wrong unit. Suppose you must move 1 TB to object storage overnight over a 1 Gbps link. Working in decimal: 1 TB is 1,000,000 MB, the link delivers 125 MB/s, so the transfer takes 8,000 seconds — 2 hours 13 minutes. That already exceeds a two-hour window before any real-world degradation, and with framing overhead the true figure is closer to 2 hours 25 minutes. The same mistake in the other direction is worse: assuming 1 Gbps means 1,000 MB/s overstates capacity eightfold and turns a four-hour job into a thirty-two-hour one.</p>
+        </section>
+
         <!-- ── Related Tools ── -->
         <div class="related-tools">
             <h3>Related Tools</h3>

@@ -144,6 +144,23 @@
             <p>IOPS and throughput are coupled by I/O size: Throughput = IOPS × Block Size. At the common 4 KB filesystem block boundary, 10,000 IOPS ≈ 40 MB/s. At 64 KB — typical for sequential read workloads like video streaming or log ingestion — the same 10,000 IOPS delivers 640 MB/s. This is why database workloads (small random I/O) are IOPS-bound while media serving (large sequential I/O) is throughput-bound.</p>
             <p>When provisioning cloud volumes, the IOPS-to-throughput ratio is critical. AWS gp3 volumes decouple the two (you can scale IOPS and throughput independently), while older gp2 volumes are tied at a fixed 3:1 IOPS-to-MB/s ratio. Under-provisioning throughput for a high-IOPS, large-block workload creates a silent bottleneck that manifests as P99 latency spikes under load. Use this estimator to validate your tier selection before deployment.</p>
         </section>
+
+        <section class="seo-section">
+            <h2>The two ceilings: IOPS and throughput are separate buckets</h2>
+            <p>Throughput = IOPS &times; block size is the whole relationship, but it hides the provisioning detail that costs money: <strong>cloud volumes limit IOPS and throughput independently, and the lower ceiling wins.</strong> A gp3 volume can be configured to 16,000 IOPS and 1,000 MB/s simultaneously. Ask for 16,000 IOPS at a 64 KB block size and you need 1,024 MB/s — the IOPS bucket has room, the throughput bucket does not, and the volume caps at 1,000 MB/s, delivering 15,625 IOPS instead of the 16,000 you paid for.</p>
+            <p>Work the numbers at the common block sizes to see how far apart the workable ranges sit: 10,000 IOPS is 40 MB/s at 4 KB, 160 MB/s at 16 KB, and 640 MB/s at 64 KB. The same IOPS figure describes a modest database and a media server, and nothing in the label "IOPS" tells you which one you are running.</p>
+
+            <h3>IOPS is a concurrency problem, not a bandwidth problem</h3>
+            <p>This is the part that catches single-threaded applications. A 4 KB random read on a cloud volume completes in roughly 1 ms on average. One outstanding request therefore yields at most 1,000 IOPS — the ceiling is the queue, not the disk. Reaching 16,000 IOPS takes about 16 requests in flight at once. An application issuing synchronous, one-at-a-time reads cannot consume the provisioned IOPS no matter what the volume is rated for, and paying for 16,000 IOPS to serve a synchronous workload buys latency you will never see.</p>
+            <p>The diagnostic follows directly: if <code>iostat</code> shows average queue depth near 1 while measured IOPS sits far below provisioned IOPS, the bottleneck is the application's I/O model. If queue depth is high and IOPS still falls short, you have hit a real ceiling and provisioning will help.</p>
+
+            <h3>Worked example: why WAL writes need a different volume</h3>
+            <p>PostgreSQL writes WAL in 8 KB sequential records. Sustaining 500 MB/s of WAL throughput requires 500 MB &divide; 8 KB = <strong>62,500 IOPS</strong> at that block size — nearly four times the gp3 IOPS ceiling of 16,000. No amount of gp3 provisioning reaches it, because the limit is structural, not budgetary. At the gp3 maximum of 16,000 IOPS with 8 KB records you top out at 128 MB/s of WAL. High-write database deployments therefore move WAL to io2 Block Express (up to 256,000 IOPS) or to instance-local NVMe, and the reason is the block-size coupling rather than raw speed.</p>
+
+            <h3>The gp2 heritage trap</h3>
+            <p>Older guidance dies slowly, and gp2 is where most of it comes from. A gp2 volume scales at 3 IOPS per GB up to 16,000 IOPS, with a throughput formula of IOPS &times; 256 KB — but capped absolutely at 250 MB/s. A 1 TB gp2 volume provisions 3,000 IOPS, which the formula would translate to 768 MB/s, and then the 250 MB/s cap applies. gp3 decoupled both dimensions: 3,000 IOPS and 125 MB/s at baseline, each scalable independently. Any capacity plan that still assumes throughput follows IOPS on a fixed 256 KB multiplier is describing a volume type AWS stopped recommending years ago.</p>
+        </section>
+
         <!-- ── Related Tools ── -->
         <div class="related-tools">
             <h3>Related Tools</h3>

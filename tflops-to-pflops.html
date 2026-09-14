@@ -144,6 +144,26 @@
             <p>A single H100 GPU delivers approximately 1,980 TFLOPS in FP8 dense matmul. A single 8-GPU DGX node pushes ~15.8 PFLOPS. Scale to 1,000 GPUs and you're contending with 1.98 exaflops of theoretical throughput — provided your interconnect fabric (NVLink + InfiniBand) doesn't bottleneck the bisection bandwidth.</p>
             <p>This converter helps infrastructure engineers translate between the node-level TFLOPS spec sheets and the aggregated PFLOPS numbers that procurement and capacity-planning teams actually budget against. Always derate theoretical peaks by 30–40% for real-world sustained throughput once you account for memory-bound kernels, network contention, and checkpointing overhead.</p>
         </section>
+
+        <section class="seo-section">
+            <h2>The precision ladder: one GPU, six different TFLOPS numbers</h2>
+            <p>Vendor spec sheets quote the highest number the silicon can produce under the most favourable precision, and that number is almost never the one your workload achieves. The H100 SXM illustrates the spread across a single part:</p>
+            <p><strong>FP64:</strong> 34 TFLOPS · <strong>FP64 tensor core:</strong> 67 TFLOPS · <strong>FP32:</strong> 67 TFLOPS · <strong>TF32 tensor core:</strong> 495 TFLOPS dense · <strong>BF16 / FP16 tensor core:</strong> 990 TFLOPS dense · <strong>FP8 tensor core:</strong> 1,979 TFLOPS dense</p>
+            <p>The headline figure is the FP8 dense number, and the sparse variant doubles it to 3,958. Between the top and bottom of that ladder sits a factor of 58. A TFLOPS figure quoted without a precision label carries no information, and comparing one generation's number against a differently-labelled number from another is how capacity plans end up wrong by an order of magnitude.</p>
+
+            <h3>Worked example: the DGX node that benches at 3 PFLOPS</h3>
+            <p>An 8-GPU DGX H100 node advertises 8 × 1,979 = 15.8 PFLOPS. Walk it down to what a real training run sees:</p>
+            <p><strong>Precision.</strong> Pretraining runs in BF16 with FP32 master weights, so the applicable dense rate is 990 TFLOPS per GPU rather than 1,979 — the node is really 7.9 PFLOPS.<br>
+            <strong>Sparsity.</strong> The doubled figures require 2:4 structured sparsity in the model. Essentially no frontier model is trained sparse, so the sparse rate is unusable.<br>
+            <strong>Model FLOPs utilisation.</strong> Real training runs reach 35–45% MFU once attention softmax, layer norms, gradient synchronisation and pipeline bubbles are counted. At 40%, the 7.9 PFLOPS node delivers about <strong>3.2 PFLOPS of useful work</strong>.</p>
+            <p>A node marketed at 15.8 PFLOPS benches at roughly 3.2. The gap is not marketing dishonesty — every step is a documented property of the hardware — but it is the difference between a training estimate that holds and one that slips by a factor of five.</p>
+
+            <h3>Turning PFLOPS into a delivery date</h3>
+            <p>Training compute for a dense transformer is approximately <strong>6 × N<sub>params</sub> × N<sub>tokens</sub></strong> FLOPs. For a 7B model over 2 trillion tokens that is 6 × 7 × 10<sup>9</sup> × 2 × 10<sup>12</sup> = 8.4 × 10<sup>22</sup> FLOPs. Divide by the effective 3.2 × 10<sup>15</sup> FLOPS of the node above and you get 2.6 × 10<sup>7</sup> seconds —</p>
+            <p><strong>roughly 300 days on a single DGX node.</strong></p>
+            <p>Run the same job on 128 nodes with reasonable scaling efficiency and it lands near three days. This is the arithmetic that makes multi-node training mandatory rather than aspirational, and it also shows why interconnect matters more than the per-chip number: at 128 nodes the bisection bandwidth of the fabric, not the FLOP rating of the GPUs, decides whether the aggregate is 128× or something considerably less. Derate theoretical peaks by 30–40% before committing to a schedule, and treat any estimate built on the dense FP8 figure as fiction.</p>
+        </section>
+
         <!-- ── Related Tools ── -->
         <div class="related-tools">
             <h3>Related Tools</h3>

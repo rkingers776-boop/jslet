@@ -144,6 +144,25 @@
             <p>The 4 bytes-per-token estimate is derived from UTF-8 encoding averages on English-dominated text corpora. Non-English languages (CJK scripts in particular) produce fewer bytes per token due to more compact semantic encoding per Unicode codepoint. Multilingual datasets should budget 3–5 bytes per token depending on language distribution.</p>
             <p>Raw text storage is only the first layer. Training infrastructure multiplies this footprint: tokenized integer sequences double the storage (4 bytes per token ID), shuffled and packed sequences add another 1–1.5×, and the final dataloader memory-map typically requires 2–3× the raw corpus size. A 10 TB raw corpus often translates to 25–30 TB of training-ready storage — before replication, snapshots, or backup. Factor this into your HPC cluster procurement or cloud NAS provisioning from the start.</p>
         </section>
+
+        <section class="seo-section">
+            <h2>The 4-bytes-per-token rule is an English average, and it moves with language and content type</h2>
+            <p>The 4 bytes-per-token heuristic comes from tokenizer behaviour on English prose: byte-pair encoding learns frequent character sequences, so common English words collapse into one or two tokens and the corpus settles near four UTF-8 bytes per token. Change the language or the content type and the ratio moves substantially, because the tokenizer's vocabulary was trained predominantly on English text.</p>
+            <p><strong>CJK scripts</strong> are the clearest case. A Chinese character is three UTF-8 bytes and typically costs one to two tokens depending on the tokenizer's merge rules, so the ratio falls to roughly 1.5–3 bytes per token — <em>fewer</em> bytes per token than English, which means the same storage budget holds more tokens than an English-calibrated estimate predicts. A team planning mixed-language training on a 4 bytes/token assumption will overestimate available tokens for the CJK portion while underestimating the sequence lengths it must handle.<br>
+            <strong>Source code</strong> moves the other way. Dense punctuation, indentation and identifier naming conventions fragment into more tokens per byte, landing near 3–3.5 bytes per token. A 1 TB code corpus holds meaningfully fewer tokens than 1 TB of prose, and per-token training cost does not care about the difference.<br>
+            <strong>Structured data</strong> — JSON, logs, CSV — is the worst case for tokenizer efficiency, because numeric strings and punctuation rarely merge into multi-character tokens.</p>
+
+            <h3>Worked example: a 10 TB corpus is not 10 TB of training storage</h3>
+            <p>Start with 10 TB of raw English text. At 4 bytes per token that is 2.5 × 10<sup>12</sup> tokens, and storing them as 32-bit integer IDs consumes 4 bytes each — another 10 TB, so the tokenized corpus is nominally one-to-one with the raw text. The inflation happens downstream:</p>
+            <p>Shuffling and packing for training requires a reordered copy, adding 1–1.5×. Train/validation splits add their own copies. Memory-mapped dataloader shards typically need 2–3× the raw corpus to avoid random I/O during training. Replication across nodes, intermediate checkpoints and snapshot retention stack on top of that.</p>
+            <p>The practical multiplier is <strong>2.5–3×</strong>: a 10 TB raw corpus becomes 25–30 TB of training-ready storage. Procurement conversations that quote the raw figure produce clusters that run out of scratch space in week two — a predictable failure, and entirely arithmetic.</p>
+
+            <h3>The other end of the pipeline: the KV cache dwarfs the weights</h3>
+            <p>Storage planning around tokens does not stop at training data. At inference the key-value cache grows linearly with context length and batch size, and at long contexts it exceeds the model weights. For a 7B model in FP16 with 32 layers, 32 attention heads and a head dimension of 128, the KV cache for a single 8,192-token sequence is:</p>
+            <p>2 (keys and values) × 32 layers × 32 heads × 128 dim × 8,192 tokens × 2 bytes ≈ <strong>4 GB</strong></p>
+            <p>The weights themselves are 7B × 2 bytes = 14 GB. A single long-context request therefore consumes memory equal to 29% of the model, and 16 concurrent requests at that context length need 64 GB of accelerator memory before weights are counted at all. This is why context length rather than parameter count drives GPU memory sizing in serving deployments — and why a token calculator that stops at "how much disk does my corpus need" misses the more expensive half of the question.</p>
+        </section>
+
         <!-- ── Related Tools ── -->
         <div class="related-tools">
             <h3>Related Tools</h3>

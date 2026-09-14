@@ -144,6 +144,25 @@
             <p>The conversion is straightforward: 1 Gbps sustained for 24 hours = (1 × 10⁹ bits/s × 86,400 s) ÷ (8 bits/byte × 10¹² bytes/TB) ≈ 10.8 TB/day. This assumes 100% link utilization — in practice, bursty traffic patterns, TCP slow-start, and inter-packet gaps reduce effective throughput by 10–30%.</p>
             <p>For cloud egress planning, this is the single most important conversion to internalize. A 10 Gbps Direct Connect link can push up to 3,240 TB/month — at AWS standard egress pricing (~$0.09/GB after the first 10 TB), that's over $263,000/month in data transfer charges alone. Enterprises often discover this only after their first cloud bill shock. Budget egress capacity and costs with this tool before architecting cross-region or hybrid-cloud data pipelines.</p>
         </section>
+
+        <section class="seo-section">
+            <h2>Decimal and binary again: 10.8 TB is not 9.83 TiB</h2>
+            <p>1 Gbps sustained for 24 hours is (10<sup>9</sup> bits/s × 86,400 s) ÷ (8 bits/byte × 10<sup>12</sup> bytes/TB) = <strong>10.8 TB/day</strong>. In binary units the same traffic is 9.83 TiB/day, because a tebibyte is 1.0995 × 10<sup>12</sup> bytes. Cloud billing uses decimal units, storage dashboards usually use binary ones, and a 9% discrepancy between a transfer log and an invoice is almost always this rather than a rounding error.</p>
+
+            <h3>Worked example: the 50 Mbps line that costs $1,458 a month</h3>
+            <p>Small sustained rates are where this conversion earns its keep, because a continuous trickle becomes a large monthly total. Take a 50 Mbps link running flat out:</p>
+            <p>50 × 10<sup>6</sup> bits/s × 2,592,000 s/month ÷ 8 ÷ 10<sup>12</sup> = <strong>16.2 TB/month</strong><br>
+            At AWS standard egress of roughly $0.09/GB that is 16,200 GB × $0.09 ≈ <strong>$1,458/month</strong>.</p>
+            <p>Fifty megabits per second is a video stream, a log shipper, a cross-region replication feed — nothing that registers as a capacity problem. The billing unit is the thing to watch, and it accumulates at 10.8 TB per Gbps per day regardless of how unremarkable the instantaneous rate looks.</p>
+
+            <h3>Asymmetry is the architectural fact</h3>
+            <p>Ingress is free on essentially every major cloud. Egress is metered. That single asymmetry should drive more architecture than it usually does: put data where it will be consumed, replicate toward readers rather than pulling toward a central store, and treat any regularly scheduled cross-boundary pull as a design smell. A nightly job fetching 500 GB from a central region costs about $450/month purely in transfer — the same data pushed to the edge once, or read in place, does not.</p>
+            <p>Peak-based thinking does not transfer either. Enterprise circuits are often billed on 95th-percentile utilisation, which rewards flattening peaks. Cloud egress is billed on total volume, so flattening a peak changes nothing and reducing the total is the only lever. Teams arriving from network engineering habitually optimise the wrong variable for their first several months on cloud.</p>
+
+            <h3>What CDN offload actually changes</h3>
+            <p>A CDN does not reduce egress, it relocates it. With a 95% cache hit ratio, origin egress falls twentyfold — a service pushing 100 TB/month to viewers drops to 5 TB/month from origin, about $450/month. But the CDN's own delivery charges are a separate line item, usually on the same order of magnitude. The saving comes from hitting cache and from CDN egress rates sitting below direct object-storage egress — not from making bytes disappear. Planning an offload migration around "95% of traffic goes away" overstates the benefit by the difference between the two rate cards.</p>
+        </section>
+
         <!-- ── Related Tools ── -->
         <div class="related-tools">
             <h3>Related Tools</h3>
