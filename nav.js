@@ -191,7 +191,7 @@
 
         var articles = [{
             title: 'LLM Inference Latency: Why Your 7B Model Gets 15 tok/s on a T4 but 3,500 tok/s on an H100 (2026)',
-            desc: 'The bottleneck isn\'t TFLOPS — it\'s memory bandwidth. Model throughput across 12 models, 7 GPUs, and 4 quantization levels with real benchmarks.',
+            desc: 'The bottleneck isn\'t TFLOPS — it\'s memory bandwidth. Model throughput across 12 models, 10 GPUs, and 5 quantization levels (incl. FP8) with real benchmarks.',
             url: '/llm-inference-latency',
             el: document.getElementById('briefing-llm-inference')
         }, {

@@ -6,9 +6,9 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <title>LLM Inference Latency: T4 15 vs H100 3,500 tok/s</title>
-    <meta name="description" content="7B model: 15 tok/s on a T4, 3,500 on an H100 — the bottleneck is memory bandwidth, not TFLOPS. Model 12 models × 7 GPUs × 4 quant levels.">
+    <meta name="description" content="7B model: 15 tok/s on a T4, 3,500 on an H100 — the bottleneck is memory bandwidth, not TFLOPS. Model 12 models × 10 GPUs × 5 quant levels, FP8 included.">
     <meta property="og:title" content="LLM Inference Latency Estimator — Tokens/sec, GPU Memory Bandwidth &amp; Quantization Tradeoffs">
-    <meta property="og:description" content="7B model on T4: 15 tok/s. On H100: 3,500 tok/s. The bottleneck isn't compute — it's memory bandwidth. Model throughput across 12 models × 7 GPUs with real benchmarks.">
+    <meta property="og:description" content="7B model on T4: 15 tok/s. On H100: 3,500 tok/s. The bottleneck isn't compute — it's memory bandwidth. Model throughput across 12 models × 10 GPUs × 5 quant levels, FP8 included.">
     <meta property="og:url" content="https://www.jslet.com/llm-inference-latency">
     <meta property="og:type" content="article">
     <meta property="og:site_name" content="jslet">
@@ -16,7 +16,7 @@
     <meta property="og:image" content="https://www.jslet.com/og-image.png">
     <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
     <meta property="article:published_time" content="2026-07-13T00:00:00+00:00">
-    <meta property="article:modified_time" content="2026-07-13T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-09-18T00:00:00+00:00">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="LLM Inference Latency Estimator — Tokens/sec &amp; GPU Bandwidth">
     <meta name="twitter:description" content="Why a 7B model gets 15 tok/s on a T4 but 3,500 tok/s on an H100. Hint: it's not the TFLOPS.">
@@ -32,10 +32,10 @@
       "@context": "https://schema.org",
       "@type": "Article",
       "headline": "LLM Inference Latency Estimator — Tokens/sec, GPU Memory Bandwidth &amp; Quantization Tradeoffs (2026)",
-      "description": "Model LLM inference throughput across 12 models, 7 GPU types, and 4 quantization levels. Real benchmark data from Llama, Mistral, and DeepSeek deployments. Understand why memory bandwidth, not TFLOPS, is the inference bottleneck.",
+      "description": "Model LLM inference throughput across 12 models, 10 GPU types, and 5 quantization levels including FP8. Real benchmark data from Llama, Mistral, and DeepSeek deployments. Understand why memory bandwidth, not TFLOPS, is the inference bottleneck.",
       "url": "https://www.jslet.com/llm-inference-latency",
       "datePublished": "2026-07-13T00:00:00+00:00",
-      "dateModified": "2026-07-13T00:00:00+00:00",
+      "dateModified": "2026-09-18T00:00:00+00:00",
       "author": { "@type": "Organization", "name": "jslet Research" },
       "publisher": { "@type": "Organization", "name": "jslet", "url": "https://www.jslet.com/" }
     }
@@ -171,7 +171,7 @@
     <!-- ═══ Calculator ═══ -->
     <section class="seo-section">
         <h2>Inference Throughput Calculator</h2>
-        <p style="color: var(--text-secondary); margin-bottom: 16px;">Model throughput across 12 models × 7 GPUs × 4 quantization levels. All calculations client-side.</p>
+        <p style="color: var(--text-secondary); margin-bottom: 16px;">Model throughput across 12 models × 10 GPUs × 5 quantization levels. All calculations client-side.</p>
 
         <div class="calc-grid">
             <div>
@@ -222,6 +222,7 @@
                 <select id="quant-input" class="unit-input" style="width:100%;">
                     <option value="fp16">FP16 (16-bit, 2 bytes/param)</option>
                     <option value="bf16">BF16 (16-bit, 2 bytes/param)</option>
+                    <option value="fp8">FP8 (E4M3/E5M2, 1 byte/param)</option>
                     <option value="int8">INT8 (8-bit, 1 byte/param)</option>
                     <option value="int4" selected>INT4 (4-bit, 0.5 bytes/param)</option>
                 </select>
@@ -243,7 +244,7 @@
         <h3 style="color: var(--accent); margin: 20px 0 12px;">Estimated Performance</h3>
         <div class="metric-grid" id="perf-metrics">
             <div class="metric-tile"><div class="metric-val">—</div><div class="metric-label">Tokens/sec (decode)</div></div>
-            <div class="metric-tile"><div class="metric-val">—</div><div class="metric-label">ms per Token</div></div>
+            <div class="metric-tile"><div class="metric-val">—</div><div class="metric-label">Inter-Token Latency (ms)</div></div>
             <div class="metric-tile"><div class="metric-val">—</div><div class="metric-label">VRAM Required</div></div>
             <div class="metric-tile"><div class="metric-val">—</div><div class="metric-label">Time to 100 Tokens</div></div>
             <div class="metric-tile"><div class="metric-val">—</div><div class="metric-label">Throughput (batch)</div></div>
@@ -296,7 +297,7 @@
     <!-- ═══ Quantization ═══ -->
     <section class="seo-section">
         <h2>Quantization — The Throughput Lever That Doesn't Need a Faster GPU</h2>
-        <p>If inference throughput is memory-bandwidth-bound, and you can't change the GPU's memory bandwidth, the only remaining lever is to <strong>reduce the number of bytes per parameter</strong>. That's quantization. Moving from FP16 (2 bytes/param) to INT4 (0.5 bytes/param) reduces the memory traffic per token by 4× — and increases theoretical throughput by the same factor. On the same GPU.</p>
+        <p>If inference throughput is memory-bandwidth-bound, and you can't change the GPU's memory bandwidth, the only remaining lever is to <strong>reduce the number of bytes per parameter</strong>. That's quantization. Moving from FP16 (2 bytes/param) to INT4 (0.5 bytes/param) reduces the memory traffic per token by 4× — and increases theoretical throughput by the same factor. On the same GPU. FP8 (1 byte/param) sits halfway, and it is the format most often mis-sold: the gain depends on silicon that accelerates it natively, and on an A100 the same flag yields BF16 throughput without raising an error. <a href="/fp8-inference-cost-real">The FP8 Trap</a> prices that gap.</p>
 
         <h3 style="color: var(--accent);">Quantization Levels Compared</h3>
         <table class="bench-table">
@@ -306,7 +307,7 @@
             <tbody>
                 <tr class="highlight"><td class="left">FP16 (IEEE 754 half)</td><td>2.0</td><td>14.0 GB</td><td>140.0 GB</td><td>1× (baseline)</td><td>None — reference precision</td></tr>
                 <tr><td class="left">BF16 (Brain Float)</td><td>2.0</td><td>14.0 GB</td><td>140.0 GB</td><td>1×</td><td>Negligible — same range, less mantissa precision</td></tr>
-                <tr class="highlight"><td class="left">FP8 (E4M3/E5M2)</td><td>1.0</td><td>7.0 GB</td><td>70.0 GB</td><td>1.8–2×</td><td>Minimal — requires H100/B200 native FP8 support</td></tr>
+                <tr class="highlight"><td class="left">FP8 (E4M3/E5M2)</td><td>1.0</td><td>7.0 GB</td><td>70.0 GB</td><td>1.45–2×</td><td>Minimal — needs native FP8 silicon (Hopper, Blackwell, Ada); A100 and T4 fall back to BF16 at ~1.0×</td></tr>
                 <tr><td class="left">INT8 (smoothquant)</td><td>1.0</td><td>7.0 GB</td><td>70.0 GB</td><td>1.7–1.9×</td><td>Very minor — most models tolerate INT8 well</td></tr>
                 <tr class="highlight"><td class="left">INT4 (GPTQ/AWQ)</td><td>0.5</td><td>3.5 GB</td><td>35.0 GB</td><td>3.0–3.8×</td><td>Small — 1–3% perplexity increase at 7B+ scale</td></tr>
                 <tr><td class="left">INT4 (GGUF Q4_K_M)</td><td>~0.55</td><td>~4.0 GB</td><td>~40.0 GB</td><td>2.5–3.5×</td><td>Small — optimized group size, importance-aware</td></tr>
@@ -399,6 +400,7 @@
     <div class="related-tools" style="margin-top: 40px;">
         <h3>Related Tools &amp; Reading</h3>
         <div class="related-grid">
+            <a href="/fp8-inference-cost-real">📰 The FP8 Trap: 2× Spec Sheet, 1.15× Invoice (Full Briefing) →</a>
             <a href="/llm-api-pricing-real">📰 Token Economics: LLM Pricing Deep-Dive →</a>
             <a href="/llm-api-pricing-calculator">🖩 LLM API Pricing Calculator →</a>
             <a href="/gpu-training-cost-real">📰 GPU Training Cost: arXiv-to-Bill Gap →</a>
@@ -532,7 +534,12 @@
         'a10-24gb':     { name: 'NVIDIA A10', memBW: 600, vramGB: 24, memBWUnit: 'GB/s' }
     };
 
-    var QUANT_BYTES = { 'fp16': 2, 'bf16': 2, 'int8': 1, 'int4': 0.5 };
+    var QUANT_BYTES = { 'fp16': 2, 'bf16': 2, 'fp8': 1, 'int8': 1, 'int4': 0.5 };
+
+    // FP8 executes on tensor cores only where the silicon has the units:
+    // Hopper/Blackwell run the full FP8 datapath, Ada accelerates FP8 with FP16 accumulate,
+    // and Ampere/Turing have no FP8 units at all — frameworks silently fall back to BF16.
+    var FP8_NATIVE = { 'h100-80gb': 'full', 'h200-141gb': 'full', 'b200-192gb': 'full', 'l40s-48gb': 'ada', 'rtx4090-24gb': 'ada' };
 
     function formatBytes(bytes) {
         if (bytes >= 1e12) return (bytes / 1e12).toFixed(2) + ' TB';
@@ -621,13 +628,23 @@
 
         var fits = totalVRAM <= gpu.vramGB * 1.05;
 
+        var fp8Notice = '';
+        if (quantKey === 'fp8') {
+            var fp8Status = FP8_NATIVE[gpuKey] || 'none';
+            if (fp8Status === 'none') {
+                fp8Notice = 'FP8 is not native on this GPU. The framework will silently fall back to BF16, so expect roughly 1.0x throughput despite the halved weight footprint — the memory saving is real, the speedup is not. Choose INT8 or INT4 for a throughput gain on this hardware.';
+            } else if (fp8Status === 'ada') {
+                fp8Notice = 'FP8 runs natively here, but Ada accumulates in FP16 rather than FP8. Per-tensor scaling works; blockwise and microscaling recipes lose most of the gain. Hopper and Blackwell carry the full FP8 datapath.';
+            }
+        }
+
         var tokSecClass = realTokPerSecSingle > 100 ? 'good' : (realTokPerSecSingle > 20 ? '' : 'warn');
         var vramClass = fits ? 'good' : 'warn';
         var vramStr = fits ? formatBytes(weightBytes) : 'OOM — ' + formatBytes(weightBytes);
 
         var html = '';
         html += '<div class="metric-tile"><div class="metric-val ' + tokSecClass + '">' + (fits ? formatNum(realTokPerSecSingle) : '—') + '</div><div class="metric-label">Tokens/sec (decode)</div></div>';
-        html += '<div class="metric-tile"><div class="metric-val">' + (fits ? msPerToken.toFixed(1) + ' ms' : '—') + '</div><div class="metric-label">ms per Token</div></div>';
+        html += '<div class="metric-tile"><div class="metric-val">' + (fits ? msPerToken.toFixed(1) + ' ms' : '—') + '</div><div class="metric-label">Inter-Token Latency (ITL)</div></div>';
         html += '<div class="metric-tile"><div class="metric-val ' + vramClass + '">' + vramStr + '</div><div class="metric-label">VRAM Required</div></div>';
         html += '<div class="metric-tile"><div class="metric-val">' + (fits ? (timeTo100 / 1000).toFixed(2) + ' s' : '—') + '</div><div class="metric-label">Time to 100 Tokens</div></div>';
         html += '<div class="metric-tile"><div class="metric-val ' + (batchThroughput > 500 ? 'good' : '') + '">' + (fits ? formatNum(batchThroughput) : '—') + '</div><div class="metric-label">Throughput (batch ' + batchSize + ')</div></div>';
@@ -636,6 +653,10 @@
         // Add theoretical comparison
         html += '<div class="metric-tile" style="grid-column: span 2;"><div class="metric-val" style="font-size:0.9rem;">' + formatNum(theoreticalTokPerSec) + ' tok/s</div><div class="metric-label">Theoretical Ceiling (100% mem BW, batch=1)</div></div>';
         html += '<div class="metric-tile" style="grid-column: span 2;"><div class="metric-val" style="font-size:0.9rem;">' + formatNum(realTokPerSecSingle) + ' tok/s (' + (efficiency*100).toFixed(0) + '% efficiency)</div><div class="metric-label">Real Estimate (framework overhead, single request)</div></div>';
+
+        if (fp8Notice) {
+            html += '<div class="metric-tile" style="grid-column: 1 / -1; border-color: #e67e22; text-align: left;"><div class="metric-label" style="color: #e67e22; margin-bottom: 6px;">FP8 on ' + gpu.name + '</div><div style="font-size: 0.82rem; color: var(--text-body); line-height: 1.6;">' + fp8Notice + '</div></div>';
+        }
 
         metrics.innerHTML = html;
     }

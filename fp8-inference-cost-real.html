@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The FP8 Trap: When 2× Throughput Becomes 1.15× on the Invoice</title>
+    <meta name="description" content="FP8 promises 2× and delivers 1.15× to 1.84× depending on the switch. Four switches, NVIDIA's own numbers, the 7,010-token break-even, and why A100 gets none of it.">
+    <meta property="og:title" content="The FP8 Trap: Four Switches Called &quot;FP8&quot; and the One That Is Actually 2×">
+    <meta property="og:description" content="H100 does 1,978 TFLOPS in FP8 against 989 in FP16, and that ratio has almost nothing to do with your invoice. Decode is memory-bound, so the only thing FP8 buys you is halved weight traffic — and only if the silicon accelerates the format natively. Here is what the four FP8 switches each return, where INT4 quietly beats FP8, the 7,010-token point below which FP8 costs more than it saves, and why an A100 will execute every FP8 instruction you give it without a single error and without a single extra token per second.">
+    <meta property="og:url" content="https://www.jslet.com/fp8-inference-cost-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="article:published_time" content="2026-09-18T00:00:00+00:00">
+    <meta property="article:modified_time" content="2026-09-18T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The FP8 Trap: When 2× Throughput Becomes 1.15× on the Invoice">
+    <meta name="twitter:description" content="Four different changes are all called &quot;turning on FP8&quot;. They return 1.15×, 1.45×, and 1.84×. On an A100 they return 1.00× and never tell you.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/fp8-inference-cost-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The FP8 Trap: When 2× Throughput Becomes 1.15× on the Invoice",
+      "description": "FP8's headline number is a tensor-core peak, and LLM decode does not run at the tensor-core peak. This briefing separates the four distinct changes that all get called turning on FP8 — weight-and-activation quantisation, KV-cache quantisation, FP8 attention, and FP8 accumulation — and prices each. It uses NVIDIA's own TensorRT-LLM measurements (1.45× on Llama 3 8B, 1.81× on 70B at batch 32) to show that the speedup scales with model size, then shows the cases where it reverses: at batch 1, INT4 AWQ reaches 2.66× on 70B against FP8's 1.84×, because decode is memory-bound and INT4 moves half the bytes. Includes the 7,010-token break-even below which FP8 KV cache costs more than it saves, the head_dim=256 and sliding-window cases where the overhead never amortises, the arithmetic behind A100 executing FP8 at exactly BF16 speed without raising an error, the difference between Ada's FP16-accumulate FP8 and Hopper's full-FP8 datapath, and the purchase order that matters more than precision: fix utilisation, then purchase model, then quantise.",
+      "url": "https://www.jslet.com/fp8-inference-cost-real",
+      "datePublished": "2026-09-18T00:00:00+00:00",
+      "dateModified": "2026-09-18T00:00:00+00:00",
+      "author": {
+        "@type": "Organization",
+        "name": "jslet Research"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "jslet",
+        "url": "https://www.jslet.com/"
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Does FP8 really double LLM inference throughput?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Not on its own. The 2× figure is the ratio between FP8 and FP16 tensor-core peak on an H100 (1,978 versus 989 TFLOPS), and decode does not run at tensor-core peak — it is memory-bandwidth-bound, because every generated token requires reading the active weights once from HBM. FP8 helps decode by halving the bytes of weight traffic, which gives a 2× ceiling that no real deployment reaches. Measured results from NVIDIA's TensorRT-LLM benchmarks on Llama 3: 1.45× on the 8B model at batch 32, 1.81× on the 70B at batch 32, and 1.84× on the 70B at batch 1. The speedup grows with model size because a larger model spends a larger share of each step moving weights instead of everything else."}
+        },
+        {
+          "@type": "Question",
+          "name": "Why does INT4 beat FP8 at batch size 1?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because at batch 1 there is nothing to batch, so the step time is set almost entirely by how many bytes have to come off HBM to produce one token. INT4 weights are half the size of FP8 weights, so they take half as long to read. In NVIDIA's measurements on Llama 3 70B at batch 1, INT4 AWQ reached 2.66× over FP16 while FP8 reached 1.84×. The trade is accuracy: MMLU degradation runs 0.14 to 0.87 points for FP8, against 0.85 to 2.11 points for INT4 AWQ and 2.50 to 2.75 for INT8 SmoothQuant. FP8's selling point is not that it is the fastest format; it is that it is the fastest format that barely changes your model's answers."}
+        },
+        {
+          "@type": "Question",
+          "name": "What is the break-even context length for FP8 KV cache?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "About 7,010 tokens for Llama-3.1-8B. FP8 KV cache carries a small fixed overhead per attention step that only pays for itself once the cache is long enough for the halved memory traffic to dominate. Below roughly 7,000 tokens of context the overhead is the larger term and FP8 KV cache is slower than BF16. Two further cases never amortise: models with head_dim of 256 need two-level accumulation that raises time-to-first-token by roughly 1.6× at long context, and stacks with many small sliding-window layers spread the fixed cost across too little work to recover it. Above the threshold the gain is real: on a single H100 with FlashAttention-3 at concurrency 8, Llama-3.1-8B moved from 15.18 ms to 12.93 ms median inter-token latency, a 14.8% reduction, for 14.9% more output throughput."}
+        },
+        {
+          "@type": "Question",
+          "name": "Can I use FP8 on an A100?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "You can issue the instructions and they will run, but you will not get a throughput benefit. Ampere's third-generation tensor cores support FP16, BF16, TF32, INT8 and INT4, and not FP8. Frameworks do not fail in this situation — they fall back to BF16 or FP16 tensor cores with a conversion step, so an FP8 job on an A100 produces roughly BF16 throughput with no error message. The memory saving is real, because the weights genuinely occupy half the bytes in HBM. So on Ampere, FP8 is a memory-footprint decision, not a performance decision. Native FP8 starts at Ada Lovelace (compute capability 8.9, requiring CUDA 12.1 and cuBLASLt 12.1.3) and is complete on Hopper (9.0)."}
+        },
+        {
+          "@type": "Question",
+          "name": "Is FP8 on an L40S the same as FP8 on an H100?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Both accelerate FP8 GEMMs, but they differ in the accumulate path and in the scaling hardware. Ada Lovelace parts such as the L40S and L4 run FP8 multiplies with FP16 accumulation. Hopper runs the full datapath in FP8 — inputs, products and accumulator — and pairs it with the Transformer Engine, which performs per-tensor dynamic scaling on dedicated units to keep values inside FP8's narrow exponent range. Blockwise and microscaling recipes depend on that scaling hardware; where it is absent the scaling runs on slower general paths and erodes the throughput the format was chosen for. A specification sheet that says the part supports FP8 does not tell you whether the scaling path that makes FP8 useful is the one the hardware accelerates."}
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 114 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+    <div class="container" id="main-content">
+        <header>
+            <h1>The <span>FP8 Trap</span></h1>
+            <p>Four different changes are called "turning on FP8." They return 1.15×, 1.45×, and 1.84× — and on an A100, exactly 1.00×.</p>
+            <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-09-18 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 17 min read &nbsp;|&nbsp; Classification: Unrestricted</p>
+        </header>
+
+        <!-- ═══ Table of Contents ═══ -->
+        <nav class="toc" aria-label="Table of Contents" style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:20px 24px; margin-bottom:24px;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+            <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+                <li><a href="#peak" style="color:var(--accent); text-decoration:none;">The Spec-Sheet Number Is a Peak, Not a Result</a></li>
+                <li><a href="#switches" style="color:var(--accent); text-decoration:none;">Four Switches Called "FP8"</a></li>
+                <li><a href="#measured" style="color:var(--accent); text-decoration:none;">What NVIDIA Measured: 1.45× and 1.81×</a></li>
+                <li><a href="#int4" style="color:var(--accent); text-decoration:none;">Where INT4 Quietly Beats FP8</a></li>
+                <li><a href="#breakeven" style="color:var(--accent); text-decoration:none;">The 7,010-Token Break-Even</a></li>
+                <li><a href="#a100" style="color:var(--accent); text-decoration:none;">On A100, FP8 Is Free and Worth Nothing</a></li>
+                <li><a href="#ada" style="color:var(--accent); text-decoration:none;">Ada Has FP8. It Isn't Hopper's FP8.</a></li>
+                <li><a href="#order" style="color:var(--accent); text-decoration:none;">Utilisation Outranks Precision</a></li>
+                <li><a href="#bill" style="color:var(--accent); text-decoration:none;">What a Million Tokens Actually Costs</a></li>
+                <li><a href="#decision" style="color:var(--accent); text-decoration:none;">A Four-Question Decision Procedure</a></li>
+            </ol>
+        </nav>
+
+        <section class="seo-section">
+            <h2 id="peak">The Spec-Sheet Number Is a Peak, Not a Result</h2>
+            <p>An H100 SXM5 does 989 TFLOPS of dense FP16 and 1,978 TFLOPS of dense FP8. That ratio — exactly 2×, by design, on the same silicon — is where every "FP8 doubles throughput" claim comes from. It is also close to irrelevant to your inference bill, for a reason that shows up the moment you look at what a decode step actually does.</p>
+            <p>Autoregressive decoding produces one token per step, and each step has to read the model's weights out of HBM before it can multiply anything. For Llama-3-8B at FP16 that is 16 GB of weights, and an H100 with 3.35 TB/s of memory bandwidth needs roughly 4.8 ms to stream them — about 210 tokens per second per sequence, before any overhead. The tensor cores sit almost idle during this, because a matrix-vector product at batch 1 has one column. You cannot speed it up by adding arithmetic throughput; you can only speed it up by moving fewer bytes.</p>
+            <p>That is the entire mechanism by which FP8 helps decode. One parameter in FP8 occupies one byte instead of two. The same model now needs 8 GB of weight traffic per step instead of 16 GB, so the ceiling on decode speed doubles. The ceiling — not the result. Everything else in this briefing is about the distance between that ceiling and what lands on the invoice, and that distance is set by choices that have nothing to do with the tensor-core ratio.</p>
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0; font-size:0.9rem; color:var(--text-body);"><strong>Prefill behaves differently.</strong> The first pass over a prompt is one large matrix-matrix multiply, which is compute-bound and does benefit from FP8's doubled arithmetic rate. So a prompt-heavy workload and a generation-heavy workload get different value from the same flag, and time-to-first-token improves on a different curve than inter-token latency. Model them separately: <a href="/llm-inference-latency">the inference latency calculator</a> reports both.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="switches">Four Switches Called "FP8"</h2>
+            <p>"We turned on FP8" is an ambiguous sentence in 2026, because at least four distinct changes get described that way. They touch different tensors, they are enabled by different flags, and the returns are not close to each other.</p>
+            <div class="table-scroll" style="margin:18px 0;">
+                <table class="cost-table">
+                    <thead>
+                        <tr><th>The change</th><th>What is actually quantised</th><th>What it returns</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="left"><strong>W8A8 weights and activations</strong></td>
+                            <td>Model weights <em>and</em> the activations flowing between layers. Requires calibration or dynamic scaling, and is the change that halves weight bytes in HBM.</td>
+                            <td>Roughly half the model memory, and the largest throughput gain of the four — vendor material quotes up to 1.6×, measured figures below run 1.45× to 1.84× depending on model size.</td>
+                        </tr>
+                        <tr class="highlight">
+                            <td class="left"><strong>KV cache only</strong></td>
+                            <td>The key and value tensors stored per token per layer. Weights stay in BF16.</td>
+                            <td>Roughly 14.8% off median inter-token latency and 14.9% more output throughput on the measured configuration below. Not 2×, and not 1.6×.</td>
+                        </tr>
+                        <tr>
+                            <td class="left"><strong>FP8 attention</strong></td>
+                            <td>The attention computation itself, which usually arrives bundled with FP8 KV cache rather than as an independent flag.</td>
+                            <td>Couples to the KV-cache setting. Where flash-attention kernels support an FP8 path it composes with the cache saving; where they do not, you get the cache saving alone.</td>
+                        </tr>
+                        <tr>
+                            <td class="left"><strong>FP8 accumulation</strong></td>
+                            <td>Not a switch you flip — a property of the silicon. Hopper accumulates in FP8; Ada accumulates in FP16.</td>
+                            <td>Nothing by itself, but it changes the value of the three above, because a datapath that converts between formats every step spends part of the saving on the conversion.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>The vLLM documentation is unusually direct about the confusion this produces, and the numbers are worth quoting precisely. Full weight-and-activation quantisation reduces model memory by about 2× with up to 1.6× throughput. The KV-cache flag alone, on the same model, returns about 1.15×. Both are legitimately "FP8," and a team that reads the first number, enables the second switch, and then measures a 15% gain will spend the afternoon looking for a bug that does not exist. The two settings compose — turning on both is the configuration that approaches the headline figure.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="measured">What NVIDIA Measured: 1.45× and 1.81×</h2>
+            <p>The most useful published numbers here are NVIDIA's own, because they were produced by the people who sell the hardware, on a stack they control, and they still come out well below 2×. TensorRT-LLM throughput for Llama 3 at batch size 32, normalised per GPU:</p>
+            <div class="table-scroll" style="margin:18px 0;">
+                <table class="cost-table">
+                    <thead>
+                        <tr><th>Model</th><th>Format</th><th>GPUs</th><th>Tokens/sec</th><th>Speedup</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="left">Llama 3 8B</td><td>FP16</td><td>1</td><td>2,293</td><td>—</td></tr>
+                        <tr class="highlight"><td class="left">Llama 3 8B</td><td><strong>FP8</strong></td><td>1</td><td>3,331</td><td><strong>1.45×</strong></td></tr>
+                        <tr><td class="left">Llama 3 8B</td><td>INT8 SmoothQuant</td><td>1</td><td>3,204</td><td>1.40×</td></tr>
+                        <tr><td class="left">Llama 3 8B</td><td>INT4 AWQ</td><td>1</td><td>2,476</td><td>1.08×</td></tr>
+                        <tr><td class="left">Llama 3 70B</td><td>FP16</td><td>4</td><td>256</td><td>—</td></tr>
+                        <tr class="highlight"><td class="left">Llama 3 70B</td><td><strong>FP8</strong></td><td><strong>2</strong></td><td>464</td><td><strong>1.81×</strong></td></tr>
+                        <tr><td class="left">Llama 3 70B</td><td>INT8 SmoothQuant</td><td>2</td><td>463</td><td>1.81×</td></tr>
+                        <tr><td class="left">Llama 3 70B</td><td>INT4 AWQ</td><td>2</td><td>361</td><td>1.41×</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>Two rows matter more than the speedup column. The 70B FP8 engine runs on <strong>two</strong> H100s where the FP16 baseline needs four. Every quantised variant of that model fits on one card, which is where the 2× resource saving actually comes from — a saving in GPU count rather than in milliseconds. And the same measurement at batch size 1 reverses the ordering of the formats entirely.</p>
+            <div class="table-scroll" style="margin:18px 0;">
+                <table class="cost-table">
+                    <thead>
+                        <tr><th>Model</th><th>Format</th><th>Tokens/sec (batch 1)</th><th>Speedup</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="left">Llama 3 8B</td><td>FP16</td><td>135.8</td><td>—</td></tr>
+                        <tr class="highlight"><td class="left">Llama 3 8B</td><td>FP8</td><td>170.8</td><td>1.26×</td></tr>
+                        <tr><td class="left">Llama 3 8B</td><td>INT4 AWQ</td><td>211.5</td><td><strong>1.56×</strong></td></tr>
+                        <tr><td class="left">Llama 3 70B</td><td>FP16</td><td>17.8</td><td>—</td></tr>
+                        <tr><td class="left">Llama 3 70B</td><td>FP8</td><td>32.6</td><td>1.84×</td></tr>
+                        <tr class="highlight"><td class="left">Llama 3 70B</td><td>INT4 AWQ</td><td>47.1</td><td><strong>2.66×</strong></td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>Read the two tables together and the shape of the decision appears. FP8 gains more as the model gets bigger, because a bigger model spends more of each step on weight traffic. FP8 loses to INT4 as the batch gets smaller, because a smaller batch has less arithmetic to hide the memory traffic behind. Neither of those is a property of the format; both are properties of the workload.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="int4">Where INT4 Quietly Beats FP8</h2>
+            <p>The row most people skim past is INT4 AWQ at 2.66× on Llama 3 70B at batch 1, against FP8's 1.84×. That is not a rounding artefact, and it is not a vendor preference. It follows from the bandwidth argument in the first section: at batch 1 there is no batching to amortise anything, so the step time is the time to read the weights, and four-bit weights are half the bytes of eight-bit weights. A 70B model needs 141 GB of weight traffic per token at BF16, 70 GB at FP8, and 35 GB at INT4. On a single H100 the last of those is simply faster, and no amount of tensor-core throughput changes it.</p>
+            <p>What FP8 sells instead is accuracy retention. Measured MMLU degradation across quantisation methods puts the formats in a clear order:</p>
+            <ul>
+                <li><strong>FP8:</strong> 0.14 to 0.87 points. Frequently inside run-to-run noise on a single evaluation.</li>
+                <li><strong>INT4 AWQ:</strong> 0.85 to 2.11 points. Acceptable for chat and retrieval, visible on reasoning and arithmetic.</li>
+                <li><strong>INT8 SmoothQuant:</strong> 2.50 to 2.75 points. Counter-intuitively worse than INT4 AWQ on this metric, because the activation quantisation is where the damage happens.</li>
+            </ul>
+            <p>So the honest framing of the choice is not "fastest versus slowest." It is: if the workload can absorb a point or two of accuracy — a support chatbot, a summariser, a classification pass — INT4 is the cheaper format and the faster one. If it cannot — code generation, multi-step reasoning, anything where a wrong token costs a retry — FP8 is the format that buys most of the memory saving while leaving the answers alone. INT8 SmoothQuant sits in an awkward middle: more accuracy loss than FP8 at the same one byte per parameter, which is why it has been losing ground since FP8 hardware arrived.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="breakeven">The 7,010-Token Break-Even</h2>
+            <p>FP8 KV cache is not free at the margin. It adds a small constant cost per attention step — extra scale handling, and a conversion where the kernel has no native FP8 path — and that constant only becomes negligible once the cache is long enough that the halved memory traffic is the dominant term. For Llama-3.1-8B the two terms cross at <strong>7,010 tokens of context</strong>.</p>
+            <p>Below that, FP8 KV cache is slower than leaving the cache in BF16. A deployment built on short prompts — a classification service, a routing layer, a JSON-extraction endpoint that sees 500-token inputs — is exactly the workload where "we enabled FP8" produces a regression and a confused engineer. On the same model at concurrency 1, the fitted inter-token-latency slope fell from 4.37×10⁻⁵ to 2.37×10⁻⁵ ms per token, which is 54% of the BF16 slope and close to the theoretical floor, while the intercept moved only from 6.44 ms to 6.58 ms. That intercept is the constant cost. At short contexts you are paying it without collecting the slope reduction.</p>
+            <p>Two structural cases never reach break-even at all:</p>
+            <ul>
+                <li><strong>Models with head_dim = 256.</strong> These require two-level accumulation for FP8 attention, which raises time-to-first-token by roughly 1.6× at long context. Prefill in BF16 and quantise only the cache is the usual workaround, and it is worth validating accuracy separately because the two-level path is not bit-identical to the single-level one.</li>
+                <li><strong>Stacks with many small sliding-window layers.</strong> Each layer adds the fixed cost and contributes little cache to amortise it, so the overhead accumulates across layers without a corresponding traffic reduction.</li>
+            </ul>
+            <p>Above the threshold the gain is dependable. The reference measurement — a single H100 with FlashAttention-3, Llama-3.1-8B, concurrency 8 — moved median inter-token latency from 15.18 ms to 12.93 ms, median time-to-first-token from 763.6 ms to 742.8 ms, and output throughput from 450.3 to 517.5 tokens per second. Two effects combine: each token decodes faster, and the 2× cache reduction lets the scheduler hold more concurrent requests in the same memory, so the card serves more sequences at once.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="a100">On A100, FP8 Is Free and Worth Nothing</h2>
+            <p>This is the trap that costs the most engineering time, because it does not fail. Ampere's third-generation tensor cores accelerate FP16, BF16, TF32, INT8 and INT4. They do not accelerate FP8. Frameworks do not error out on this. They fall back to the nearest supported format with a conversion step around it, the job completes, the logs stay clean, and the throughput lands at approximately BF16 levels.</p>
+            <p>Two things are true simultaneously, and separating them is the whole point:</p>
+            <div class="table-scroll" style="margin:18px 0;">
+                <table class="cost-table">
+                    <thead>
+                        <tr><th>Property</th><th>On Ampere (A100)</th><th>On Hopper (H100/H200)</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="left"><strong>Weight bytes in HBM</strong></td><td>Halved — the tensors really are 8-bit</td><td>Halved</td></tr>
+                        <tr><td class="left"><strong>Does the job run?</strong></td><td>Yes, with no error raised</td><td>Yes</td></tr>
+                        <tr class="highlight"><td class="left"><strong>Throughput versus BF16</strong></td><td><strong>≈ 1.00×, plus conversion overhead</strong></td><td>Up to 1.81× measured</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>So on Ampere, FP8 is a memory decision, not a performance decision. It is a perfectly good way to fit a model that would otherwise require a second card — the weights genuinely shrink — and a completely ineffective way to make that card faster. If your fleet is A100-based and your problem is tokens per second, the quantisation menu is INT8 or INT4, and INT8 on A100 delivers roughly a 50% throughput gain against FP8's zero. This is not a driver limitation waiting on a patch. The silicon either has execution units for a format or it does not, and no framework update adds them.</p>
+            <div style="background:var(--accent-soft); border-left:3px solid var(--accent); padding:14px 18px; margin:20px 0; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+                <p style="margin:0; font-size:0.9rem; color:var(--text-body);"><strong>The same trap exists one level down.</strong> Running INT8 inference on a V100 drops to CUDA cores and lands far below what an A100 achieves on the identical workload. Whenever a format is chosen for a GPU generation, the first question is which tensor-core generation is doing the work — not what the format promises in the abstract.</p>
+            </div>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="ada">Ada Has FP8. It Isn't Hopper's FP8.</h2>
+            <p>Between "no FP8" and "full FP8" there is a third state that the specification sheets blur together. Ada Lovelace parts — the L40S, the L4, the RTX 4090 — do accelerate FP8, starting at compute capability 8.9 with CUDA 12.1 and cuBLASLt 12.1.3. What they do not have is Hopper's datapath.</p>
+            <div class="table-scroll" style="margin:18px 0;">
+                <table class="cost-table">
+                    <thead>
+                        <tr><th>Generation</th><th>Compute capability</th><th>Native tensor-core formats</th><th>FP8 accumulate</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="left">Volta (V100)</td><td>7.0</td><td>FP16</td><td>—</td></tr>
+                        <tr><td class="left">Ampere (A100)</td><td>8.0</td><td>FP16, BF16, TF32, INT8, INT4</td><td>— (no FP8 units)</td></tr>
+                        <tr><td class="left">Ada (L40S, L4, RTX 4090)</td><td>8.9</td><td>Ampere's menu plus FP8 (E4M3, E5M2)</td><td>FP16 accumulate</td></tr>
+                        <tr class="highlight"><td class="left">Hopper (H100, H200)</td><td>9.0</td><td>Full FP8 datapath</td><td><strong>FP8 accumulate</strong></td></tr>
+                        <tr><td class="left">Blackwell (B200)</td><td>10.0</td><td>Hopper's plus MXFP8 and NVFP4</td><td>FP8 accumulate, block scaling</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>The distinction is not academic. FP8's dynamic range is narrow, and keeping values inside it depends on scaling — per-tensor at minimum, per-block for the more aggressive recipes. Hopper's Transformer Engine performs that scaling on dedicated units and tracks a rolling maximum to compute the next step's scale factor without a synchronisation point at every layer. On a part without that hardware the scaling still happens, just on general-purpose paths, and each conversion round-trips through FP16. The result is that the same nominal FP8 precision returns less on Ada than on Hopper, and the gap widens as the scaling recipe gets finer-grained.</p>
+            <p>There is a practical consequence for capacity planning. "Supports FP8" on a specification sheet tells you which formats the multiply units accept. It does not tell you whether the scaling machinery that makes FP8 usable is the one the hardware accelerates. For a blockwise recipe — microscaling, or anything per-group rather than per-tensor — that second question is the one that decides whether the format pays for itself, and it is the one that datasheets leave unanswered.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="order">Utilisation Outranks Precision</h2>
+            <p>All of the above is second-order. Here is the same AWS instance — p5.48xlarge, eight H100s — priced four ways, with the implied cost of a million output tokens under each. Rates are from June 2026 listings:</p>
+            <div class="table-scroll" style="margin:18px 0;">
+                <table class="cost-table">
+                    <thead>
+                        <tr><th>Purchase model</th><th>Per GPU-hour</th><th>BF16 $ / 1M tokens</th><th>FP8 $ / 1M tokens</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="left">On-demand</td><td>$6.88</td><td>$4.24</td><td>$3.69</td></tr>
+                        <tr><td class="left">Spot</td><td>$3.37</td><td>$2.08</td><td>$1.81</td></tr>
+                        <tr><td class="left">3-year reserved</td><td>$2.97</td><td>$1.83</td><td>$1.60</td></tr>
+                        <tr class="highlight"><td class="left"><strong>3-year reserved, 50% idle</strong></td><td><strong>$5.94</strong></td><td><strong>$3.67</strong></td><td><strong>$3.19</strong></td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>The last row is the one to stare at. A three-year commitment at half utilisation costs $3.19 per million FP8 tokens. On-demand FP8 costs $3.69. The cheapest contract in the table becomes the second-most-expensive line the moment the card sits idle half the day — and it is a difference of fourteen cents per million tokens, which is larger than the entire gap between BF16 and FP8 on-demand. Meanwhile switching spot to reserved is worth $0.21 per million, and switching on-demand to spot is worth $1.88.</p>
+            <p>That ordering is the whole lesson. <strong>Fix utilisation, then fix the purchase model, then quantise.</strong> Most teams do it backwards, because quantisation is the part with a flag attached and a benchmark to run, and renegotiating a commitment or deleting an idle replica is the part that requires a conversation. The arithmetic does not care which was more fun. A pipeline that runs at 50% duty cycle has already spent more money than any precision change will recover, and no amount of FP8 closes a utilisation gap.</p>
+            <p>The same logic applies to the model itself. A quantisation decision that drops GPU count from four to two is worth more than any per-token improvement, because it removes a whole card from the bill. The 70B FP8 engine above, serving on two H100s instead of four, is the largest single saving in these tables.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="bill">What a Million Tokens Actually Costs</h2>
+            <p>Combining the pieces gives a working estimate for a real deployment. Take Llama 3 70B, batch 32, one on-demand H100-class GPU-hour at $6.88, and the measured throughputs above collapsed to a single card for comparability:</p>
+            <div style="font-family:'SF Mono','Cascadia Code',Consolas,monospace; font-size:0.82rem; background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 18px; margin:18px 0; overflow-x:auto; line-height:1.9;">
+                <div>FP16  · 2 GPUs · 256 tok/s total · $6.88 x 2 / 3600 x 1e6 / 256 = <strong>$14.93 / 1M</strong></div>
+                <div>FP8   · 1 GPU  · 464 tok/s total · $6.88 x 1 / 3600 x 1e6 / 464 = <strong>$ 4.12 / 1M</strong></div>
+                <div>INT4  · 1 GPU  · 361 tok/s total · $6.88 x 1 / 3600 x 1e6 / 361 = <strong>$ 5.29 / 1M</strong></div>
+            </div>
+            <p>The FP16 row is where the money hides. It is not that 256 tokens per second is slow — it is that 256 tokens per second requires two cards, and the bill counts cards, not tokens. FP8 on 70B wins here by a factor of 3.6× against the FP16 baseline, and the reason is almost entirely the GPU count: 1.81× more throughput per GPU, on half as many GPUs. That is what a "2× speedup" turns into once it is expressed in money, and it is why the model-size dependence in the earlier table matters so much. The same flag on the 8B model returns 1.45× on one card, which is $4.90 per million instead of $7.10 — real, but nowhere near a factor of three.</p>
+            <p>Two caveats keep these numbers honest. First, they price output tokens only; prompt processing happens at different rates and is what time-to-first-token measures, so a prompt-heavy workload should be modelled through the <a href="/llm-inference-latency">latency calculator</a> rather than multiplied out from a single throughput figure. Second, they assume the card is doing useful work every hour it is billed, which is exactly the assumption the previous section spent its length dismantling. Run the top row of that table at 50% duty cycle and the FP8 figure becomes $8.24 per million — still better than FP16, and worse than simply running the same workload on spot.</p>
+            <p>For the memory side of the same decision, the parameter-to-VRAM converters handle <a href="/parameters-to-vram-fp16">FP16</a> and <a href="/parameters-to-vram-int4">INT4</a> directly. The KV cache is modelled separately in the <a href="/context-window-vram-inflation">context window inflation calculator</a> — the right place to check whether a long-context service can hold the concurrency its throughput implies.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="decision">A Four-Question Decision Procedure</h2>
+            <p>Run these in order. The first one that produces a "no" ends the analysis, because every later question assumes the earlier ones passed.</p>
+            <ol style="line-height:1.95;">
+                <li><strong>Is the GPU generation native for FP8?</strong> Hopper (9.0), Blackwell (10.0), or Ada (8.9) — yes. Ampere (8.0) and older — stop here, and choose INT8 or INT4 instead. On A100 the throughput answer is no regardless of what the framework accepts without complaint.</li>
+                <li><strong>Is the model large enough to care?</strong> The measured gain runs from 1.45× at 8B to 1.81× at 70B at batch 32. If the model is small, the weight traffic is not the dominant term and FP8 will disappoint. If it is large enough to need a second GPU at BF16 and only one at FP8, the win is structural rather than incremental.</li>
+                <li><strong>What is the operating batch size?</strong> At batch 1, INT4 beats FP8 outright (2.66× against 1.84× on 70B) because decode is pure weight traffic. High-concurrency serving is where FP8's accuracy advantage becomes affordable; single-stream interactive use is where INT4's bandwidth advantage wins.</li>
+                <li><strong>Does the context length clear the break-even?</strong> For FP8 KV cache specifically, below roughly 7,000 tokens the overhead dominates and the change is a regression. Check head_dim as well — 256-dimensional heads need two-level accumulation that costs about 1.6× on time-to-first-token at long context.</li>
+            </ol>
+            <p>And before any of the four, check the utilisation number. A GPU that is idle half the month costs more than the precision decision can save, in every configuration in the table above.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2 id="faq">Frequently Asked Questions</h2>
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Does FP8 really double LLM inference throughput?</h3>
+                <p>Not on its own. The 2× figure is the ratio between FP8 and FP16 tensor-core peak on an H100 — 1,978 against 989 TFLOPS — and decode does not run at tensor-core peak, because every generated token requires reading the active weights once from HBM. FP8 helps decode by halving the bytes of weight traffic, which sets a 2× ceiling that no real deployment reaches. Measured results from NVIDIA's TensorRT-LLM benchmarks on Llama 3: 1.45× on the 8B model at batch 32, 1.81× on the 70B at batch 32, and 1.84× on the 70B at batch 1. The gain grows with model size because a larger model spends a larger share of each step moving weights rather than doing anything else.</p>
+            </div>
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Why does INT4 beat FP8 at batch size 1?</h3>
+                <p>Because at batch 1 the step time is set almost entirely by how many bytes come off HBM to produce a single token, and INT4 weights are half the size of FP8 weights. In NVIDIA's measurements on Llama 3 70B at batch 1, INT4 AWQ reached 2.66× over FP16 while FP8 reached 1.84×. The trade is accuracy, and it is measurable: MMLU degradation runs 0.14 to 0.87 points for FP8, 0.85 to 2.11 points for INT4 AWQ, and 2.50 to 2.75 points for INT8 SmoothQuant. FP8's selling point is not that it is the fastest format. It is that it is the fastest format that barely changes your model's answers.</p>
+            </div>
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">What is the break-even context length for FP8 KV cache?</h3>
+                <p>About 7,010 tokens for Llama-3.1-8B. FP8 KV cache carries a small fixed overhead per attention step that only pays for itself once the cache is long enough for the halved memory traffic to dominate. Below roughly 7,000 tokens the overhead is the larger term and FP8 is slower than BF16. Two cases never amortise at all: models with head_dim of 256, which need two-level accumulation that raises time-to-first-token by about 1.6× at long context, and stacks with many small sliding-window layers, which spread the fixed cost across too little cache to recover it. Above the threshold the gain is real — on one H100 with FlashAttention-3 at concurrency 8, Llama-3.1-8B moved from 15.18 ms to 12.93 ms median inter-token latency for 14.9% more output throughput.</p>
+            </div>
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Can I use FP8 on an A100?</h3>
+                <p>You can issue the instructions and they will run, but you will not get a throughput benefit. Ampere's third-generation tensor cores support FP16, BF16, TF32, INT8 and INT4, and not FP8. Frameworks do not fail in this situation — they fall back to a supported format with a conversion step, so an FP8 job on an A100 produces roughly BF16 throughput and raises no error. The memory saving is real, because the weights genuinely occupy half the bytes in HBM. So on Ampere, FP8 is a memory-footprint decision rather than a performance one: a good way to fit a model that would otherwise need a second card, and an ineffective way to make that card faster.</p>
+            </div>
+            <div class="faq-item" style="margin-bottom: 28px;">
+                <h3 style="font-size:1.1rem; margin-bottom: 8px;">Is FP8 on an L40S the same as FP8 on an H100?</h3>
+                <p>No. Both accelerate FP8 GEMMs, but they differ in the accumulate path and in the scaling hardware. Ada Lovelace parts such as the L40S and L4 run FP8 multiplies with FP16 accumulation. Hopper runs the whole datapath in FP8 — inputs, products and accumulator — and pairs it with the Transformer Engine, which performs per-tensor dynamic scaling on dedicated units to keep values inside FP8's narrow exponent range. Blockwise and microscaling recipes depend on that scaling hardware; where it is absent, the scaling runs on slower general paths and erodes the throughput the format was chosen for. A specification sheet saying the part supports FP8 does not tell you whether the scaling path that makes FP8 useful is the one the hardware accelerates.</p>
+            </div>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>Methodology &amp; Disclosure</h2>
+            <p style="font-size:0.9rem; color: var(--text-secondary);">Tensor-core peak figures (FP16 989 TFLOPS, FP8 1,978 TFLOPS dense on H100 SXM5) are the manufacturer's published dense ratings. Throughput tables are NVIDIA's published TensorRT-LLM results for Llama 3 8B and 70B at batch sizes 32 and 1, and are normalised per GPU as published. Inter-token-latency, time-to-first-token and the 7,010-token break-even come from the FlashAttention-3 FP8 KV-cache validation study published on the vLLM blog in April 2026, measured on a single H100 at concurrency 1 and 8. MMLU degradation ranges are the ranges reported across the same quantisation methods. Instance rates are June 2026 on-demand, spot and three-year reserved listings for AWS p5.48xlarge (eight H100s), divided by eight for the per-GPU figures. Cost-per-million-token figures are computed from those rates and the throughputs above, assume continuous useful utilisation, and cover output tokens only. This site takes no sponsorship, no affiliate commission and no vendor payment of any kind; the vendors named here have no relationship with jslet and did not review this briefing.</p>
+        </section>
+
+        <section class="seo-section" style="border-top:1px solid var(--border); padding-top: 20px;">
+            <h2>References &amp; Further Reading</h2>
+            <ol style="font-size:0.85rem; line-height:1.9; color: var(--text-body);" id="references">
+                <li>NVIDIA Developer Blog. "Post-Training Quantization of LLMs with NVIDIA NeMo and NVIDIA TensorRT Model Optimizer." Throughput tables for Llama 3 8B and 70B, batch sizes 32 and 1. <em>developer.nvidia.com</em></li>
+                <li>vLLM Blog (Kübler, Budhathoki, Kurtić et al.). "FP8 KV cache with FlashAttention-3: validation study." April 2026. Inter-token latency, time-to-first-token, break-even context and failure modes. <em>blog.vllm.ai</em></li>
+                <li>NVIDIA Transformer Engine. GPU compute-capability feature matrix: FP8 gating at SM 8.9 (Ada, CUDA 12.1 / cuBLASLt 12.1.3 minimum) and full FP8 at SM 9.0 (Hopper). <em>github.com/NVIDIA/TransformerEngine</em></li>
+                <li>NVIDIA. H100 Tensor Core GPU architecture whitepaper — FP8 E4M3/E5M2 formats, Transformer Engine, and the dense FP16/FP8 throughput ratings. <em>nvidia.com</em></li>
+                <li>Related: <a href="/llm-inference-latency">LLM Inference Latency Calculator</a> · <a href="/llm-selfhost-vs-api-breakeven">Self-Hosted LLM vs API Breakeven</a> · <a href="/llm-api-pricing-real">Token Economics: Why Your LLM Bill Is 3× the Sticker Price</a> · <a href="/gpu-training-cost-real">GPU Training Costs: The arXiv-to-Bill Gap</a></li>
+            </ol>
+        </section>
+
+        <div class="social-share-bar">
+            <span class="share-label">Share this briefing:</span>
+            <div class="share-buttons">
+                <a href="https://news.ycombinator.com/submitlink?u=https://www.jslet.com/fp8-inference-cost-real&t=The+FP8+Trap%3A+When+2x+Throughput+Becomes+1.15x+on+the+Invoice" class="share-btn hn" target="_blank" rel="noopener noreferrer">HN</a>
+                <a href="https://twitter.com/intent/tweet?url=https://www.jslet.com/fp8-inference-cost-real&text=Four+different+changes+are+called+%22turning+on+FP8.%22+They+return+1.15x%2C+1.45x+and+1.84x.+On+an+A100+they+return+1.00x+and+never+tell+you.&via=jslet" class="share-btn twitter" target="_blank" rel="noopener noreferrer">X</a>
+                <a href="https://www.reddit.com/r/MachineLearning/submit?url=https://www.jslet.com/fp8-inference-cost-real&title=The+FP8+Trap%3A+When+2x+Throughput+Becomes+1.15x+on+the+Invoice" class="share-btn reddit" target="_blank" rel="noopener noreferrer">Reddit</a>
+                <a href="https://www.linkedin.com/shareArticle?url=https://www.jslet.com/fp8-inference-cost-real&title=The+FP8+Trap%3A+When+2x+Throughput+Becomes+1.15x+on+the+Invoice" class="share-btn linkedin" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+            </div>
+        </div>
+
+        <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px; margin-bottom:0;">
+            <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+            <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-secondary); line-height:1.8;">
+                <strong style="color:var(--text-heading);">The FP8 Trap: When 2× Throughput Becomes 1.15× on the Invoice</strong><br>
+                Published 2026-09-18 by jslet Research · jslet.com<br><br>
+                You may quote up to 200 words with a link to this page. For syndication, translation or full-text reuse, contact <a href="/about">jslet</a>. Figures are current as of September 2026 and are drawn from published vendor measurements; reproduce the methodology if you cite the numbers.
+            </div>
+        </section>
+
+        <section class="seo-section" style="background:var(--accent-soft); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:0 var(--radius-sm) var(--radius-sm) 0; margin-top:24px;">
+            <h2 style="margin-top:0; font-size:1.1rem;">Run the numbers on your own model</h2>
+            <p style="margin-bottom:10px;">The <a href="/llm-inference-latency">LLM inference latency calculator</a> models throughput against memory bandwidth across 12 models and 10 GPUs, including FP8. If the question is whether self-hosting beats an API at your volume, the <a href="/llm-selfhost-vs-api-breakeven">breakeven calculator</a> takes the throughput number this briefing produces and turns it into a decision.</p>
+            <p style="margin:0;"><a href="/articles">← Back to all briefings</a></p>
+        </section>
+
+        <footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 114 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/articles">Tech trends</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">Newsletter</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="nav.js"></script>
+</body>
+</html>
