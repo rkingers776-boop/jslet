@@ -285,7 +285,7 @@
                     </tbody>
                 </table>
                 </div>
-                <p style="margin-top:10px; font-size:0.78rem; color:var(--text-muted);">Storage: RDS gp3 $0.138/GB-mo · Aurora $0.10/GB-mo (+$0.20 per 1M I/O) · Cloud SQL SSD $0.17/GB-mo · Azure Premium SSD $0.115/GB-mo. RDS io1 $0.20/GB-mo + $0.065 per provisioned IOPS-mo. Backup: RDS charges $0.095/GB-mo for retained backups beyond the first DB-size copy (modeled at 10% daily change); Aurora/Cloud SQL/Azure include backup free up to 100% of storage. Multi-AZ: RDS/GCP/Azure bill a standby instance (compute ×2); Aurora's standby is included. Source: provider pricing pages, July 2026. Verify against your region.</p>
+                <p style="margin-top:10px; font-size:0.78rem; color:var(--text-muted);">Storage: RDS gp3 $0.115/GB-mo · Aurora $0.10/GB-mo (+$0.20 per 1M I/O) · Cloud SQL SSD $0.17/GB-mo · Azure Premium SSD $0.115/GB-mo. RDS io1 $0.125/GiB-mo + $0.10 per provisioned IOPS-mo (Single-AZ). Backup: RDS charges $0.095/GB-mo for retained backups beyond the first DB-size copy (modeled at 10% daily change); Aurora/Cloud SQL/Azure include backup free up to 100% of storage. Multi-AZ: RDS/GCP/Azure bill a standby instance (compute ×2); Aurora's standby is included. Source: AWS RDS pricing pages, verified 2026-09-23 in us-east-1. Verify against your region.</p>
             </div>
         </main>
 
@@ -301,7 +301,7 @@
             </div>
 
             <h3>2. Storage — gp3 vs io1 vs Aurora's GB + I/O</h3>
-            <p>General Purpose SSD is cheap everywhere: RDS gp3 at $0.138/GB-month, Cloud SQL SSD at $0.17, Azure Premium SSD at $0.115. At 500 GB that's $69–85/month — negligible next to compute. The trap is <strong>provisioned IOPS on RDS io1</strong>: $0.20/GB-month <em>plus</em> $0.065 per provisioned IOPS-month. Provision 12,000 IOPS on a 200 GB volume and the IOPS line ($780/month) dwarfs the storage line ($40/month) by 19×. Aurora bills storage at $0.10/GB-month but then layers <strong>$0.20 per million I/O requests</strong> — invisible until you have a write-heavy workload. A million-row bulk insert can quietly cost more in I/O than the instance does in compute.</p>
+            <p>General Purpose SSD is cheap everywhere: RDS gp3 at $0.115/GB-month, Cloud SQL SSD at $0.17, Azure Premium SSD at $0.115. At 500 GB that's $58–85/month — negligible next to compute. The trap is <strong>provisioned IOPS on RDS io1</strong>: $0.125/GiB-month <em>plus</em> $0.10 per provisioned IOPS-month (Single-AZ). Provision 12,000 IOPS on a 200 GB volume and the IOPS line ($1,200/month) dwarfs the storage line ($25/month) by 48×. Aurora bills storage at $0.10/GB-month but then layers <strong>$0.20 per million I/O requests</strong> — invisible until you have a write-heavy workload. A million-row bulk insert can quietly cost more in I/O than the instance does in compute.</p>
 
             <h3>3. Backup Retention — The RDS-Only Surprise</h3>
             <p>Here's the asymmetry nobody warns you about: <strong>RDS is the only one of the four that bills retained backups.</strong> AWS gives you backup storage free up to 100% of your database size — i.e., exactly one copy. Push retention to 7 days and, assuming ~10% daily change, you're now paying for ~0.6 extra DB-sizes of backup at $0.095/GB-month. On a 500 GB database that's ~$28/month; on a 2 TB database at 30-day retention it's north of $500/month — a line item that simply does not exist on Aurora, Cloud SQL, or Azure DB, all of which include automated backups up to 100% of storage for free. If backup cost shows up as your third-largest component, that's an RDS tell.</p>
@@ -327,6 +327,44 @@
         </section>
 
         <!-- ── Related Tools ── -->
+        <!-- pricing-provenance v1 | 5 项口径：来源链接 / 区域 / 币种 / 更新日期 / 假设条件 -->
+        <section class="seo-section" id="pricing-basis">
+            <h2>Pricing Basis, Sources &amp; Assumptions</h2>
+            <p>Every rate on this page is a <strong>published vendor list price</strong> — no negotiated discounts, private pricing, or credit offsets. Totals are in <strong>USD</strong> and exclude tax. Rates were last checked against the sources below on <time datetime="2026-09-23">2026-09-23</time>.</p>
+            <table class="cost-table">
+                <thead><tr><th>Pricing input</th><th>Basis used on this page</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Region</strong></td><td>us-east-1 (N. Virginia) unless a region is selected — the selector applies published regional multipliers for Amazon RDS and Aurora. The cross-provider table quotes each vendor's own published US list price (AWS, Google Cloud, Microsoft Azure).</td></tr>
+                    <tr><td><strong>Currency</strong></td><td>USD — on-demand list price, tax excluded</td></tr>
+                    <tr><td><strong>Last checked</strong></td><td><time datetime="2026-09-23">2026-09-23</time> — three list-price errors were corrected on this date: RDS gp3 storage $0.138 to $0.115 per GiB-month, RDS io1 storage $0.200 to $0.125 per GiB-month, and RDS io1 provisioned IOPS $0.065 to $0.10 per IOPS-month (us-east-1, Single-AZ). Cross-provider instance rates are carried from the linked vendor price lists — re-check before committing spend.</td></tr>
+                </tbody>
+            </table>
+            <h3>Modelling assumptions</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li>730 hours per month. On-demand list price unless a commitment term is selected; Multi-AZ topology doubles instance hours.</li>
+                <li>Storage is billed per GiB-month by class: RDS gp3 $0.115, RDS io1 $0.125, Aurora $0.10, Cloud SQL SSD $0.170, Azure Premium SSD $0.115. io1 provisioned IOPS is billed at <strong>$0.10 per IOPS-month</strong> on top of storage; snapshots and backups beyond the first copy at $0.095 per GiB-month.</li>
+                <li>Backup storage is modelled with a 10% daily change rate, so retained copies accumulate over the retention window.</li>
+                <li>Read replicas are billed as additional instances at the same rate. Monthly egress to the internet starts at $0.09/GB with the first 100 GB free.<br><strong>Known limitation:</strong> io1 rates here are Single-AZ list prices. AWS bills io1 in Multi-AZ at $0.25 per GiB-month and $0.20 per IOPS-month, and this model does not scale the storage rate by topology — so a Multi-AZ io1 configuration is understated.</li>
+                <li>The $/hr table is a comparable-class table, not a price list: instance sizes are matched by vCPU and memory across engines, so engines without a 1:1 match are approximated.</li>
+            </ul>
+            <h3>What this model excludes</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li>License-included engines (SQL Server, Oracle) and their licence multipliers.</li>
+                <li>Aurora I/O charges, Performance Insights paid tier, and Extended Support surcharges.</li>
+                <li>Reserved Instance and Savings Plan effective rates beyond the discount shown in the commitment selector; io2 Block Express provisioned IOPS.</li>
+                <li>Dedicated Log Volumes, tax, credits, and private pricing agreements.</li>
+            </ul>
+            <h3>Sources</h3>
+            <ol style="font-size:0.85rem; line-height:1.9;" id="pricing-sources">
+                <li id="src-1"><strong>AWS (2026).</strong> "Amazon RDS for PostgreSQL Pricing." On-demand instance hours, gp3 and io1 storage, provisioned IOPS, and backup storage rates. <a href="https://aws.amazon.com/rds/postgresql/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="src-2"><strong>AWS (2026).</strong> "Amazon Aurora Pricing." Aurora instance hours, storage, and I/O charges. <a href="https://aws.amazon.com/rds/aurora/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="src-3"><strong>Google Cloud (2026).</strong> "Cloud SQL Pricing." Cloud SQL instance and storage rates used in the cross-provider comparison. <a href="https://cloud.google.com/sql/pricing" target="_blank" rel="noopener">cloud.google.com</a></li>
+                <li id="src-4"><strong>Microsoft Azure (2026).</strong> "Azure Database for PostgreSQL Pricing." Flexible Server compute and storage rates used in the cross-provider comparison. <a href="https://azure.microsoft.com/en-us/pricing/details/postgresql/server/" target="_blank" rel="noopener">azure.microsoft.com</a></li>
+                <li id="src-5"><strong>AWS (2026).</strong> "Storage Types for Amazon RDS." gp3 baseline IOPS and throughput, and io1 allocation limits. <a href="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Storage.html" target="_blank" rel="noopener">docs.aws.amazon.com</a></li>
+            </ol>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin-top:10px;">Vendor list prices change without notice — re-check the linked pages before committing spend. jslet takes no vendor sponsorship and carries no affiliate links; see <a href="/about">about</a>.</p>
+        </section>
+
         <div class="related-tools">
             <h3>Related Tools</h3>
             <div class="related-grid">
@@ -436,11 +474,11 @@
 
     // Storage $/GB-month by class and provider
     var STORAGE = {
-        'gp':     { rds: 0.138, aurora: 0.10, gcp: 0.170, azure: 0.115 },
-        'io1':    { rds: 0.200, aurora: 0.10, gcp: 0.170, azure: 0.115 },
+        'gp':     { rds: 0.115, aurora: 0.10, gcp: 0.170, azure: 0.115 },
+        'io1':    { rds: 0.125, aurora: 0.10, gcp: 0.170, azure: 0.115 },
         'aurora': { rds: 0.10,  aurora: 0.10, gcp: 0.170, azure: 0.115 }
     };
-    var RDS_IO1_IOPS_PER_GBMO = 0.065;   // $/provisioned IOPS-month (RDS io1 only)
+    var RDS_IO1_IOPS_PER_GBMO = 0.10;    // $/provisioned IOPS-month (RDS io1, us-east-1 single-AZ; verified 2026-09-23)
     var RDS_BACKUP_PER_GBMO = 0.095;     // $/GB-month for backups beyond 1st copy
     var BACKUP_DAILY_CHANGE = 0.10;      // assume 10% daily change for retained backups
 
