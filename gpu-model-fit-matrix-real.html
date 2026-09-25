@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The VRAM Ceiling: Why 70B Is a Topology Choice</title>
+    <meta name="description" content="140 GB of weights and no card holds it. Why the 70B class is decided by topology, not GPU choice — and where the KV cache turns a comfortable fit into a failed one.">
+    <meta property="og:title" content="The VRAM Ceiling — Why 70B Is a Topology Choice, Not a GPU Choice">
+    <meta property="og:description" content="The 70B class sits in a gap: too big for one card at FP16, too useful to skip. Here is what the arithmetic actually forces, and where KV cache changes the answer.">
+    <meta property="og:url" content="https://www.jslet.com/gpu-model-fit-matrix-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-09-25T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-09-25T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The VRAM Ceiling: Why 70B Is a Topology Choice">
+    <meta name="twitter:description" content="140 GB of weights, no card holds it. Three numbers decide the answer, and only the first is obvious.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/gpu-model-fit-matrix-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The VRAM Ceiling — Why 70B Is a Topology Choice, Not a GPU Choice",
+      "description": "Why the 70B parameter class cannot be provisioned as a GPU choice, how the KV cache turns a comfortable fit into a failed one, and why MoE models break the intuition that memory and speed are the same quantity.",
+      "url": "https://www.jslet.com/gpu-model-fit-matrix-real",
+      "datePublished": "2026-09-25T00:00:00+00:00",
+      "dateModified": "2026-09-25T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research" },
+      "publisher": { "@type": "Organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How much VRAM does a 70B model need?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Weights alone: 140 GB at FP16, 70 GB at INT8, 35 GB at INT4. Working set is higher because the KV cache and framework overhead must be added: a dense 70B at FP16 at 8K context lands around 151 GB, and at 128K context with 32 concurrent requests the same model exceeds 1.34 TB. No single datacenter GPU holds 140 GB, so the FP16 deployment is not a GPU choice — it is a topology choice of 2 or 4 cards with tensor parallelism. At INT4 the same model fits on one 80 GB card for short contexts and needs sharding again once the context grows."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does context length change whether a model fits?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Weights are a constant cost; the KV cache is not. A 70B dense model at INT4 holds 35 GB of weights regardless of how long the conversation runs, but its KV cache scales linearly with context length and with the number of concurrent requests. At 8K context with a single request the KV cache is roughly 2.6 GB. At 128K context with 32 concurrent requests it is roughly 1.34 TB — a 500-fold increase driven entirely by the workload shape rather than the model. Sizing VRAM from weights alone is the most common provisioning mistake, and it fails hardest exactly where it matters: long-context and high-concurrency deployments."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why do MoE models need VRAM sized by total parameters?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A mixture-of-experts model reads only a fraction of its parameters per token, but every expert must remain resident because the router can select any of them for any token. Paging experts in from host memory would stall the decode loop, which is the one thing inference cannot tolerate. So VRAM is sized by total parameters while throughput is governed by active parameters. DeepSeek-V3 is the canonical case: 671B total, 37B active. At INT4 it needs about 358 GB of working set at 32K context and batch 128 — more than one B200 — yet generates tokens at something close to a dense 37B model's speed."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does 4-bit quantization always save half the memory of 8-bit?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "For weights, yes: 4-bit is half of 8-bit and a quarter of FP16. For the KV cache, no — and this is where the saving people assume they will get disappears. Quantizing weights to INT4 leaves the KV cache at FP16 in essentially every production serving stack, so a 4-bit model still pays 2 bytes per KV element. On a short-context, low-concurrency deployment that hardly matters, because weights dominate. On a 128K-context deployment with high concurrency the KV cache dominates, and weight quantization does nothing for the number that blew the budget."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 116 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>The <span>VRAM Ceiling</span></h1>
+        <p>Why 70B is a topology choice, not a GPU choice — and where the KV cache turns a comfortable fit into a failed one</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-09-25 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 14 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+            <li><a href="#gap" style="color:var(--accent); text-decoration:none;">The 140 GB Gap Nobody Sells Into</a></li>
+            <li><a href="#three" style="color:var(--accent); text-decoration:none;">Three Numbers, Only One Obvious</a></li>
+            <li><a href="#kv" style="color:var(--accent); text-decoration:none;">The KV Cache Is the Real Variable</a></li>
+            <li><a href="#moe" style="color:var(--accent); text-decoration:none;">MoE Breaks the Memory-Speed Link</a></li>
+            <li><a href="#fp8" style="color:var(--accent); text-decoration:none;">FP8 Saves Nothing on the Wrong Card</a></li>
+            <li><a href="#headroom" style="color:var(--accent); text-decoration:none;">Why 10% Headroom Is Not Headroom</a></li>
+            <li><a href="#vendor" style="color:var(--accent); text-decoration:none;">The 80 GB That Isn't 80 GiB</a></li>
+            <li><a href="#procedure" style="color:var(--accent); text-decoration:none;">A Five-Question Fit Check</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ol>
+    </div>
+
+    <section class="seo-section">
+        <p>There is a model size that no vendor has an obvious answer for, and 70 billion parameters sits right on it. At FP16 the weights are 140 GB. That number is larger than every datacenter card on the market — the H100 and A100 both cap at 80 GB, the H200 at 141 GB, and the B200 at 192 GB. Only one of those fits a bare FP16 70B, and it is the most expensive card in the rack. So the 70B class is not a question of which GPU to rent. It is a question of how many, in what arrangement, at what cost in throughput lost to sharding.</p>
+        <p>Most VRAM calculators answer the question they were asked — how big is this model — and stop. That number is the easy half.</p>
+    </section>
+
+    <section class="seo-section" id="gap">
+        <h2>The 140 GB Gap Nobody Sells Into</h2>
+        <p>GPU memory has clustered around two poles. Under 80 GB, where the A100, H100, L40S and the consumer cards live, and now 141–192 GB at the top end with H200 and B200. Between them sits a band with nothing in it — 90 to 140 GB — and the FP16 70B weights land at 140 GB, just above every one of them.</p>
+        <p>That gap is why a 70B deployment so often ends up on hardware nobody planned for. The obvious move is to quantize: INT8 halves the weights to 70 GB and fits on one H100 or A100-80GB. INT4 quarters them to 35 GB and fits anywhere, including a 48 GB L40S. Both of those are real options, and both introduce a second consideration that the weight arithmetic does not mention at all.</p>
+        <div class="pull">Quantization is the affordable path to fitting a 70B model. It is also the path that leaves no room for the thing that actually grows.</div>
+    </section>
+
+    <section class="seo-section" id="three">
+        <h2>Three Numbers, Only One Obvious</h2>
+        <p>A fit verdict needs three quantities, and the first is the only one people compute.</p>
+        <table class="brief-table">
+            <thead><tr><th>Component</th><th class="num">FP16</th><th class="num">INT8</th><th class="num">INT4</th><th>Scales with</th></tr></thead>
+            <tbody>
+                <tr><td>Weights</td><td class="num">140 GB</td><td class="num">70 GB</td><td class="num">35 GB</td><td>parameter count</td></tr>
+                <tr><td>KV cache</td><td class="num">2.6 GB</td><td class="num">2.6 GB</td><td class="num">2.6 GB</td><td>context × concurrency</td></tr>
+                <tr class="hi"><td>Framework overhead</td><td class="num">8.4 GB</td><td class="num">4.2 GB</td><td class="num">2.1 GB</td><td>weight footprint</td></tr>
+                <tr><td><strong>Working set</strong></td><td class="num"><strong>151 GB</strong></td><td class="num"><strong>77 GB</strong></td><td class="num"><strong>40 GB</strong></td><td>—</td></tr>
+            </tbody>
+        </table>
+        <p>Figures for a dense 70B model at 8K context and a single concurrent request. Three things in that table are worth pausing on.</p>
+        <p>First, the KV cache column is flat — identical across all three quantization levels. That is deliberate and it is the part most people get wrong. Quantizing weights to INT4 does not quantize the KV cache; nearly every production serving stack keeps KV at FP16 regardless. A 4-bit model still pays 2 bytes per KV element.</p>
+        <p>Second, overhead is not negligible at these sizes. Eight point four gigabytes at FP16 is CUDA context, cuBLAS workspaces, activation buffers and the engine's own allocations. That is the margin that decides whether a 76 GB working set squeezes onto an 80 GB card, and it is routinely omitted.</p>
+        <p>Third, and most important: look at what happens when context grows. The weights do not move. Everything else does.</p>
+    </section>
+
+    <section class="seo-section" id="kv">
+        <h2>The KV Cache Is the Real Variable</h2>
+        <p>Weights are a fixed cost paid once. The KV cache holds the key and value tensors for every token in the context window of every live request, and it grows along two axes at the same time. Context length extends it; concurrency multiplies it.</p>
+        <table class="brief-table">
+            <thead><tr><th>Workload</th><th class="num">KV cache</th><th class="num">Working set (INT4)</th><th>Verdict on one 80 GB card</th></tr></thead>
+            <tbody>
+                <tr><td>8K context, 1 request</td><td class="num">2.6 GB</td><td class="num">40 GB</td><td>Comfortable</td></tr>
+                <tr><td>32K context, 1 request</td><td class="num">10.5 GB</td><td class="num">48 GB</td><td>Comfortable</td></tr>
+                <tr><td>32K context, 32 requests</td><td class="num">336 GB</td><td class="num">373 GB</td><td>Needs sharding</td></tr>
+                <tr class="hi"><td>128K context, 32 requests</td><td class="num">1,342 GB</td><td class="num">1,379 GB</td><td>18 cards minimum</td></tr>
+            </tbody>
+        </table>
+        <p>The same model, the same quantization, the same card — and the answer moves from "one card with room to spare" to "eighteen cards" without the model changing at all. Only the workload shape changed.</p>
+        <p>This is why long-context deployments are so much more expensive than their weight arithmetic suggests, and why provisioning reviews that start from parameter count end up surprised. The KV cache is the quantity that scales with the thing you are actually selling, which is concurrent users holding long conversations.</p>
+        <p>There is a genuine mitigation, and it is worth knowing about: grouped-query attention. A 70B model with 64 query heads but 8 KV heads carries an eighth of the KV footprint a full multi-head layout would need. That factor of eight is why modern long-context deployments are feasible at all, and why architecture matters as much as parameter count. A model with the same size and a less efficient attention layout can need eight times the cache for the same traffic.</p>
+        <div class="pull">Two models with identical parameter counts can differ by 8× in KV footprint. Parameter count is not a proxy for memory requirement.</div>
+    </section>
+
+    <section class="seo-section" id="moe">
+        <h2>MoE Breaks the Memory-Speed Link</h2>
+        <p>For dense models, memory requirement and generation speed track each other: both are governed by parameter count, so a model that needs more memory also generates more slowly. Mixture-of-experts deliberately severs that link.</p>
+        <p>DeepSeek-V3 is the clearest case. It carries 671B parameters in total but activates 37B per token, routing each token to a small subset of experts. Throughput behaves like a 37B dense model. Memory requirement behaves like a 671B one, because every expert must stay resident — the router can pick any of them for any token, and paging an expert in from host memory mid-decode would stall the loop far longer than fetching the weights would cost.</p>
+        <table class="brief-table">
+            <thead><tr><th>Model</th><th class="num">Total params</th><th class="num">Active params</th><th class="num">INT4 weights</th><th>Speed profile</th></tr></thead>
+            <tbody>
+                <tr><td>Llama 4 Maverick (dense)</td><td class="num">70B</td><td class="num">70B</td><td class="num">35 GB</td><td>as 70B</td></tr>
+                <tr class="hi"><td>DeepSeek-V3 (MoE)</td><td class="num">671B</td><td class="num">37B</td><td class="num">336 GB</td><td>as ~37B</td></tr>
+            </tbody>
+        </table>
+        <p>Read that table the way a provisioning review would. The MoE model carries 9.6× the weight footprint of the dense 70B, and it generates tokens roughly twice as fast. If your constraint is memory, MoE is expensive. If your constraint is latency at high throughput, it is a bargain. The two models are not substitutes at the same price point — they are answers to different questions.</p>
+        <p>The KV cache, notably, does not follow the parameter count at all. Both models at 32K context with 32 concurrent requests carry a KV cache in the 336–1,342 GB range, driven by attention geometry rather than by how many parameters the model holds. Whether the MoE premium turns into a memory problem depends entirely on which of the two dominates your workload.</p>
+        <p>One practical consequence: MoE deployments are sized by VRAM capacity rather than GPU count. Adding cards does not help once memory is the binding constraint, and the ceiling is a hard one because there is no fallback short of spilling experts to host memory at a catastrophic latency cost.</p>
+    </section>
+
+    <section class="seo-section" id="fp8">
+        <h2>FP8 Saves Nothing on the Wrong Card</h2>
+        <p>FP8 looks like the clean answer to the memory problem: 1 byte per parameter, a tidy halving against FP16, and better throughput because fewer bytes move per token. The catch is that FP8 requires hardware support, and it does not fail loudly when absent.</p>
+        <table class="brief-table">
+            <thead><tr><th>Architecture</th><th>Cards</th><th>FP8 status</th><th>What you actually get</th></tr></thead>
+            <tbody>
+                <tr><td>Blackwell</td><td>B200</td><td>Full datapath</td><td>1 byte/param, as advertised</td></tr>
+                <tr><td>Hopper</td><td>H100, H200</td><td>Full datapath</td><td>1 byte/param, as advertised</td></tr>
+                <tr><td>Ada</td><td>L40S, RTX 4090</td><td>FP8 with FP16 accumulate</td><td>1 byte/param; close enough for inference</td></tr>
+                <tr class="hi"><td>Ampere / Turing</td><td>A100, A10, T4, RTX 3090</td><td>No FP8 units</td><td>Silent BF16 fallback — 2 bytes/param</td></tr>
+            </tbody>
+        </table>
+        <p>On an A100 you can request FP8 and the framework will accept it, then quietly run BF16. The 2× memory saving you planned for never appears, and nothing in the logs tells you. This is the failure mode that makes spec-sheet planning dangerous: you check the model fits, deploy, and discover at runtime that the working set is twice what you budgeted for.</p>
+        <p>A related trap sits on the throughput side. FP8's advantage over FP16 is a peak rating, not a delivered result — the full argument is in <a href="/fp8-inference-cost-real">The FP8 Trap</a>, where the 2× spec-sheet figure lands closer to 1.15× on the invoice.</p>
+    </section>
+
+    <section class="seo-section" id="headroom">
+        <h2>Why 10% Headroom Is Not Headroom</h2>
+        <p>A fit verdict that leaves 3% of VRAM free is not a comfortable fit. It is a deployment that will break the first time something changes, and something always changes.</p>
+        <ul>
+            <li><strong>Context growth.</strong> A product decision to raise the context limit from 8K to 32K multiplies the KV cache by four. If KV was 8% of the working set, it is now 26%.</li>
+            <li><strong>Concurrency creep.</strong> Traffic grows. Every additional concurrent request adds its own KV cache, and utilisation that looked comfortable at launch looks different at 3× load.</li>
+            <li><strong>Framework upgrades.</strong> Kernel changes, new attention implementations and updated CUDA versions all move the overhead line, usually upward.</li>
+            <li><strong>Batching policy changes.</strong> Raising the maximum batch size to improve throughput increases the resident KV footprint linearly.</li>
+        </ul>
+        <p>The practical rule: below 10% headroom, treat the fit as provisional and identify the next card or the quantization step you would move to. Above 25%, you have room to absorb growth without re-provisioning. Between the two, monitor the actual VRAM high-water mark rather than the theoretical figure — the gap between them is where surprises live.</p>
+    </section>
+
+    <section class="seo-section" id="vendor">
+        <h2>The 80 GB That Isn't 80 GiB</h2>
+        <p>One more number causes more confusion than it should. An "80 GB" H100 holds 80,000,000,000 bytes of memory. It does not hold 80 × 1024³ = 85,899,345,920 bytes. GPU vendors label memory in decimal gigabytes, the same way storage vendors do, and the difference between the two conventions is 7.4%.</p>
+        <p>So when a tool reports 76.3 GiB for an 80 GB card, that is not a card that shipped short. It is the same number expressed under a different convention. Applying the conversion to a hardware label is a category error — the label already means decimal bytes, and converting it again subtracts memory that does not exist.</p>
+        <p>This matters for fit calculations because 7.4% is well inside the headroom margin we just said to treat as unsafe. If your planning tool subtracts 7% from a card's capacity and your other tool does not, you will get two different verdicts for the same model and spend an afternoon chasing a bug that is not there. The full explanation of when the GB–GiB gap is real and when it is a category error is in <a href="/gib-to-gb-marketing-gap">the marketing gap briefing</a>.</p>
+    </section>
+
+    <section class="seo-section" id="procedure">
+        <h2>A Five-Question Fit Check</h2>
+        <p>Run this before committing to any hardware, in this order. Each question can end the evaluation on its own.</p>
+        <ol>
+            <li><strong>What is the working set, not the weight size?</strong> Weights plus KV cache plus overhead. If you only know the weight figure, you do not yet know whether the model fits.</li>
+            <li><strong>What context length and concurrency will you actually serve?</strong> Not the maximum the model supports — the distribution you expect. This single answer moves the memory requirement by orders of magnitude.</li>
+            <li><strong>Does the card support the precision you assumed?</strong> FP8 on Ampere silently becomes BF16. Check before you plan around a saving that will not materialise.</li>
+            <li><strong>What is the smallest tensor-parallel group that holds one copy?</strong> That is your floor on card count, regardless of traffic. For a dense 70B at FP16, the floor is 2–4 cards; there is no configuration with fewer.</li>
+            <li><strong>What does that group deliver, and what does it cost per token?</strong> Sharded throughput is not N× a single card — efficiency runs 92% at TP=2, 80% at TP=4 and 63% at TP=8. Multiply cards by the hourly rate and divide by delivered tokens, or you are comparing sticker prices rather than costs.</li>
+        </ol>
+        <p>Question five is where most evaluations stop being about engineering and start being about money. It is also the question the <a href="/gpu-model-fit-matrix">fit matrix</a> and the <a href="/inference-capacity-planner">capacity planner</a> are built to answer directly.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>Frequently Asked Questions</h2>
+        <h3>How much VRAM does a 70B model need?</h3>
+        <p>Weights: 140 GB at FP16, 70 GB at INT8, 35 GB at INT4. Working set at 8K context with one request: roughly 151 GB, 77 GB and 40 GB respectively. At 128K context with 32 concurrent requests the INT4 working set reaches about 1.38 TB. The spread between those numbers is the whole point — "how much VRAM" has no single answer without a workload shape attached.</p>
+        <h3>Why does context length change whether a model fits?</h3>
+        <p>Because weights are fixed and the KV cache is not. A 70B INT4 model always holds the same 35 GB of weights, but its KV cache runs from 2.6 GB at 8K context with one request to over 1,340 GB at 128K context with 32 requests. The model did not change; the deployment did.</p>
+        <h3>Why do MoE models need VRAM sized by total parameters?</h3>
+        <p>Because the router can select any expert for any token, so all of them must be resident. Paging an expert from host memory mid-decode would stall the loop. VRAM is therefore sized by total parameters while throughput is governed by active parameters — which is why a 671B MoE with 37B active needs more than one B200 yet generates like a dense 37B model.</p>
+        <h3>Does 4-bit quantization always save half the memory of 8-bit?</h3>
+        <p>For weights, yes. For the KV cache, no — INT4 weights still carry an FP16 KV cache in production serving stacks. On short-context, low-concurrency workloads the weight saving dominates and the distinction is academic. On long-context workloads the KV cache dominates and weight quantization does nothing for the number that blew the budget.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;" id="method">
+        <h2>Methodology &amp; Disclosure</h2>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">Weight figures are parameter count × bytes per parameter at the stated precision, using vendor decimal gigabytes. KV cache is derived from each model's published attention configuration — layer count, grouped-query KV head count and head dimension — as 2 × layers × KV heads × head dimension × tokens × KV bytes, with KV precision held at FP16 regardless of weight quantization. Framework overhead is modelled as 6% of weight footprint with a 0.5 GB floor, a sizing heuristic rather than a measured constant. Tensor-parallel efficiency figures (92% at TP=2, 80% at TP=4, 63% at TP=8, 48% at TP=16) are representative published measurements for NVLink-interconnected deployments and are treated as upper bounds for PCIe. GPU memory capacities are vendor decimal labels and are not converted to GiB. This site takes no sponsorship, no affiliate commission and no vendor payment of any kind; the vendors named here have no relationship with jslet and did not review this briefing.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;">
+        <h2>References &amp; Further Reading</h2>
+        <ol style="font-size:0.85rem; line-height:1.9; color:var(--text-body);" id="references">
+            <li>NVIDIA. H100, H200 and B200 Tensor Core GPU datasheets — HBM capacity and memory bandwidth ratings used throughout. <em>nvidia.com</em></li>
+            <li>NVIDIA Transformer Engine. GPU compute-capability feature matrix: FP8 gating at SM 8.9 (Ada) and full FP8 datapath at SM 9.0 (Hopper) and SM 10.0 (Blackwell). <em>github.com/NVIDIA/TransformerEngine</em></li>
+            <li>DeepSeek-AI. "DeepSeek-V3 Technical Report." Total and active parameter counts, expert routing, and KV head configuration. <em>arxiv.org</em></li>
+            <li>Meta AI. Llama 4 model card — parameter counts, grouped-query attention configuration and layer geometry across the Scout, Maverick and Behemoth variants. <em>ai.meta.com</em></li>
+            <li>vLLM documentation. PagedAttention and KV cache memory management, including the FP16-KV default under weight quantization. <em>docs.vllm.ai</em></li>
+            <li>Related: <a href="/gpu-model-fit-matrix">GPU Model Fit Matrix</a> · <a href="/inference-capacity-planner">Inference Capacity Planner</a> · <a href="/llm-inference-latency">LLM Inference Latency Estimator</a> · <a href="/fp8-inference-cost-real">The FP8 Trap: 2× Spec Sheet, 1.15× Invoice</a> · <a href="/gib-to-gb-marketing-gap">GB vs GiB: The Marketing Gap</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Fgpu-model-fit-matrix-real&amp;text=The%20VRAM%20Ceiling%3A%20why%2070B%20is%20a%20topology%20choice" target="_blank" rel="noopener" aria-label="Share on X">𝕏</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Fgpu-model-fit-matrix-real" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/gpu-model-fit-matrix">🖩 GPU Model Fit Matrix →</a>
+            <a href="/inference-capacity-planner">🖩 Inference Capacity Planner (How Many GPUs?) →</a>
+            <a href="/llm-selfhost-vs-api-breakeven">🖩 Self-Host vs API Breakeven →</a>
+            <a href="/parameters-to-vram-fp16">🖩 LLM Params → FP16 VRAM →</a>
+            <a href="/parameters-to-vram-int4">🖩 LLM Params → INT4 VRAM →</a>
+            <a href="/context-window-vram-inflation">🖩 Context Window VRAM Inflation →</a>
+            <a href="/gib-to-gb-marketing-gap">🖩 GB vs GiB: The Marketing Gap →</a>
+            <a href="/ai-gpu-compute">🤖 All AI &amp; GPU Compute Tools →</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Sizing Disclaimer:</strong> The KV cache and overhead figures in this briefing are sizing heuristics calibrated for conservative provisioning, not architecture-exact measurements. Real memory consumption depends on model architecture specifics, inference engine internals and CUDA version. Validate against your target stack with a representative workload before committing to hardware.</p>
+        </div>
+    </section>
+
+    <footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/ai-gpu-compute">AI &amp; GPU Compute</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>GPU Model Fit Matrix: Will It Fit on One Card?</title>
+    <meta name="description" content="A 70B model at FP16 needs 140 GB — no single GPU has it. Pick model, quantization and context: get the verdict, the cards needed, and the cheapest GPU that runs it.">
+    <meta property="og:title" content="GPU Model Fit Matrix — VRAM Verdict for 12 Models × 10 GPUs">
+    <meta property="og:description" content="Enter a model, quantization level and context length. Get a three-state verdict: fits on one card, needs N cards with tensor parallelism, or cannot run at all.">
+    <meta property="og:url" content="https://www.jslet.com/gpu-model-fit-matrix">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="GPU Model Fit Matrix — Will This Model Fit on One Card?">
+    <meta name="twitter:description" content="Weights plus KV cache plus framework overhead, checked against real VRAM ceilings. Three-state verdict, no guessing.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/gpu-model-fit-matrix">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "GPU Model Fit Matrix",
+      "description": "Determine whether a language model fits on a given GPU: weights, KV cache and framework overhead checked against vendor VRAM ceilings, with a three-state verdict and multi-GPU fallback.",
+      "url": "https://www.jslet.com/gpu-model-fit-matrix",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@type": "Organization", "name": "jslet Research" },
+      "publisher": { "@type": "Organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How much VRAM does a 70B model need?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Weights alone: 140 GB at FP16, 70 GB at INT8, 35 GB at INT4. Add roughly 6% framework overhead and the KV cache, which grows with context length and concurrency — 2–6 GB per concurrent request at 8K context for a dense 70B model. No single datacenter GPU holds 140 GB, which is why a 70B model at FP16 needs 2× H100-80GB or 2× A100-80GB with tensor parallelism. At INT4, 35 GB of weights plus overhead fits on a single H100-80GB or A100-80GB with room for KV cache. Use the calculator above to check your exact model, quantization and context length combination."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why do MoE models need full VRAM for all parameters?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A mixture-of-experts model activates only a fraction of its parameters per token — DeepSeek-V3 activates 37B of its 671B total. But every expert must remain resident in VRAM, because the router can select any expert for any token. You cannot page experts in from system RAM without stalling the decode loop. So VRAM is sized by total parameters (671B), while throughput is governed by active parameters (37B). This is why DeepSeek-V3 at INT4 needs roughly 336 GB of VRAM — more than a single B200's 192 GB — yet generates tokens at a speed closer to a dense 37B model. A dense 671B model would need the same VRAM but run roughly 18× slower."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does FP8 quantization work on every GPU?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. FP8 runs on native tensor-core datapaths only on Hopper and Blackwell (H100, H200, B200), which execute the full FP8 path. Ada-generation cards (RTX 4090, L40S) accelerate FP8 with FP16 accumulate, which is close enough for inference. Ampere and Turing (A100, A10, T4, RTX 3090) have no FP8 units at all — requesting FP8 there makes the framework silently fall back to BF16, so you get 2 bytes per parameter instead of 1 and no VRAM saving. The calculator flags this: if you select FP8 on a card without native support, the verdict is computed at BF16 size and the fallback is stated explicitly."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does the verdict change when I increase context length?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Weights are a fixed cost, but the KV cache scales linearly with context length. A 70B dense model at INT4 holds 35 GB of weights no matter how long the conversation runs; its KV cache at 8K context is a few gigabytes, but at 128K context it becomes tens of gigabytes. That is the difference between a comfortable fit and a model that no longer fits on the same card. The KV cache also scales with batch size, so serving twenty concurrent long-context requests costs twenty times the KV memory of one. Sizing VRAM from weights alone is the single most common provisioning mistake."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 700px) { .calc-grid { grid-template-columns: 1fr; } }
+        select.unit-input, input.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        select.unit-input { appearance: none; cursor: pointer; }
+        select.unit-input:focus, input.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .verdict-box {
+            border-radius: var(--radius-sm); padding: 20px 22px; margin-top: 18px;
+            border: 2px solid var(--border); background: var(--bg-input);
+        }
+        .verdict-box.fit { border-color: #27ae60; background: rgba(39,174,96,0.06); }
+        .verdict-box.tight { border-color: #e67e22; background: rgba(230,126,34,0.06); }
+        .verdict-box.fail { border-color: #c0392b; background: rgba(192,57,43,0.06); }
+        .verdict-head { font-size: 1.35rem; font-weight: 800; margin: 0 0 6px 0; color: var(--text-heading); }
+        .verdict-box.fit .verdict-head { color: #1e8449; }
+        .verdict-box.tight .verdict-head { color: #b9620f; }
+        .verdict-box.fail .verdict-head { color: #a03024; }
+        .verdict-sub { font-size: 0.92rem; color: var(--text-body); margin: 0 0 14px 0; line-height: 1.65; }
+        .vram-bar { display: flex; height: 26px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); margin: 14px 0 8px; background: var(--bg-main); }
+        .vram-seg { height: 100%; transition: width 0.35s ease; }
+        .vram-seg.w { background: #4F46E5; }
+        .vram-seg.kv { background: #7c8ff0; }
+        .vram-seg.oh { background: #b9c3f7; }
+        .vram-seg.free { background: transparent; }
+        .vram-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.76rem; color: var(--text-secondary); margin-bottom: 4px; }
+        .vram-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+        .vram-legend .lw i { background: #4F46E5; }
+        .vram-legend .lkv i { background: #7c8ff0; }
+        .vram-legend .loh i { background: #b9c3f7; }
+        .calc-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 14px; }
+        .calc-table th, .calc-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+        .calc-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .calc-table td.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .calc-table tr.ok td:first-child::before { content: "✅ "; }
+        .calc-table tr.no td:first-child::before { content: "❌ "; }
+        .calc-table tr.partial td:first-child::before { content: "⚠️ "; }
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 22px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.75; margin-bottom: 12px; }
+        .seo-section ul { line-height: 1.85; padding-left: 22px; margin-bottom: 12px; }
+        .pricing-basis {
+            background: var(--bg-input); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+            border-radius: var(--radius-sm); padding: 14px 18px; font-size: 0.82rem; color: var(--text-body);
+            line-height: 1.7; margin-top: 22px;
+        }
+        .pricing-basis strong { color: var(--text-heading); }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 116 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>GPU Model <span>Fit Matrix</span></h1>
+        <p>Weights, KV cache and framework overhead — checked against the VRAM ceiling of every card you might rent</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-09-25 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 9 min read</p>
+    </header>
+
+    <!-- ═══ Executive Summary ═══ -->
+    <section class="seo-section">
+        <h2>Executive Summary</h2>
+        <p>The question "can I run this model?" has three answers, not two. It fits on one card. It fits if you shard it across N cards. Or it does not fit at all — not on this hardware, not with this quantization, not at this context length. Most VRAM calculators stop at the weights and hand you a single number; the answer you actually need is a verdict, because "138 GB" tells you nothing until you compare it against what you can rent.</p>
+        <p>A 70B parameter model is the canonical example. At FP16 the weights alone are 140 GB. No datacenter GPU has 140 GB of memory — the B200 tops out at 192 GB but the H100 sits at 80 GB and the A100 at 80 GB. So a 70B FP16 deployment is not a GPU choice, it is a topology choice: 2× H100-80GB with tensor parallelism, or 2× A100-80GB, or drop to INT8 and fit on one card. Each of those has a different throughput profile, and the throughput difference between them is larger than the VRAM difference.</p>
+        <p>This matrix computes the three-state verdict from first principles: weight size from parameter count and quantization, KV cache from context length and concurrency, framework overhead as a fixed fraction, and a vendor VRAM ceiling that is <em>not</em> the same number as the marketing name suggests. It also refuses to lie about FP8 — if the card you picked has no FP8 datapath, the tool tells you the framework will silently fall back to BF16 rather than quietly assuming a 2× memory saving that will never materialise.</p>
+    </section>
+
+    <!-- ═══ Calculator ═══ -->
+    <section class="seo-section">
+        <h2>Fit Calculator</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 16px;">Pick a model, a GPU and a quantization level, then set the context length and concurrency you actually plan to serve. All calculations run in your browser.</p>
+
+        <div class="calc-grid">
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="model-input">Model</label>
+                <select id="model-input" class="unit-input">
+                    <optgroup label="Llama 4 Family">
+                        <option value="llama4-scout-8b">Llama 4 Scout — 8B params (dense)</option>
+                        <option value="llama4-maverick-70b" selected>Llama 4 Maverick — 70B params (dense)</option>
+                        <option value="llama4-behemoth-405b">Llama 4 Behemoth — 405B params (dense)</option>
+                    </optgroup>
+                    <optgroup label="Mistral Family">
+                        <option value="mistral-small-7b">Mistral Small 3 — 7B params (dense)</option>
+                        <option value="mistral-large-123b">Mistral Large 2 — 123B params (dense)</option>
+                    </optgroup>
+                    <optgroup label="DeepSeek Family">
+                        <option value="deepseek-v3-671b">DeepSeek-V3 — 671B (37B active MoE)</option>
+                        <option value="deepseek-r1-671b">DeepSeek-R1 — 671B (37B active MoE, reasoning)</option>
+                    </optgroup>
+                    <optgroup label="Open-weight Misc">
+                        <option value="qwen25-72b">Qwen 2.5 — 72B params (dense)</option>
+                        <option value="commandr-plus-104b">Command R+ — 104B params (dense)</option>
+                        <option value="phi4-14b">Phi-4 — 14B params (dense)</option>
+                        <option value="gemma3-27b">Gemma 3 — 27B params (dense)</option>
+                        <option value="olmoe-7b">OLMoE — 7B (1B active MoE)</option>
+                    </optgroup>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="gpu-input">GPU</label>
+                <select id="gpu-input" class="unit-input">
+                    <option value="b200-192gb">NVIDIA B200 — 192 GB, 8,000 GB/s</option>
+                    <option value="h200-141gb">NVIDIA H200 — 141 GB, 4,800 GB/s</option>
+                    <option value="h100-80gb" selected>NVIDIA H100 — 80 GB, 3,350 GB/s</option>
+                    <option value="a100-80gb">NVIDIA A100-80GB — 80 GB, 2,039 GB/s</option>
+                    <option value="a100-40gb">NVIDIA A100-40GB — 40 GB, 1,555 GB/s</option>
+                    <option value="l40s-48gb">NVIDIA L40S — 48 GB, 864 GB/s</option>
+                    <option value="rtx4090-24gb">NVIDIA RTX 4090 — 24 GB, 1,008 GB/s</option>
+                    <option value="rtx3090-24gb">NVIDIA RTX 3090 — 24 GB, 936 GB/s</option>
+                    <option value="a10-24gb">NVIDIA A10 — 24 GB, 600 GB/s</option>
+                    <option value="t4-16gb">NVIDIA T4 — 16 GB, 300 GB/s</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="calc-grid" style="margin-top: 12px;">
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="quant-input">Quantization</label>
+                <select id="quant-input" class="unit-input">
+                    <option value="fp16">FP16 — 2 bytes/param</option>
+                    <option value="bf16">BF16 — 2 bytes/param</option>
+                    <option value="fp8">FP8 — 1 byte/param</option>
+                    <option value="int8">INT8 — 1 byte/param</option>
+                    <option value="int4" selected>INT4 — 0.5 bytes/param</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="ctx-input">Context length</label>
+                <select id="ctx-input" class="unit-input">
+                    <option value="4">4K tokens</option>
+                    <option value="8" selected>8K tokens</option>
+                    <option value="32">32K tokens</option>
+                    <option value="128">128K tokens</option>
+                    <option value="256">256K tokens</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="calc-grid" style="margin-top: 12px;">
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="batch-input">Concurrent requests</label>
+                <select id="batch-input" class="unit-input">
+                    <option value="1" selected>1 (single user)</option>
+                    <option value="4">4</option>
+                    <option value="8">8</option>
+                    <option value="16">16</option>
+                    <option value="32">32</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="tensor-input">Tensor parallelism</label>
+                <select id="tensor-input" class="unit-input">
+                    <option value="auto" selected>Auto — smallest that fits</option>
+                    <option value="1">1 GPU</option>
+                    <option value="2">2 GPUs</option>
+                    <option value="4">4 GPUs</option>
+                    <option value="8">8 GPUs</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="verdict-box" id="verdict-box">
+            <p class="verdict-head" id="verdict-head">—</p>
+            <p class="verdict-sub" id="verdict-sub">Choose a model and a GPU to see the verdict.</p>
+            <div class="vram-bar" id="vram-bar">
+                <div class="vram-seg w" id="seg-w" style="width:0%"></div>
+                <div class="vram-seg kv" id="seg-kv" style="width:0%"></div>
+                <div class="vram-seg oh" id="seg-oh" style="width:0%"></div>
+            </div>
+            <div class="vram-legend">
+                <span class="lw"><i></i>Weights <span id="leg-w">—</span></span>
+                <span class="lkv"><i></i>KV cache <span id="leg-kv">—</span></span>
+                <span class="loh"><i></i>Overhead <span id="leg-oh">—</span></span>
+            </div>
+        </div>
+
+        <table class="calc-table" id="fit-table">
+            <thead><tr><th>GPU</th><th class="num">VRAM</th><th class="num">Need (1 replica)</th><th class="num">Cards</th><th>Verdict</th></tr></thead>
+            <tbody id="fit-tbody"></tbody>
+        </table>
+    </section>
+
+    <!-- ═══ How the math works ═══ -->
+    <section class="seo-section">
+        <h2>How the Verdict Is Computed</h2>
+        <p>Three numbers decide the answer, and only the first one is obvious.</p>
+        <h3>1. Weight size</h3>
+        <p>Parameter count times bytes per parameter. A 70B model at FP16 is 70e9 × 2 = 140e9 bytes = 140 GB. Switch to INT8 and it halves to 70 GB; INT4 quarters it to 35 GB. The arithmetic is trivial, which is exactly why people stop here and get the provisioning wrong.</p>
+        <h3>2. KV cache</h3>
+        <p>The KV cache holds the key and value tensors for every token in the context window, for every concurrent request. It grows linearly with context length and linearly with batch size, and it is stored at the model's KV precision — 2 bytes per value at FP16/BF16 regardless of how aggressively you quantized the weights. A dense 70B model at INT4 weights still pays FP16 prices for its KV cache. At 8K context with a single request this is a few gigabytes; at 128K context with 32 concurrent requests it is tens of gigabytes, and it is the number that turns a comfortable fit into a failed one.</p>
+        <p>This calculator uses the same heuristic as our <a href="/llm-inference-latency">inference latency estimator</a>: approximately 0.000025 bytes of KV per parameter per 1K tokens of context, scaled by KV precision. It is a sizing heuristic, not an architecture-exact formula — real KV footprint depends on layer count, KV head count and head dimension, which vary by model. It is calibrated to be conservative rather than optimistic.</p>
+        <h3>3. Framework overhead</h3>
+        <p>CUDA context, cuBLAS workspaces, activation buffers and the inference engine's own allocations consume VRAM that is not weights and not KV cache. In practice this runs about 6% of the weight footprint, with a 1 GB floor. It sounds small until you are trying to fit a 76 GB working set onto an 80 GB card — then it is the difference between fitting and not fitting.</p>
+        <h3>The vendor VRAM convention</h3>
+        <p>An "80 GB" H100 has 80,000,000,000 bytes of memory, not 80 × 1024³ = 85,899,345,920 bytes. GPU vendors label memory in decimal gigabytes. That is the opposite of what operating systems and file managers report, and it is the source of the persistent "my 80 GB GPU only shows 74.5 GB" confusion — a GB-to-GiB conversion that should never have been applied to a hardware label. This tool uses vendor decimal figures throughout. If you want the full explanation of when the gap is real and when it is a category error, see <a href="/gib-to-gb-marketing-gap">GB vs GiB: the marketing gap</a>.</p>
+    </section>
+
+    <!-- ═══ Reading the result ═══ -->
+    <section class="seo-section">
+        <h2>What Each Verdict Means in Practice</h2>
+        <h3>✅ Fits on one card</h3>
+        <p>Weights, KV cache and overhead all sit under the ceiling with room to spare. Pay attention to the headroom figure: fitting with 3% margin means any context length increase, any extra concurrent request or any framework upgrade can push you over. Treat under 10% headroom as a fit that will not survive contact with production.</p>
+        <h3>⚠️ Needs N cards</h3>
+        <p>Tensor parallelism shards the weights across GPUs, and the KV cache along with them. The verdict lists the smallest N that works. Two warnings that do not appear in the VRAM arithmetic: first, throughput per GPU drops as N rises — a measured 92% efficiency at TP=2 falls to 80% at TP=4 and 63% at TP=8, because cross-GPU communication over NVLink eats into every layer. Second, those efficiency figures assume NVLink. Run tensor parallelism across PCIe and communication becomes the bottleneck rather than memory bandwidth.</p>
+        <h3>❌ Does not fit</h3>
+        <p>Even at maximum tensor parallelism the working set exceeds available VRAM. The realistic options: quantize more aggressively (the tool lets you try INT4 immediately), shorten the context window, reduce concurrency, or pick a different card. Note that quantization improves throughput and footprint at once for the weights, but does nothing for the KV cache — if KV is what blew the budget, quantization will not save you.</p>
+    </section>
+
+    <!-- ═══ MoE note ═══ -->
+    <section class="seo-section">
+        <h2>The MoE Trap: Size by Total, Speed by Active</h2>
+        <p>Mixture-of-experts models break the intuition that VRAM requirement and generation speed are the same quantity. DeepSeek-V3 activates 37B of its 671B parameters per token, which makes it behave like a 37B model for throughput purposes — but all 671B must sit in VRAM because the router can select any expert on any token, and paging experts from host memory would stall the decode loop.</p>
+        <p>The result is a model that needs roughly 336 GB at INT4 while generating at something close to 37B speed. That combination — large memory footprint, modest compute per token — is why MoE deployments are constrained by VRAM capacity rather than by GPU count. This calculator sizes MoE models by total parameters and, in the verdict line, reports both the total and active counts so the throughput expectation is not left implicit.</p>
+    </section>
+
+    <!-- ═══ FP8 honesty ═══ -->
+    <section class="seo-section">
+        <h2>FP8 Is Not Available Everywhere</h2>
+        <p>FP8 is attractive on paper: 1 byte per parameter, a clean 2× reduction against FP16. But FP8 needs hardware support. Hopper (H100, H200) and Blackwell (B200) run the full FP8 datapath. Ada-generation cards (RTX 4090, L40S) accelerate FP8 with FP16 accumulation, close enough for inference. Ampere and Turing — A100, A10, T4, RTX 3090 — have no FP8 units at all.</p>
+        <p>On those cards the framework does not error out; it silently falls back to BF16. You ask for FP8, you get 2 bytes per parameter, and the 2× saving you planned for never appears. This tool detects the mismatch and computes the verdict at the real precision, stating the fallback explicitly rather than letting a phantom saving through. The same trap applies to spec-sheet throughput claims — see <a href="/fp8-inference-cost-real">The FP8 Trap</a> for why the 2× spec advantage lands closer to 1.15× on the invoice.</p>
+    </section>
+
+    <!-- ═══ Related ═══ -->
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/gpu-model-fit-matrix-real">📰 The VRAM Ceiling: Why 70B Is a Topology Choice (Full Briefing) →</a>
+            <a href="/inference-capacity-planner">🖩 How Many GPUs Do I Need? (Reverse Solver) →</a>
+            <a href="/llm-inference-latency">🖩 LLM Inference Latency Estimator →</a>
+            <a href="/llm-selfhost-vs-api-breakeven">🖩 Self-Host vs API Breakeven →</a>
+            <a href="/parameters-to-vram-fp16">🖩 LLM Params → FP16 VRAM →</a>
+            <a href="/parameters-to-vram-int4">🖩 LLM Params → INT4 VRAM →</a>
+            <a href="/context-window-vram-inflation">🖩 Context Window VRAM Inflation →</a>
+            <a href="/vram-gb-to-mib">🖩 VRAM GB → MiB Converter →</a>
+            <a href="/fp8-inference-cost-real">📰 The FP8 Trap: 2× Spec Sheet, 1.15× Invoice →</a>
+            <a href="/gib-to-gb-marketing-gap">🖩 GB vs GiB: The Marketing Gap →</a>
+            <a href="/ai-gpu-compute">🤖 All AI &amp; GPU Compute Tools →</a>
+        </div>
+    </div>
+
+    <!-- ═══ Copyright ═══ -->
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Sizing Disclaimer:</strong> The KV cache and overhead figures used here are sizing heuristics calibrated for conservative provisioning. Exact memory consumption depends on model architecture (layer count, KV head count, head dimension), inference engine internals and CUDA version. Always validate against your target stack with a real workload before committing to hardware.</p>
+        </div>
+    </section>
+
+    <footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/ai-gpu-compute">AI &amp; GPU Compute</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+<script src="/llm-hardware-data.js"></script>
+<script>
+(function () {
+    'use strict';
+    var HW = window.JSLET_HW;
+    var $ = function (id) { return document.getElementById(id); };
+
+    function fmtGB(gb) {
+        if (gb >= 1000) return (gb / 1000).toFixed(2) + ' TB';
+        if (gb >= 10) return gb.toFixed(0) + ' GB';
+        return gb.toFixed(1) + ' GB';
+    }
+
+    function compute() {
+        var modelKey = $('model-input').value;
+        var gpuKey = $('gpu-input').value;
+        var quantKey = $('quant-input').value;
+        var ctxK = parseFloat($('ctx-input').value);
+        var batch = parseInt($('batch-input').value, 10);
+        var tensorPref = $('tensor-input').value;
+
+        var model = HW.MODELS[modelKey];
+        var gpu = HW.GPUS[gpuKey];
+
+        // FP8 fallback: if the card has no FP8 datapath, the framework runs BF16.
+        var fp8 = HW.fp8Status(gpuKey);
+        var effectiveQuant = quantKey;
+        var fallbackNote = '';
+        if (quantKey === 'fp8' && fp8 === 'none') {
+            effectiveQuant = 'bf16';
+            fallbackNote = gpu.name + ' has no FP8 datapath — the framework silently falls back to BF16, so this is computed at 2 bytes/param, not 1.';
+        } else if (quantKey === 'fp8' && fp8 === 'ada') {
+            fallbackNote = gpu.name + ' accelerates FP8 with FP16 accumulate (Ada-generation). The 1 byte/param figure holds for inference, but not the full Hopper datapath.';
+        }
+
+        var wGB = HW.weightGB(model, effectiveQuant);
+        var kv = HW.kvGB(model, effectiveQuant, ctxK, batch);
+        var oh = HW.overheadGB(wGB);
+        var need = wGB + kv + oh;
+
+        // Determine cards required.
+        var perCard = gpu.vramGB;
+        var cardsNeeded = Math.max(1, Math.ceil(need / perCard));
+        // Valid TP sizes are powers of two.
+        var tpSizes = [1, 2, 4, 8, 16];
+        var autoTP = 1;
+        for (var i = 0; i < tpSizes.length; i++) {
+            if (tpSizes[i] >= cardsNeeded) { autoTP = tpSizes[i]; break; }
+            autoTP = tpSizes[i];
+        }
+        var maxFeasible = tpSizes[tpSizes.length - 1];
+        var canFitAtAll = need <= perCard * maxFeasible;
+
+        var chosenTP = tensorPref === 'auto' ? autoTP : parseInt(tensorPref, 10);
+        var headroom = ((perCard * chosenTP) - need) / (perCard * chosenTP) * 100;
+
+        // Verdict
+        var box = $('verdict-box');
+        box.className = 'verdict-box';
+        var head, sub;
+
+        if (!canFitAtAll) {
+            box.classList.add('fail');
+            head = '❌ Does not fit';
+            var needed8 = need / perCard;
+            sub = 'This configuration needs ' + fmtGB(need) + ' of VRAM. The largest tensor-parallel topology modelled here is ' +
+                  maxFeasible + ' × ' + gpu.name + ' = ' + fmtGB(perCard * maxFeasible) +
+                  ', which is still short by ' + fmtGB(need - perCard * maxFeasible) +
+                  '. Quantize more aggressively, shorten the context, cut concurrency, or move to a larger card.';
+            if (model.activeParams < model.params) {
+                sub += ' Note this is an MoE model — VRAM is sized by the ' + (model.params / 1e9).toFixed(0) +
+                       'B total parameters even though only ' + (model.activeParams / 1e9).toFixed(0) + 'B are active per token.';
+            }
+        } else if (chosenTP === 1) {
+            box.classList.add(headroom < 10 ? 'tight' : 'fit');
+            head = headroom < 10 ? '⚠️ Fits on one card — but tight' : '✅ Fits on one card';
+            sub = 'A single ' + gpu.name + ' holds ' + fmtGB(perCard) + '. This configuration needs ' + fmtGB(need) +
+                  ', leaving ' + headroom.toFixed(1) + '% headroom (' + fmtGB(perCard - need) + ').' +
+                  (headroom < 10 ? ' Under 10% headroom will not survive a context increase, an extra concurrent request, or a framework upgrade — treat it as a fit that needs monitoring.' : '');
+        } else {
+            box.classList.add(headroom < 10 ? 'tight' : 'fit');
+            head = '⚠️ Needs ' + chosenTP + ' × ' + gpu.name;
+            var effSingle = (gpu.memBW / ((model.activeParams * HW.QUANT_BYTES[effectiveQuant]) / 1e9)) * HW.batchEfficiency(batch);
+            var effTotal = effSingle * chosenTP * HW.tpEfficiency(chosenTP);
+            sub = 'One card holds ' + fmtGB(perCard) + ', the workload needs ' + fmtGB(need) +
+                  ', so weights and KV cache shard across ' + chosenTP + ' GPUs (tensor parallel). ' +
+                  'Aggregate throughput does not scale linearly: TP efficiency is ' + (HW.tpEfficiency(chosenTP) * 100).toFixed(0) +
+                  '% at TP=' + chosenTP + ', so ' + chosenTP + ' cards deliver roughly ' +
+                  (chosenTP * HW.tpEfficiency(chosenTP)).toFixed(1) + '× a single card rather than ' + chosenTP + '×. ' +
+                  'That estimate assumes NVLink — over PCIe, cross-GPU communication becomes the bottleneck.';
+            if (headroom >= 0) {
+                sub += ' Headroom across the group is ' + headroom.toFixed(1) + '%.';
+            }
+        }
+        if (fallbackNote) sub += ' ' + fallbackNote;
+        $('verdict-head').textContent = head;
+        $('verdict-sub').textContent = sub;
+
+        // VRAM bar (relative to one card, capped at 100% per segment share of chosen capacity)
+        var capacity = perCard * chosenTP;
+        var wPct = Math.min(100, wGB / capacity * 100);
+        var kvPct = Math.min(100 - wPct, kv / capacity * 100);
+        var ohPct = Math.min(100 - wPct - kvPct, oh / capacity * 100);
+        $('seg-w').style.width = wPct + '%';
+        $('seg-kv').style.width = kvPct + '%';
+        $('seg-oh').style.width = ohPct + '%';
+        $('leg-w').textContent = fmtGB(wGB);
+        $('leg-kv').textContent = fmtGB(kv);
+        $('leg-oh').textContent = fmtGB(oh);
+
+        // Full GPU table
+        var order = ['b200-192gb', 'h200-141gb', 'h100-80gb', 'a100-80gb', 'a100-40gb', 'l40s-48gb', 'rtx4090-24gb', 'rtx3090-24gb', 'a10-24gb', 't4-16gb'];
+        var tbody = $('fit-tbody');
+        tbody.innerHTML = '';
+        order.forEach(function (k) {
+            var g = HW.GPUS[k];
+            var needs = Math.max(1, Math.ceil(need / g.vramGB));
+            var tp = 1;
+            for (var j = 0; j < tpSizes.length; j++) { if (tpSizes[j] >= needs) { tp = tpSizes[j]; break; } tp = tpSizes[j]; }
+            var fits = need <= g.vramGB * tpSizes[tpSizes.length - 1];
+            var row = document.createElement('tr');
+            var verdict, cls;
+            if (!fits) { verdict = 'Does not fit'; cls = 'no'; }
+            else if (tp === 1) {
+                var hr = (g.vramGB - need) / g.vramGB * 100;
+                verdict = hr < 10 ? 'Tight (' + hr.toFixed(0) + '% headroom)' : 'Fits on one card';
+                cls = hr < 10 ? 'partial' : 'ok';
+            } else { verdict = 'Needs ' + tp + ' cards (TP=' + tp + ')'; cls = 'partial'; }
+            row.className = cls;
+            row.innerHTML = '<td>' + g.name + '</td>' +
+                '<td class="num">' + g.vramGB + ' GB</td>' +
+                '<td class="num">' + fmtGB(need) + '</td>' +
+                '<td class="num">' + (fits ? tp : '—') + '</td>' +
+                '<td>' + verdict + '</td>';
+            tbody.appendChild(row);
+        });
+    }
+
+    ['model-input', 'gpu-input', 'quant-input', 'ctx-input', 'batch-input', 'tensor-input'].forEach(function (id) {
+        var el = $(id);
+        if (el) { el.addEventListener('change', compute); el.addEventListener('input', compute); }
+    });
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', compute);
+    } else {
+        compute();
+    }
+})();
+</script>
+
+</body>
+</html>

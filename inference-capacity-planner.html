@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>How Many GPUs Do I Need? Inference Capacity Planner</title>
+    <meta name="description" content="Start from the traffic, not the hardware. Enter target QPS and a latency budget: get the GPU count, the tensor-parallel layout, and the same load's API cost.">
+    <meta property="og:title" content="Inference Capacity Planner — Work Backwards From Target QPS to GPU Count">
+    <meta property="og:description" content="Everyone sizes inference forwards: pick a GPU, read off tokens/sec. The provisioning question runs the other way — here is a target, how many cards does it take?">
+    <meta property="og:url" content="https://www.jslet.com/inference-capacity-planner">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="How Many GPUs Do I Need? — Inference Capacity Planner">
+    <meta name="twitter:description" content="Target QPS plus a latency budget, solved backwards into a GPU count and a tensor-parallel layout. Includes the self-host vs API comparison.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/inference-capacity-planner">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Inference Capacity Planner",
+      "description": "Solve for GPU count from target QPS and a latency budget. Reports the tensor-parallel layout, the aggregate throughput after TP efficiency loss, and the equivalent API cost.",
+      "url": "https://www.jslet.com/inference-capacity-planner",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Any",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@type": "Organization", "name": "jslet Research" },
+      "publisher": { "@type": "Organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How many GPUs do I need to serve an LLM at a given QPS?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Divide the target throughput by what one GPU delivers, then fix up for two effects. First, tensor parallelism is not free: measured efficiency is 92% at TP=2, 80% at TP=4 and 63% at TP=8, so eight cards deliver roughly 5× a single card, not 8×. Second, sharding the model may be forced by memory before it is chosen for speed — a 70B model at FP16 needs 151 GB with KV cache, so it cannot run on fewer than two 80 GB cards no matter how little traffic you send. Worked example: 500 tokens/sec needed, a dense 8B at INT4 on an H100 delivers about 2,000 tokens/sec per card at batch 8, so one card covers it; the same 500 tokens/sec from a 70B FP16 model needs 2 cards minimum for memory and delivers well over the target once sharded."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does adding GPUs not scale throughput linearly?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Tensor parallelism splits every layer across the group, which means every layer needs an all-reduce communication step to combine partial results. That communication grows with group size while the useful work per card shrinks, so efficiency falls as N rises: 92% at TP=2, 80% at TP=4, 63% at TP=8, and roughly 48% at TP=16. The practical consequence is that going from 4 to 8 cards buys about 1.6× throughput, not 2×, and at some point adding cards stops helping entirely. Those figures assume NVLink interconnect. Across PCIe the communication cost is far higher and the effective ceiling arrives much sooner."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I convert monthly requests into a QPS target?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Divide monthly volume by seconds in a month (2.6 million) to get average QPS, then multiply by a peak-to-average ratio. Average QPS is almost never the number to provision against: business traffic peaks 3–10× above its daily mean, and a service that is comfortable at average load will fall over at peak. Provisioning at 2× average is the minimum defensible position; 4× is typical for consumer-facing products. The planner above lets you enter either monthly volume or direct QPS and applies the peak multiplier explicitly, so the headroom decision is visible rather than buried inside a fudge factor."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Am I better off self-hosting or using an API at this scale?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It depends on utilisation, not on scale alone. A GPU rented by the hour costs the same whether it serves one request or a million, so self-hosting wins when sustained utilisation is high and loses badly when it is not. The crossover for a mid-size open-weight model typically sits where the GPU bill for the month equals the API bill for the same token volume, and the discount rates matter more than the headline price: cached input at 90% off and batch mode at 50% off can move the crossover by an order of magnitude. The comparison panel here prices your modelled load both ways using current per-token rates. For the full argument, see the breakeven briefing linked below."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 700px) { .calc-grid { grid-template-columns: 1fr; } }
+        select.unit-input, input.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        select.unit-input { appearance: none; cursor: pointer; }
+        select.unit-input:focus, input.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-val.warn { color: #e67e22; }
+        .metric-tile .metric-val.good { color: #27ae60; }
+        .metric-tile .metric-label { font-size: 0.7rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.4; }
+        .step-list { counter-reset: step; list-style: none; padding-left: 0; }
+        .step-list li { counter-increment: step; position: relative; padding-left: 38px; margin-bottom: 14px; line-height: 1.7; }
+        .step-list li::before {
+            content: counter(step); position: absolute; left: 0; top: 2px;
+            width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff;
+            font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
+        }
+        .calc-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 14px; }
+        .calc-table th, .calc-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+        .calc-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .calc-table td.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .calc-table tr.hi { background: rgba(79,70,229,0.07); font-weight: 700; }
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 22px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.75; margin-bottom: 12px; }
+        .seo-section ul { line-height: 1.85; padding-left: 22px; margin-bottom: 12px; }
+        .pricing-basis {
+            background: var(--bg-input); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+            border-radius: var(--radius-sm); padding: 14px 18px; font-size: 0.82rem; color: var(--text-body);
+            line-height: 1.7; margin-top: 22px;
+        }
+        .pricing-basis strong { color: var(--text-heading); }
+        .flag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; }
+        .flag.ok { background: rgba(39,174,96,0.14); color: #1e8449; }
+        .flag.bad { background: rgba(192,57,43,0.14); color: #a03024; }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 116 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>Inference <span>Capacity Planner</span></h1>
+        <p>Give it the traffic and the latency budget. It gives back the GPU count — the question every provisioning review actually asks</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-09-25 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 11 min read</p>
+    </header>
+
+    <!-- ═══ Executive Summary ═══ -->
+    <section class="seo-section">
+        <h2>Executive Summary</h2>
+        <p>Every throughput calculator on the internet runs the same direction: choose a GPU, read off tokens per second, close the tab. That answers "how fast is this card" and leaves the actual provisioning question untouched. Nobody is handed a GPU and asked how fast it is. They are handed a product requirement — this many users, this latency target — and asked how much hardware it takes.</p>
+        <p>So run it backwards. Start with target QPS and a latency budget, divide by the per-card throughput your model and quantization actually deliver, then correct for the two effects that make naive division wrong. The first is tensor-parallel efficiency: sharding a model across N cards gives you about N × 92%, 80%, 63% of one card's throughput at N = 2, 4, 8 — never N×. The second is that memory can force a shard count before throughput does. A 70B model at FP16 needs 151 GB of working set, so it cannot run on fewer than two 80 GB cards even if one card could serve the traffic.</p>
+        <p>The planner below returns four things: how many GPUs the load needs, the smallest valid tensor-parallel layout, the throughput that layout actually delivers after efficiency loss, and what the same token volume would cost as API calls. That last number is the one that usually changes the decision.</p>
+    </section>
+
+    <!-- ═══ Calculator ═══ -->
+    <section class="seo-section">
+        <h2>Capacity Planner</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 16px;">Enter your workload, then your hardware options. Everything is computed in your browser.</p>
+
+        <h3 style="color: var(--accent); margin: 18px 0 10px;">1 · Workload</h3>
+        <div class="calc-grid">
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="qps-mode">How will you specify demand?</label>
+                <select id="qps-mode" class="unit-input">
+                    <option value="volume" selected>Monthly request volume</option>
+                    <option value="qps">Direct QPS target</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="demand-input">Demand</label>
+                <input type="number" id="demand-input" class="unit-input" value="3000000" min="1" step="100000">
+                <span id="demand-hint" style="font-size:0.75rem;color:var(--text-secondary);">requests per month</span>
+            </div>
+        </div>
+
+        <div class="calc-grid" style="margin-top: 12px;">
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="peak-input">Peak-to-average multiplier</label>
+                <select id="peak-input" class="unit-input">
+                    <option value="1">1× — perfect flat demand</option>
+                    <option value="2" selected>2× — conservative floor</option>
+                    <option value="3">3× — typical internal service</option>
+                    <option value="5">5× — consumer-facing</option>
+                    <option value="10">10× — spiky or uncertain</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="tok-input">Output tokens per request</label>
+                <input type="number" id="tok-input" class="unit-input" value="400" min="1" step="50">
+            </div>
+        </div>
+
+        <div class="calc-grid" style="margin-top: 12px;">
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="latency-input">Latency budget</label>
+                <select id="latency-input" class="unit-input">
+                    <option value="interactive" selected>Interactive — ITL under 50 ms</option>
+                    <option value="balanced">Balanced — ITL under 100 ms</option>
+                    <option value="batch">Batch — throughput only</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="util-input">Target utilisation ceiling</label>
+                <select id="util-input" class="unit-input">
+                    <option value="60">60% — headroom for failover</option>
+                    <option value="70" selected>70% — standard safety margin</option>
+                    <option value="85">85% — cost-optimised</option>
+                    <option value="100">100% — theoretical ceiling</option>
+                </select>
+            </div>
+        </div>
+
+        <h3 style="color: var(--accent); margin: 22px 0 10px;">2 · Model &amp; Hardware</h3>
+        <div class="calc-grid">
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="model-input">Model</label>
+                <select id="model-input" class="unit-input">
+                    <optgroup label="Llama 4 Family">
+                        <option value="llama4-scout-8b" selected>Llama 4 Scout — 8B params (dense)</option>
+                        <option value="llama4-maverick-70b">Llama 4 Maverick — 70B params (dense)</option>
+                        <option value="llama4-behemoth-405b">Llama 4 Behemoth — 405B params (dense)</option>
+                    </optgroup>
+                    <optgroup label="Mistral Family">
+                        <option value="mistral-small-7b">Mistral Small 3 — 7B params (dense)</option>
+                        <option value="mistral-large-123b">Mistral Large 2 — 123B params (dense)</option>
+                    </optgroup>
+                    <optgroup label="DeepSeek Family">
+                        <option value="deepseek-v3-671b">DeepSeek-V3 — 671B (37B active MoE)</option>
+                        <option value="deepseek-r1-671b">DeepSeek-R1 — 671B (37B active MoE, reasoning)</option>
+                    </optgroup>
+                    <optgroup label="Open-weight Misc">
+                        <option value="qwen25-72b">Qwen 2.5 — 72B params (dense)</option>
+                        <option value="commandr-plus-104b">Command R+ — 104B params (dense)</option>
+                        <option value="phi4-14b">Phi-4 — 14B params (dense)</option>
+                        <option value="gemma3-27b">Gemma 3 — 27B params (dense)</option>
+                        <option value="olmoe-7b">OLMoE — 7B (1B active MoE)</option>
+                    </optgroup>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="gpu-input">GPU</label>
+                <select id="gpu-input" class="unit-input">
+                    <option value="b200-192gb">NVIDIA B200 — 192 GB, 8,000 GB/s</option>
+                    <option value="h200-141gb">NVIDIA H200 — 141 GB, 4,800 GB/s</option>
+                    <option value="h100-80gb" selected>NVIDIA H100 — 80 GB, 3,350 GB/s</option>
+                    <option value="a100-80gb">NVIDIA A100-80GB — 80 GB, 2,039 GB/s</option>
+                    <option value="l40s-48gb">NVIDIA L40S — 48 GB, 864 GB/s</option>
+                    <option value="rtx4090-24gb">NVIDIA RTX 4090 — 24 GB, 1,008 GB/s</option>
+                    <option value="t4-16gb">NVIDIA T4 — 16 GB, 300 GB/s</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="calc-grid" style="margin-top: 12px;">
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="quant-input">Quantization</label>
+                <select id="quant-input" class="unit-input">
+                    <option value="fp16">FP16 — 2 bytes/param</option>
+                    <option value="fp8">FP8 — 1 byte/param</option>
+                    <option value="int8">INT8 — 1 byte/param</option>
+                    <option value="int4" selected>INT4 — 0.5 bytes/param</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-weight:700;margin-bottom:4px;color:var(--text-heading);font-size:0.88rem;" for="ctx-input">Average context length</label>
+                <select id="ctx-input" class="unit-input">
+                    <option value="2">2K tokens</option>
+                    <option value="4">4K tokens</option>
+                    <option value="8" selected>8K tokens</option>
+                    <option value="32">32K tokens</option>
+                    <option value="128">128K tokens</option>
+                </select>
+            </div>
+        </div>
+
+        <h3 style="color: var(--accent); margin: 22px 0 12px;">3 · Result</h3>
+        <div class="metric-grid" id="result-metrics">
+            <div class="metric-tile"><div class="metric-val" id="m-gpus">—</div><div class="metric-label">GPUs required</div></div>
+            <div class="metric-tile"><div class="metric-val" id="m-tp">—</div><div class="metric-label">Tensor-parallel layout</div></div>
+            <div class="metric-tile"><div class="metric-val" id="m-cap">—</div><div class="metric-label">Delivered capacity (tok/s)</div></div>
+            <div class="metric-tile"><div class="metric-val" id="m-peak">—</div><div class="metric-label">Peak demand (tok/s)</div></div>
+            <div class="metric-tile"><div class="metric-val" id="m-util">—</div><div class="metric-label">Resulting utilisation</div></div>
+            <div class="metric-tile"><div class="metric-val" id="m-vram">—</div><div class="metric-label">Working set / replica</div></div>
+        </div>
+
+        <p id="plan-note" style="margin-top:16px; font-size:0.9rem; line-height:1.7; color:var(--text-body);"></p>
+
+        <h3 style="color: var(--accent); margin: 24px 0 12px;">Self-host vs API for This Load</h3>
+        <table class="calc-table" id="compare-table">
+            <thead><tr><th>Option</th><th class="num">Monthly cost</th><th class="num">Cost / 1M tokens</th><th>Verdict</th></tr></thead>
+            <tbody id="compare-tbody"></tbody>
+        </table>
+
+        <div class="pricing-basis">
+            <p style="margin:0 0 8px 0;"><strong>Pricing basis —</strong> GPU rental rates used here are on-demand list prices for the named instance class in <strong>us-east-1</strong>, in <strong>USD</strong>, as published <strong>2026-09-25</strong>. Rates are per-GPU, per-hour, and exclude storage, egress and reserved-capacity discounts.</p>
+            <p style="margin:0 0 8px 0;"><strong>Assumptions —</strong> (1) GPU billed at 100% of wall-clock time regardless of utilisation, which is how on-demand rental works and why utilisation drives the self-host verdict. (2) API comparison uses the blended per-token rate of a comparable hosted model, input and output weighted by the token mix you entered. (3) No reserved-instance, spot, savings-plan or committed-use discount is applied to either side. (4) Batch and cached-input discounts are excluded from the headline and noted separately where they apply.</p>
+            <p style="margin:0;"><strong>Sources —</strong> <a href="https://aws.amazon.com/ec2/pricing/on-demand/" rel="nofollow noopener" target="_blank">AWS EC2 On-Demand pricing</a> · <a href="https://cloud.google.com/compute/gpus-pricing" rel="nofollow noopener" target="_blank">Google Cloud GPU pricing</a> · <a href="https://www.runpod.io/pricing" rel="nofollow noopener" target="_blank">RunPod GPU pricing</a> · <a href="https://www.vast.ai/pricing" rel="nofollow noopener" target="_blank">Vast.ai pricing</a>. Model architecture figures (layers, KV heads, head dimension) from each model's published configuration.</p>
+        </div>
+    </section>
+
+    <!-- ═══ Reverse vs forward ═══ -->
+    <section class="seo-section">
+        <h2>Why the Reverse Direction Is the One That Matters</h2>
+        <p>Forward sizing is easy and almost useless. You pick a card, the tool tells you it does 2,000 tokens/sec, and you have learned something about the card rather than about your deployment. The question in a provisioning review is never "what can this GPU do" — it is "what does this product cost to run", and that question has the traffic on the left-hand side.</p>
+        <p>Reverse sizing turns a capacity target into a hardware count, and the difference is not cosmetic. It surfaces costs that forward sizing hides: a model that fits on one card but only serves 40% of your traffic, a tensor-parallel layout chosen for memory that leaves you paying for 3× the compute you need, a utilisation figure so low that the per-token cost lands an order of magnitude above the API price for the same model.</p>
+        <h3>The four steps</h3>
+        <ol class="step-list">
+            <li><strong>Turn demand into peak tokens/sec.</strong> Monthly requests × output tokens per request ÷ 2.6 million seconds gives average token throughput. Multiply by the peak ratio — the planner makes you choose it explicitly, because average load provisioning is the single most common way inference services fall over.</li>
+            <li><strong>Find per-card throughput.</strong> From the model's active parameters, the quantization level and the GPU's memory bandwidth: one decoded token requires reading every active parameter once, so tokens/sec ≈ bandwidth ÷ bytes-per-token-read. Apply the batch efficiency factor for the concurrency you expect.</li>
+            <li><strong>Divide, then correct for sharding.</strong> Cards needed = peak throughput ÷ per-card throughput ÷ utilisation ceiling, rounded up. If memory forces a larger group than throughput does, take the larger of the two — and remember that aggregate throughput scales by the TP efficiency, not by N.</li>
+            <li><strong>Price it both ways.</strong> Multiply cards by the hourly rate. Compute the same token volume at API rates. The ratio tells you which regime you are in, and it is far more sensitive to utilisation than to model size.</li>
+        </ol>
+    </section>
+
+    <!-- ═══ TP efficiency ═══ -->
+    <section class="seo-section">
+        <h2>Tensor Parallelism Is Not Free Throughput</h2>
+        <p>Sharding a model across N GPUs does not multiply throughput by N. Tensor parallelism splits every layer, which means every layer needs an all-reduce to combine the partial results before the next layer can begin. The communication is a fixed cost per layer that grows with group size, while the useful compute per card shrinks. Efficiency falls accordingly:</p>
+        <table class="calc-table">
+            <thead><tr><th>Layout</th><th class="num">TP efficiency</th><th class="num">Effective speedup</th><th class="num">Marginal gain</th></tr></thead>
+            <tbody>
+                <tr><td>1 GPU</td><td class="num">100%</td><td class="num">1.00×</td><td class="num">—</td></tr>
+                <tr><td>2 GPUs</td><td class="num">92%</td><td class="num">1.84×</td><td class="num">+84%</td></tr>
+                <tr class="hi"><td>4 GPUs</td><td class="num">80%</td><td class="num">3.20×</td><td class="num">+74%</td></tr>
+                <tr><td>8 GPUs</td><td class="num">63%</td><td class="num">5.04×</td><td class="num">+58%</td></tr>
+                <tr><td>16 GPUs</td><td class="num">48%</td><td class="num">7.68×</td><td class="num">+52%</td></tr>
+            </tbody>
+        </table>
+        <p>Going from 4 to 8 cards buys 1.58× throughput for twice the money — the marginal cost per token rises. These figures assume NVLink. Across PCIe interconnect the all-reduce cost is substantially higher and the practical ceiling arrives at a much smaller group size. If your hardware plan puts tensor parallelism over PCIe, treat the table above as an upper bound that you will not reach.</p>
+        <h3>When sharding is forced by memory rather than speed</h3>
+        <p>A 70B model at FP16 occupies 151 GB of working set including KV cache and framework overhead. Two H100-80GB cards hold 160 GB, so the model needs TP=2 whether or not one card's throughput would have covered the traffic. That is the case where you pay the efficiency penalty for a reason that has nothing to do with throughput — and it is invisible if you size from traffic alone.</p>
+    </section>
+
+    <!-- ═══ Utilisation ═══ -->
+    <section class="seo-section">
+        <h2>Utilisation Decides Self-Host vs API</h2>
+        <p>A rented GPU costs the same per hour whether it serves one request or a million. That single fact drives the self-host decision far more than model size does. At high sustained utilisation, owned or rented capacity beats per-token pricing comfortably. At low utilisation you are paying for idle silicon, and the API wins by a wide margin even though its per-token rate looks expensive.</p>
+        <p>Three practical notes the comparison table cannot capture. First, batch mode at 50% off applies only to OpenAI, Anthropic, Google and Mistral — DeepSeek and Together do not offer it, which changes the API side of the comparison by half. Second, cached input reads at up to 90–98% off on the major providers: for workloads with a large stable prefix, that discount moves the crossover further than any hardware choice. Third, the self-hosted side carries operational cost that does not appear in the GPU bill — the MLOps engineer, the evaluation harness, the upgrade cycle — and the breakeven briefing linked below puts numbers on it.</p>
+        <p>The honest summary: if your modeled utilisation lands under roughly 30%, treat the self-host column as a floor rather than an estimate, and check the API side first.</p>
+    </section>
+
+    <!-- ═══ Reading the result ═══ -->
+    <section class="seo-section">
+        <h2>Reading the Plan</h2>
+        <h3>GPUs required</h3>
+        <p>The larger of two constraints: throughput (peak tokens/sec ÷ per-card tokens/sec ÷ utilisation ceiling) and memory (working set ÷ VRAM per card, rounded up to the next valid tensor-parallel size). When these disagree, the memory constraint usually wins for models above 30B and the throughput constraint wins for small models under heavy load.</p>
+        <h3>Tensor-parallel layout</h3>
+        <p>Valid layouts are powers of two in practice, because all-reduce works most efficiently on power-of-two groups and the serving frameworks are tuned for them. A requirement of 5 cards becomes a 8-card layout or two 4-card replicas — the planner picks the smallest valid shard count and reports whether a single replica or several replicas is the better shape.</p>
+        <h3>Resulting utilisation</h3>
+        <p>Delivered capacity against peak demand. Below 30% the economics of renting dedicated silicon are poor and the API comparison will usually win. Above 70% you are running close to the ceiling you chose, which is a deliberate trade rather than an accident. Utilisation is the number to revisit when traffic grows — it tells you how much headroom is left before the next card is needed.</p>
+    </section>
+
+    <!-- ═══ Related ═══ -->
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/inference-capacity-planner-real">📰 The Reverse Sizing Problem: From QPS to Silicon (Full Briefing) →</a>
+            <a href="/gpu-model-fit-matrix">🖩 GPU Model Fit Matrix (Will It Fit?) →</a>
+            <a href="/llm-selfhost-vs-api-breakeven">🖩 Self-Host vs API Breakeven →</a>
+            <a href="/llm-inference-latency">🖩 LLM Inference Latency Estimator →</a>
+            <a href="/llm-api-pricing-calculator">🖩 LLM API Pricing Calculator →</a>
+            <a href="/gpu-training-cost">🖩 GPU Training Cost Estimator →</a>
+            <a href="/llm-fine-tuning-cost">🖩 LLM Fine-tuning Cost →</a>
+            <a href="/fp8-inference-cost-real">📰 The FP8 Trap: 2× Spec Sheet, 1.15× Invoice →</a>
+            <a href="/ai-gpu-compute">🤖 All AI &amp; GPU Compute Tools →</a>
+        </div>
+    </div>
+
+    <!-- ═══ Copyright ═══ -->
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Capacity Planning Disclaimer:</strong> Throughput figures are model-based estimates derived from memory bandwidth, parameter count and quantization level with efficiency factors calibrated against published benchmarks. Real deployments vary with framework version, CUDA version, kernel selection, prompt shape and interconnect topology. Tensor-parallel efficiency figures assume NVLink. Size production capacity against measured benchmarks on your target stack, and keep headroom for failover.</p>
+        </div>
+    </section>
+
+    <footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/ai-gpu-compute">AI &amp; GPU Compute</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+<script src="/llm-hardware-data.js"></script>
+<script>
+(function () {
+    'use strict';
+    var HW = window.JSLET_HW;
+    var $ = function (id) { return document.getElementById(id); };
+
+    // On-demand, per-GPU hourly list rates in us-east-1, USD, 2026-09-25.
+    var GPU_HOURLY = {
+        'b200-192gb': 5.98, 'h200-141gb': 4.51, 'h100-80gb': 3.90,
+        'a100-80gb': 2.61, 'l40s-48gb': 1.86, 'rtx4090-24gb': 0.74, 't4-16gb': 0.53
+    };
+    // Blended API rate for a comparable hosted model, USD per 1M tokens.
+    var API_BLENDED_PER_MTOK = 4.20;
+
+    var PEAK_SECONDS_PER_MONTH = 2.6e6;
+
+    function fmtGB(gb) {
+        if (gb >= 1000) return (gb / 1000).toFixed(2) + ' TB';
+        if (gb >= 10) return gb.toFixed(0) + ' GB';
+        return gb.toFixed(1) + ' GB';
+    }
+    function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+    function fmtMoney(n) {
+        if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
+        if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'k';
+        return '$' + n.toFixed(0);
+    }
+
+    var tpSizes = [1, 2, 4, 8, 16];
+
+    function compute() {
+        var mode = $('qps-mode').value;
+        var demand = parseFloat($('demand-input').value) || 1;
+        var peakTop = parseFloat($('peak-input').value);
+        var outTok = parseFloat($('tok-input').value) || 1;
+        var latMode = $('latency-input').value;
+        var utilCeil = parseFloat($('util-input').value) / 100;
+
+        var modelKey = $('model-input').value;
+        var gpuKey = $('gpu-input').value;
+        var quantKey = $('quant-input').value;
+        var ctxK = parseFloat($('ctx-input').value);
+
+        var model = HW.MODELS[modelKey];
+        var gpu = HW.GPUS[gpuKey];
+
+        // FP8 fallback
+        var effQuant = quantKey;
+        var fp8note = '';
+        if (quantKey === 'fp8' && HW.fp8Status(gpuKey) === 'none') {
+            effQuant = 'bf16';
+            fp8note = ' (' + gpu.name + ' has no FP8 datapath, so this is computed at BF16 — the framework falls back silently.)';
+        }
+
+        // Latency budget -> batch size assumption
+        var batch, batchLabel;
+        if (latMode === 'interactive') { batch = 8; batchLabel = 'batch 8 (ITL under 50 ms)'; }
+        else if (latMode === 'balanced') { batch = 32; batchLabel = 'batch 32 (ITL under 100 ms)'; }
+        else { batch = 128; batchLabel = 'batch 128 (throughput mode)'; }
+
+        // 1) Peak output tokens/sec
+        var requestsPerMonth = mode === 'volume' ? demand : demand * PEAK_SECONDS_PER_MONTH;
+        var avgQps = requestsPerMonth / PEAK_SECONDS_PER_MONTH;
+        var peakQps = avgQps * peakTop;
+        var peakTokPerSec = peakQps * outTok;
+
+        // 2) Per-card throughput
+        var perCardTok = HW.theoreticalTokPerSec(gpu, model, effQuant) * HW.batchEfficiency(batch);
+
+        // 3) Memory constraint: working set
+        var wGB = HW.weightGB(model, effQuant);
+        var kv = HW.kvGB(model, effQuant, ctxK, batch);
+        var oh = HW.overheadGB(wGB);
+        var workingSet = wGB + kv + oh;
+
+        var cardsMem = workingSet / gpu.vramGB;
+        var tpMem = 1;
+        for (var i = 0; i < tpSizes.length; i++) { if (tpSizes[i] >= cardsMem) { tpMem = tpSizes[i]; break; } tpMem = tpSizes[i]; }
+        var memFeasible = workingSet <= gpu.vramGB * tpSizes[tpSizes.length - 1];
+
+        // 4) Choose a deployment shape.
+        //
+        // A shape is (tp, replicas): tp cards shard one copy of the model, and
+        // `replicas` such groups run side by side behind a router.
+        //
+        // Two hard constraints, both must hold:
+        //   memory    — one copy's working set must fit in tp × VRAM
+        //   throughput— replicas × (per-card rate × tp × TP_efficiency) ≥ peak ÷ ceiling
+        //
+        // Among all feasible shapes take the one with the fewest total cards,
+        // preferring a smaller group when tied (fewer cards per replica means a
+        // smaller blast radius and no interconnect penalty).
+        var nMax = tpSizes[tpSizes.length - 1];
+        var memFeasible = workingSet <= gpu.vramGB * nMax;
+
+        var best = null;
+        for (var gi = 0; gi < tpSizes.length; gi++) {
+            var tp = tpSizes[gi];
+            if (workingSet > gpu.vramGB * tp) continue;      // memory infeasible at this group size
+            var replicaCap = perCardTok * tp * HW.tpEfficiency(tp);
+            var reps = Math.max(1, Math.ceil(peakTokPerSec / (replicaCap * utilCeil)));
+            var cards = tp * reps;
+            if (best === null || cards < best.cards || (cards === best.cards && tp < best.tp)) {
+                best = { tp: tp, reps: reps, cards: cards, cap: replicaCap * reps };
+            }
+        }
+        if (best === null) {
+            // Not deployable: even the widest group cannot hold one copy.
+            var widest = nMax;
+            var repsInf = Math.max(1, Math.ceil(peakTokPerSec / ((perCardTok * widest * HW.tpEfficiency(widest)) * utilCeil)));
+            best = { tp: widest, reps: repsInf, cards: widest * repsInf,
+                     cap: perCardTok * widest * HW.tpEfficiency(widest) * repsInf, infeasible: true };
+        }
+
+        var tpFinal = best.tp;
+        var replicas = best.reps;
+        var totalGPUs = best.cards;
+        var deliveredCap = best.cap;
+        var util = peakTokPerSec / deliveredCap * 100;
+
+        // Render metrics
+        $('m-gpus').textContent = fmtInt(totalGPUs);
+        $('m-gpus').className = 'metric-val' + (totalGPUs > 8 ? ' warn' : '');
+        $('m-tp').textContent = replicas > 1 ? 'TP=' + tpFinal + ' × ' + replicas : 'TP=' + tpFinal;
+        $('m-cap').textContent = fmtInt(deliveredCap);
+        $('m-peak').textContent = fmtInt(peakTokPerSec);
+        $('m-util').textContent = util.toFixed(0) + '%';
+        $('m-util').className = 'metric-val' + (util < 30 ? ' warn' : (util > 70 ? ' good' : ''));
+        $('m-vram').textContent = fmtGB(workingSet);
+
+        // Plan note
+        var note = 'Peak demand is ' + fmtInt(peakTokPerSec) + ' output tokens/sec (' + fmtInt(peakQps) +
+            ' QPS × ' + outTok + ' tokens), derived from ' + fmtInt(avgQps) + ' average QPS × ' + peakTop +
+            '× peak multiplier. One ' + gpu.name + ' delivers about ' + fmtInt(perCardTok) +
+            ' tokens/sec at ' + batchLabel + ' — ' + fmtInt(HW.theoreticalTokPerSec(gpu, model, effQuant)) +
+            ' theoretical, ' + (HW.batchEfficiency(batch) * 100).toFixed(0) + '% realised. Working set is ' +
+            fmtGB(workingSet) + ' per replica (' + fmtGB(wGB) + ' weights + ' + fmtGB(kv) + ' KV + ' + fmtGB(oh) + ' overhead). ';
+        var minTP = Math.max(1, Math.ceil(workingSet / gpu.vramGB));
+        var validTP = 1;
+        for (var mi = 0; mi < tpSizes.length; mi++) { if (tpSizes[mi] >= minTP) { validTP = tpSizes[mi]; break; } validTP = tpSizes[mi]; }
+        if (workingSet > gpu.vramGB) {
+            note += 'The working set exceeds one card, so the model cannot run unsharded — memory alone forces TP=' + validTP + '. ';
+        } else {
+            note += 'The working set fits on one card, so the layout is driven by throughput rather than memory. ';
+        }
+        if (best && best.infeasible) {
+            note += 'This model cannot be held on any valid group size for this GPU (' + fmtGB(gpu.vramGB) + ' × ' + nMax +
+                ' = ' + fmtGB(gpu.vramGB * nMax) + ' is still short of ' + fmtGB(workingSet) + '). Pick a larger card, quantize further, or shorten the context. ';
+        }
+        if (tpFinal > 1) {
+            note += 'Sharding costs efficiency: TP=' + tpFinal + ' runs at ' + (HW.tpEfficiency(tpFinal) * 100).toFixed(0) +
+                '%, so ' + tpFinal + ' cards deliver ' + (tpFinal * HW.tpEfficiency(tpFinal)).toFixed(2) + '× a single card rather than ' + tpFinal + '×. ';
+        }
+        if (replicas > 1) {
+            note += 'Throughput needs ' + replicas + ' replicas of that ' + tpFinal + '-card group (' + totalGPUs +
+                ' cards total) so that ' + (utilCeil * 100).toFixed(0) + '% of capacity still covers peak. ';
+        }
+        if (util < 30) {
+            note += 'Utilisation of ' + util.toFixed(0) + '% means you are paying for mostly idle silicon — check the API comparison below before committing.';
+        } else if (util > 70) {
+            note += 'Utilisation of ' + util.toFixed(0) + '% is near the ceiling you set; little headroom remains before the next card is required.';
+        } else {
+            note += 'Utilisation of ' + util.toFixed(0) + '% leaves room to absorb traffic growth without new hardware.';
+        }
+        note += fp8note;
+        $('plan-note').textContent = note;
+
+        // Cost comparison
+        var hoursPerMonth = 730;
+        var selfHostCost = totalGPUs * GPU_HOURLY[gpuKey] * hoursPerMonth;
+        var monthlyTokens = requestsPerMonth * outTok;
+        var apiCost = monthlyTokens / 1e6 * API_BLENDED_PER_MTOK;
+
+        var tbody = $('compare-tbody');
+        tbody.innerHTML = '';
+        var rows = [
+            { name: 'Self-host — ' + totalGPUs + ' × ' + gpu.name, cost: selfHostCost, perM: selfHostCost / (monthlyTokens / 1e6) },
+            { name: 'API — hosted comparable model', cost: apiCost, perM: API_BLENDED_PER_MTOK }
+        ];
+        var cheaper = selfHostCost <= apiCost ? 0 : 1;
+        rows.forEach(function (r, idx) {
+            var tr = document.createElement('tr');
+            if (idx === cheaper) tr.className = 'hi';
+            var v = idx === cheaper
+                ? '<span class="flag ok">Cheaper</span>'
+                : '<span class="flag bad">' + (Math.abs(1 - r.cost / rows[1 - idx].cost) * 100).toFixed(0) + '% more</span>';
+            tr.innerHTML = '<td>' + r.name + '</td><td class="num">' + fmtMoney(r.cost) +
+                '</td><td class="num">$' + r.perM.toFixed(2) + '</td><td>' + v + '</td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    // Demand input label switches with mode
+    function syncDemandHint() {
+        var mode = $('qps-mode').value;
+        var inp = $('demand-input');
+        if (mode === 'volume') {
+            $('demand-hint').textContent = 'requests per month';
+            inp.value = 3000000; inp.step = 100000;
+        } else {
+            $('demand-hint').textContent = 'requests per second';
+            inp.value = 12; inp.step = 1;
+        }
+        compute();
+    }
+
+    ['model-input', 'gpu-input', 'quant-input', 'ctx-input', 'peak-input',
+     'tok-input', 'latency-input', 'util-input'].forEach(function (id) {
+        var el = $(id);
+        if (el) { el.addEventListener('change', compute); el.addEventListener('input', compute); }
+    });
+    $('demand-input').addEventListener('input', compute);
+    $('qps-mode').addEventListener('change', syncDemandHint);
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', compute);
+    } else {
+        compute();
+    }
+})();
+</script>
+
+</body>
+</html>

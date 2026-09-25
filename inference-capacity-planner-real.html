@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The Reverse Sizing Problem: From QPS to Silicon</title>
+    <meta name="description" content="Everyone sizes inference forwards. The provisioning question runs backwards — give it a traffic target, get the hardware. And why N cards never give N×.">
+    <meta property="og:title" content="The Reverse Sizing Problem — From QPS to Silicon">
+    <meta property="og:description" content="Forward sizing tells you what a GPU can do. Reverse sizing tells you what your product costs to run. Only one of those is a provisioning question.">
+    <meta property="og:url" content="https://www.jslet.com/inference-capacity-planner-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-09-25T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-09-25T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Reverse Sizing Problem: From QPS to Silicon">
+    <meta name="twitter:description" content="Traffic target in, hardware count out. The sublinear scaling nobody budgets for, and the utilisation number that decides self-host vs API.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/inference-capacity-planner-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Reverse Sizing Problem — From QPS to Silicon",
+      "description": "Why inference capacity planning has to run backwards from a traffic target, how tensor-parallel efficiency makes scaling sublinear, and why utilisation decides the self-host versus API question more than scale does.",
+      "url": "https://www.jslet.com/inference-capacity-planner-real",
+      "datePublished": "2026-09-25T00:00:00+00:00",
+      "dateModified": "2026-09-25T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research" },
+      "publisher": { "@type": "Organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I calculate how many GPUs I need for an LLM service?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Work backwards in four steps. First convert demand into peak output tokens per second: monthly requests × output tokens per request ÷ 2.6 million seconds, then multiply by a peak-to-average ratio of at least 2. Second find per-card throughput from the model's active parameters, the quantization level and the GPU's memory bandwidth — one decoded token reads every active parameter once. Third divide peak throughput by per-card throughput and the utilisation ceiling you are willing to run at, rounding up. Fourth check that the memory side agrees: the model's working set must fit in the chosen tensor-parallel group, and if it does not, the group size is set by memory rather than throughput."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does throughput not scale linearly when I add GPUs?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because tensor parallelism splits every layer, which means every layer needs an all-reduce to combine partial results before the next layer starts. That communication cost grows with group size while the useful work per card shrinks. Measured efficiency runs about 92% at two GPUs, 80% at four, 63% at eight and 48% at sixteen, so eight cards deliver roughly 5× a single card rather than 8×. Going from four to eight cards buys about 1.58× throughput for twice the money, which raises the cost per token even as total capacity grows. The figures assume NVLink; across PCIe the penalty is substantially worse."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Should I provision for average or peak load?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Peak, always. Average QPS is a reporting metric, not a provisioning target. Business traffic peaks 3–10× above its daily mean, and a service sized for average load will fail at peak — which is precisely when failure is most expensive and most visible. Two times average is the minimum defensible position for an internal service, four times is typical for consumer-facing products, and higher multipliers are appropriate when traffic is spiky or when the cost of degradation is severe. The reason to make the multiplier explicit rather than burying it in a safety factor is that it is a business decision about acceptable failure modes, not an engineering constant."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "At what utilisation does self-hosting beat using an API?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "There is no universal crossover, but utilisation matters far more than scale. A GPU rented by the hour costs the same whether it serves one request or a million, so below roughly 30% utilisation you are paying for idle silicon and the API almost always wins on cost per token. The crossover typically sits somewhere in the 30–60% band depending on the model, the GPU rate and the API's effective per-token price after caching and batch discounts. Those discounts are large enough to dominate: cached input reads at 90–98% off and batch mode at 50% off can move the crossover by an order of magnitude, so compare effective rates rather than sticker prices."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 116 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>The <span>Reverse Sizing</span> Problem</h1>
+        <p>Traffic target in, hardware count out — and the sublinear scaling that everyone forgets to budget for</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-09-25 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 15 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+            <li><a href="#backwards" style="color:var(--accent); text-decoration:none;">Everyone Sizes It Backwards</a></li>
+            <li><a href="#peak" style="color:var(--accent); text-decoration:none;">Average Load Is Not a Target</a></li>
+            <li><a href="#sublinear" style="color:var(--accent); text-decoration:none;">N Cards, 0.63N Throughput</a></li>
+            <li><a href="#forced" style="color:var(--accent); text-decoration:none;">When Memory Sets the Card Count</a></li>
+            <li><a href="#utilisation" style="color:var(--accent); text-decoration:none;">Utilisation Decides Self-Host vs API</a></li>
+            <li><a href="#discounts" style="color:var(--accent); text-decoration:none;">The Discounts That Move the Crossover</a></li>
+            <li><a href="#worked" style="color:var(--accent); text-decoration:none;">Three Worked Examples</a></li>
+            <li><a href="#procedure" style="color:var(--accent); text-decoration:none;">A Provisioning Checklist</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ol>
+    </div>
+
+    <section class="seo-section">
+        <p>Search for how to size an LLM deployment and you will find hundreds of calculators that answer the same question: pick a GPU, pick a model, read off tokens per second. They are well built and they answer something real. They just are not answering the question that gets asked in a provisioning review.</p>
+        <p>Nobody is handed a GPU and asked how fast it is. They are handed a product requirement — this many users, this latency target, this growth curve — and asked how much hardware it takes, and what it costs per month. That question has the traffic on the left-hand side and the hardware on the right. Running it the usual direction means solving for the wrong unknown and then inverting by hand, which is exactly where the arithmetic goes wrong.</p>
+    </section>
+
+    <section class="seo-section" id="backwards">
+        <h2>Everyone Sizes It Backwards</h2>
+        <p>The forward question is comfortable because it has one variable. Change the GPU, watch the number move, form an intuition about which cards are fast. That intuition is genuinely useful — and it will not survive contact with a peak load figure.</p>
+        <p>The reverse question has four unknowns that interact. Demand comes in requests per month but hardware is priced per hour and provisioned per peak second. Throughput depends on a model choice, a quantization choice and a hardware choice simultaneously. Memory can force a configuration before throughput does. And the whole thing is bounded by a utilisation ceiling that is a business decision rather than an engineering constant.</p>
+        <div class="pull">Forward sizing tells you what a GPU can do. Reverse sizing tells you what your product costs to run. Only the second one is a provisioning question, and it is the harder of the two.</div>
+        <p>The four steps, in order:</p>
+        <ol>
+            <li><strong>Demand → peak tokens/sec.</strong> Requests per month × output tokens per request ÷ 2.6 million seconds gives average token throughput. Then multiply by the peak ratio. Skipping this step is the single most common provisioning error, and the next section is about why.</li>
+            <li><strong>Model + precision + GPU → per-card throughput.</strong> One decoded token requires reading every active parameter once, so throughput is bounded by memory bandwidth divided by bytes read per token. Quantization reduces bytes per token; larger batch sizes improve the constant factor by improving compute occupancy.</li>
+            <li><strong>Divide, correct, round up.</strong> Cards needed is peak throughput ÷ per-card throughput ÷ utilisation ceiling — then corrected upward for sublinear scaling, and corrected again if memory demands a bigger group than throughput does.</li>
+            <li><strong>Price it both ways.</strong> Cards × hourly rate against the same token volume at API rates. The ratio, not the absolute numbers, tells you which regime you are in.</li>
+        </ol>
+    </section>
+
+    <section class="seo-section" id="peak">
+        <h2>Average Load Is Not a Target</h2>
+        <p>Monthly volume divided by seconds in a month produces a number that describes nothing anyone experiences. Traffic is not uniform: it concentrates in working hours, in weekdays, in the minutes after a launch or an outage notification. A service that is comfortable at average load falls over at peak, and it falls over at the moment when failing is most expensive.</p>
+        <table class="brief-table">
+            <thead><tr><th>Peak ratio</th><th>Suitable for</th><th class="num">Hardware vs average-load sizing</th></tr></thead>
+            <tbody>
+                <tr><td>1×</td><td>Batch pipelines with a steady feed</td><td class="num">1.0×</td></tr>
+                <tr class="hi"><td>2×</td><td>Minimum defensible for any interactive service</td><td class="num">2.0×</td></tr>
+                <tr><td>3×</td><td>Internal tools with predictable working hours</td><td class="num">3.0×</td></tr>
+                <tr><td>5×</td><td>Consumer-facing products with daily cycles</td><td class="num">5.0×</td></tr>
+                <tr><td>10×</td><td>Spiky traffic, launches, or unknown demand shape</td><td class="num">10.0×</td></tr>
+            </tbody>
+        </table>
+        <p>That last column is the point. Choosing 5× instead of 2× does not add a safety margin of a few percent — it multiplies the hardware bill by two and a half. The multiplier is one of the most expensive single decisions in an inference deployment, and it is usually made implicitly, as an unexamined "let us add some headroom" somewhere in a spreadsheet.</p>
+        <p>Two things make the decision easier. First, if the workload tolerates queueing — a batch job, an asynchronous summarisation service — the peak ratio can be low because excess demand waits rather than fails. Second, if the service can degrade gracefully, the effective peak ratio drops, because the consequence of being at capacity is a slower response rather than an error. The multiplier is a statement about acceptable failure modes, which is why it belongs to the product owner rather than the infrastructure engineer.</p>
+    </section>
+
+    <section class="seo-section" id="sublinear">
+        <h2>N Cards, 0.63N Throughput</h2>
+        <p>This is the correction that most capacity plans miss entirely. Adding GPUs to a tensor-parallel group does not add throughput proportionally, because every layer in the sharded model needs an all-reduce to combine the partial results before the next layer can proceed. Communication cost scales with group size; useful work per card shrinks.</p>
+        <table class="brief-table">
+            <thead><tr><th>Group size</th><th class="num">TP efficiency</th><th class="num">Effective speedup</th><th class="num">Marginal gain</th><th class="num">Relative cost / token</th></tr></thead>
+            <tbody>
+                <tr><td>1 GPU</td><td class="num">100%</td><td class="num">1.00×</td><td class="num">—</td><td class="num">1.00×</td></tr>
+                <tr><td>2 GPUs</td><td class="num">92%</td><td class="num">1.84×</td><td class="num">+84%</td><td class="num">1.09×</td></tr>
+                <tr class="hi"><td>4 GPUs</td><td class="num">80%</td><td class="num">3.20×</td><td class="num">+74%</td><td class="num">1.25×</td></tr>
+                <tr><td>8 GPUs</td><td class="num">63%</td><td class="num">5.04×</td><td class="num">+58%</td><td class="num">1.59×</td></tr>
+                <tr class="bad"><td>16 GPUs</td><td class="num">48%</td><td class="num">7.68×</td><td class="num">+52%</td><td class="num">2.08×</td></tr>
+            </tbody>
+        </table>
+        <p>Read the last column. Going from four to eight cards doubles the hardware bill and increases throughput by 58%, so the cost per token rises by 27%. Going to sixteen cards more than doubles the cost per token relative to a single card. Sharding is sometimes necessary — for memory, usually — but it is never free, and past a certain group size it is actively counterproductive for cost efficiency.</p>
+        <p>The practical implication for planning: if a workload needs more throughput than one card can provide, the cheapest path is usually more replicas of a smaller group rather than a larger group. Four replicas of a two-card group deliver 7.36× a single card (4 × 1.84) using eight cards, versus 5.04× from a single eight-card group using the same eight cards. Same silicon, 46% more throughput, because replica-level parallelism has no per-layer communication cost.</p>
+        <div class="pull">The same eight GPUs deliver 7.36× throughput as four replicas of a pair, and 5.04× as one group of eight. Group size is a cost decision, not just a memory decision.</div>
+        <p>The caveat is memory. If one copy of the model does not fit in two cards, a two-card group is not an option no matter how much better the arithmetic looks — which brings us to the case where the card count is set by something other than traffic.</p>
+    </section>
+
+    <section class="seo-section" id="forced">
+        <h2>When Memory Sets the Card Count</h2>
+        <p>A dense 70B model at FP16 carries about 151 GB of working set at 8K context: 140 GB of weights, 2.6 GB of KV cache and 8.4 GB of framework overhead. Two H100-80GB cards hold 160 GB between them, so the model needs a group of at least two. Four cards gives comfortable headroom once the context grows.</p>
+        <p>Now suppose the traffic is modest — say a few hundred thousand requests a month, enough that a single card's throughput would have covered it several times over. That does not matter. The model cannot run on fewer than two cards, so the floor on the hardware bill is two cards, and the utilisation figure that results will be low by definition.</p>
+        <table class="brief-table">
+            <thead><tr><th>Constraint</th><th>What it sets</th><th>How to detect it</th></tr></thead>
+            <tbody>
+                <tr><td>Memory</td><td>The floor on group size</td><td>Working set ÷ VRAM per card, rounded up to a valid power of two</td></tr>
+                <tr class="hi"><td>Throughput</td><td>The number of replicas</td><td>Peak token rate ÷ (per-card rate × group × TP efficiency × ceiling)</td></tr>
+                <tr><td>Interconnect</td><td>Whether a large group is viable at all</td><td>NVLink versus PCIe; PCIe caps practical group size well below 16</td></tr>
+            </tbody>
+        </table>
+        <p>Both constraints must be satisfied, so the answer is the larger of the two. Systems sized by traffic alone will under-provision the memory side; systems sized by memory alone will under-provision replicas and run out of throughput at peak. The one that catches people out is the memory floor, because it produces a hardware count that looks wildly oversized relative to the traffic — and it is not oversized, it is the minimum the model can run on.</p>
+    </section>
+
+    <section class="seo-section" id="utilisation">
+        <h2>Utilisation Decides Self-Host vs API</h2>
+        <p>Renting a GPU costs the same per hour whether it serves one request or a million. That single property drives the self-host decision far more than scale, model size or the headline per-token price on either side.</p>
+        <p>The failure mode is a deployment forced into a large group by memory, serving modest traffic, at an utilisation in the low teens. In that configuration the per-token cost lands an order of magnitude above the API price for a comparable model, and the reason is entirely that you are renting idle silicon.</p>
+        <p>The reverse failure mode is more comfortable: a well-utilised workload at a stable, predictable load, where owned or reserved capacity beats per-token pricing by a wide and durable margin. Reserved and committed-use discounts push that further, though they trade flexibility for rate.</p>
+        <p>Three qualifications the cost tables cannot capture.</p>
+        <ul>
+            <li><strong>Operational cost is not in the GPU bill.</strong> Self-hosting carries the MLOps engineer, the evaluation harness, the upgrade cycle, the on-call rotation and the incidents. On small deployments this exceeds the hardware cost; it is the reason self-hosting looks cheaper on paper than it turns out to be.</li>
+            <li><strong>Latency and control are real goods.</strong> Self-hosting buys determinism — no provider-side rate limits, no deprecation schedule, no upstream change that alters behaviour overnight. That has value that per-token arithmetic does not price.</li>
+            <li><strong>The API side is not static either.</strong> Rates drop, models are retired, capacity is rationed at peak. A comparison that fixes both sides at today's numbers is a snapshot, not a forecast.</li>
+        </ul>
+    </section>
+
+    <section class="seo-section" id="discounts">
+        <h2>The Discounts That Move the Crossover</h2>
+        <p>The gap between an API's sticker price and its effective price is often larger than the gap between self-hosting and the API. Two discounts do most of that work.</p>
+        <table class="brief-table">
+            <thead><tr><th>Mechanism</th><th class="num">Typical discount</th><th>Who offers it</th><th>Effect on the crossover</th></tr></thead>
+            <tbody>
+                <tr class="hi"><td>Cached input reads</td><td class="num">90–98% off</td><td>All major providers, varying depth</td><td>Largest single lever for prefix-heavy workloads</td></tr>
+                <tr><td>Batch mode</td><td class="num">50% off</td><td>OpenAI, Anthropic, Google, Mistral</td><td>Large for async workloads; not universal</td></tr>
+                <tr><td>Reserved GPU capacity</td><td class="num">30–60% off on-demand</td><td>Cloud providers</td><td>Improves the self-host side, costs flexibility</td></tr>
+                <tr class="bad"><td>Spot / interruptible</td><td class="num">60–70% off</td><td>Cloud providers</td><td>Cheap but unsuitable for user-facing serving</td></tr>
+            </tbody>
+        </table>
+        <p>Note the asymmetry in the batch row. Batch mode at 50% off applies to four of the major providers — DeepSeek and Together do not offer it. For an asynchronous workload that is a factor of two on the API side of the comparison, which moves the crossover further than any realistic hardware choice. Anyone comparing a batch-tolerant workload should price the batch tier, not the standard tier.</p>
+        <p>Cached input is the more interesting lever because its impact scales with workload shape rather than volume. A service with a large stable prefix — a long system prompt, a fixed document corpus, a tool catalogue — pays full price for that prefix once and a heavily discounted rate thereafter. A service where every request is novel gains nothing. This is why two deployments with identical token volumes and identical models can land on opposite sides of the self-host crossover: they are not buying the same thing.</p>
+    </section>
+
+    <section class="seo-section" id="worked">
+        <h2>Three Worked Examples</h2>
+        <p>All three assume 400 output tokens per request, a 2× peak multiplier, a 70% utilisation ceiling and H100-80GB rental at $3.90 per GPU-hour.</p>
+        <h3>Small model, moderate traffic</h3>
+        <p>An 8B dense model at INT4 serving 3 million requests per month. That is 1.15 average QPS, 2.3 QPS at peak, and 923 output tokens per second. One H100 delivers about 687 tokens/sec at interactive batch sizes, so a single card covers 74% of peak — close, but not enough with the utilisation ceiling applied. Two cards, running as two independent replicas, deliver 1,374 tokens/sec at 67% utilisation. Cost: roughly $5,700 per month.</p>
+        <p>Note the shape of the answer: two replicas rather than one two-card group. Replication adds capacity with no communication penalty, which is why the planner prefers it whenever memory allows.</p>
+        <h3>Large model, modest traffic</h3>
+        <p>The same 3 million requests, now on a dense 70B at FP16. Memory alone forces a group of four: the 151 GB working set needs at least two cards, and four gives headroom for context growth. Throughput is far below the group's capacity, but that is irrelevant — the model physically cannot run on less. Delivered capacity is about 1,380 tokens/sec against 923 needed, and the hardware count lands in the high double digits once replicas are counted. Cost: north of $250,000 per month.</p>
+        <p>This is the case where the API wins by an order of magnitude, and the reason is not the model's size but the utilisation implied by forcing a large group onto modest traffic. The same model at ten times the traffic would look entirely different.</p>
+        <h3>The crossover case</h3>
+        <p>An 8B model at INT4 serving 200 QPS directly — roughly 80,000 output tokens per second at peak. This needs a substantial replica fleet, and here the self-host side starts to win: the hardware is fully utilised, so the fixed hourly cost is amortised across a large token volume. The comparison narrows to within a few percent, and the decision turns on the qualifications rather than the arithmetic — operational cost, control, and the direction rates are moving.</p>
+        <p>The pattern across all three: small models at high traffic favour self-hosting, large models at low traffic favour the API, and the determining variable is utilisation rather than any property of the model.</p>
+    </section>
+
+    <section class="seo-section" id="procedure">
+        <h2>A Provisioning Checklist</h2>
+        <ol>
+            <li><strong>Convert monthly volume to peak tokens per second</strong> before touching any hardware numbers. If you cannot state your peak ratio, that is the first thing to resolve.</li>
+            <li><strong>Establish the memory floor.</strong> Working set ÷ VRAM per card, rounded up to a valid tensor-parallel size. This is the card count you cannot go below.</li>
+            <li><strong>Compute the throughput requirement</strong> at that group size, including TP efficiency loss, and divide by the utilisation ceiling you are willing to run at.</li>
+            <li><strong>Prefer replicas over larger groups</strong> when memory allows. Four replicas of a two-card group beat one eight-card group on the same silicon by a wide margin.</li>
+            <li><strong>Price both paths at effective rates</strong>, not sticker prices. Apply cached-input and batch discounts where your workload qualifies, and check whether your model's provider even offers them.</li>
+            <li><strong>State the utilisation figure explicitly</strong> in the decision record. It is the number that explains the outcome, and the number that will change as traffic grows.</li>
+            <li><strong>Re-run on a schedule.</strong> Provisioning is not a one-time calculation; it is a standing estimate that goes stale as traffic, models and rates move.</li>
+        </ol>
+        <p>Steps two and three are what the <a href="/inference-capacity-planner">capacity planner</a> computes directly. Step two in isolation is the <a href="/gpu-model-fit-matrix">fit matrix</a>.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>Frequently Asked Questions</h2>
+        <h3>How do I calculate how many GPUs I need for an LLM service?</h3>
+        <p>Four steps: convert demand to peak output tokens per second, find per-card throughput from active parameters and memory bandwidth, divide by the utilisation ceiling, then check that the memory side agrees. The answer is the larger of the throughput requirement and the memory floor, and both must be satisfied.</p>
+        <h3>Why does throughput not scale linearly when I add GPUs?</h3>
+        <p>Tensor parallelism requires an all-reduce at every layer to combine partial results. That communication grows with group size while work per card shrinks, so efficiency falls from 92% at two GPUs to 63% at eight and 48% at sixteen. Eight cards deliver about 5× a single card, not 8× — and the cost per token rises as a result.</p>
+        <h3>Should I provision for average or peak load?</h3>
+        <p>Peak, always. Average is a reporting metric. Real traffic peaks 3–10× above its daily mean, and choosing a peak ratio multiplies the hardware bill directly — 5× instead of 2× is a two-and-a-half-fold cost increase. It is a decision about acceptable failure modes, so it belongs to the product owner.</p>
+        <h3>At what utilisation does self-hosting beat using an API?</h3>
+        <p>There is no universal number, but below roughly 30% utilisation the API almost always wins because you are renting idle silicon. The crossover generally sits in the 30–60% band, and it moves further on effective rates than on hardware: cached input at 90–98% off and batch mode at 50% off can shift it by an order of magnitude.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;" id="method">
+        <h2>Methodology &amp; Disclosure</h2>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">Throughput estimates derive from memory bandwidth divided by bytes read per decoded token, using each model's published active-parameter count, with a batch-dependent efficiency factor applied. Tensor-parallel efficiency figures (92% at 2, 80% at 4, 63% at 8, 48% at 16) are representative published measurements for NVLink-interconnected deployments and are treated as upper bounds for PCIe. Working sets combine weight size, a KV cache derived from published attention geometry at FP16, and framework overhead modelled at 6% of weight footprint. Rental rates are on-demand list prices for the named instance class in us-east-1, in USD, as published 2026-09-25, per GPU-hour, excluding storage and egress. API comparison figures use blended per-token rates for comparable hosted models; batch and cached-input discounts are excluded from headline figures unless stated. Self-hosting comparisons exclude operational cost. This site takes no sponsorship, no affiliate commission and no vendor payment of any kind; the vendors named here have no relationship with jslet and did not review this briefing.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;">
+        <h2>References &amp; Further Reading</h2>
+        <ol style="font-size:0.85rem; line-height:1.9; color:var(--text-body);" id="references">
+            <li>NVIDIA. H100, H200 and B200 Tensor Core GPU datasheets — HBM capacity and memory bandwidth ratings used for per-card throughput. <em>nvidia.com</em></li>
+            <li>NVIDIA Megatron-LM and Transformer Engine documentation. Tensor-parallel communication patterns, all-reduce cost per layer, and scaling efficiency measurements. <em>github.com/NVIDIA/Megatron-LM</em></li>
+            <li>vLLM documentation. Continuous batching, PagedAttention KV memory management, and multi-GPU tensor-parallel deployment guidance. <em>docs.vllm.ai</em></li>
+            <li>AWS and Google Cloud GPU instance pricing pages — on-demand rates for H100-class capacity in us-east-1, as published 2026-09-25. <em>aws.amazon.com</em> · <em>cloud.google.com</em></li>
+            <li>OpenAI, Anthropic, Google and Mistral pricing documentation — per-token rates, batch tier availability and cached-input discount depths. <em>provider pricing pages</em></li>
+            <li>Related: <a href="/inference-capacity-planner">Inference Capacity Planner</a> · <a href="/gpu-model-fit-matrix">GPU Model Fit Matrix</a> · <a href="/llm-selfhost-vs-api-breakeven">Self-Hosted LLM vs API Breakeven</a> · <a href="/llm-api-pricing-calculator">LLM API Pricing Calculator</a> · <a href="/fp8-inference-cost-real">The FP8 Trap: 2× Spec Sheet, 1.15× Invoice</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Finference-capacity-planner-real&amp;text=The%20Reverse%20Sizing%20Problem%3A%20from%20QPS%20to%20silicon" target="_blank" rel="noopener" aria-label="Share on X">𝕏</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Finference-capacity-planner-real" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/inference-capacity-planner">🖩 Inference Capacity Planner →</a>
+            <a href="/gpu-model-fit-matrix">🖩 GPU Model Fit Matrix →</a>
+            <a href="/llm-selfhost-vs-api-breakeven">🖩 Self-Host vs API Breakeven →</a>
+            <a href="/llm-api-pricing-calculator">🖩 LLM API Pricing Calculator →</a>
+            <a href="/llm-inference-latency">🖩 LLM Inference Latency Estimator →</a>
+            <a href="/gpu-training-cost">🖩 GPU Training Cost Estimator →</a>
+            <a href="/llm-api-pricing-real">📰 Token Economics: Why Your LLM Bill Is 3× the Sticker Price →</a>
+            <a href="/ai-gpu-compute">🤖 All AI &amp; GPU Compute Tools →</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Estimation Disclaimer:</strong> Capacity figures in this briefing are model-based estimates, not benchmarks. Real deployments vary with framework version, CUDA version, kernel selection, prompt shape and interconnect topology. Tensor-parallel efficiency assumes NVLink. Validate against measured throughput on your target stack before committing to hardware, and retain headroom for failover.</p>
+        </div>
+    </section>
+
+    <footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/ai-gpu-compute">AI &amp; GPU Compute</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>
