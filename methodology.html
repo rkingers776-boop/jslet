@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Methodology — How jslet Cost Models Are Built</title>
+    <meta name="description" content="Where every jslet number comes from: vendor list prices, the assumptions behind each model, what we exclude, and a public log of corrections.">
+    <meta property="og:title" content="Methodology — jslet">
+    <meta property="og:description" content="Where every jslet number comes from, what each model assumes, and where we have been wrong.">
+    <meta property="og:url" content="https://www.jslet.com/methodology">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Methodology — jslet">
+    <meta name="twitter:description" content="Where every jslet number comes from, what each model assumes, and where we have been wrong.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <meta name="twitter:site" content="@jslet">
+    <link rel="canonical" href="https://www.jslet.com/methodology">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "jslet",
+      "url": "https://www.jslet.com/",
+      "description": "Client-side models for the cost of cloud and AI infrastructure: transfer traps, GPU and LLM inference economics, observability and storage bills, reserved-instance breakeven. 116 tools and 43 technical briefings, no signup, no tracking, no vendor sponsors.",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://www.jslet.com/#tools?q={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+</head>
+<body>
+    <div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 116 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>Methodology <span>Every number, traced</span></h1>
+            <p>A cost calculator is an argument. This page shows the working — where each input came from, what the model assumes, and the places we got it wrong.</p>
+        </header>
+
+        <main style="max-width:780px; margin:0 auto; padding:0 16px;">
+
+            <section style="margin-bottom:36px;">
+                <h2 style="font-size:1.15rem; color:var(--text-heading); margin:0 0 12px;">Why this page exists</h2>
+                <p style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75;">
+                    A calculator takes a price you can look up and turns it into a number you cannot, and somewhere in the middle it makes choices you never see. Most tools do not show their work. That is a problem for anyone making a purchasing decision, because the assumptions are usually worth more than the arithmetic.
+                </p>
+                <p style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75;">
+                    So this page is the audit trail. If a figure on this site looks wrong to you, you should be able to find the exact assumption responsible in under a minute — and if the assumption is bad, we want the email.
+                </p>
+            </section>
+
+            <section style="margin-bottom:36px;">
+                <h2 style="font-size:1.15rem; color:var(--text-heading); margin:0 0 12px;">Where the inputs come from</h2>
+                <p style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75;">
+                    Every rate on jslet is a <strong>published list price</strong>, read from the vendor's own pricing page or datasheet. Nothing is reconstructed from secondhand blog posts, and nothing is a "typical" figure pulled from memory.
+                </p>
+                <div style="overflow-x:auto; margin:18px 0;">
+                    <table style="width:100%; border-collapse:collapse; font-size:0.88rem;">
+                        <thead>
+                            <tr style="border-bottom:2px solid var(--border);">
+                                <th style="text-align:left; padding:10px 8px; color:var(--text-heading);">Input</th>
+                                <th style="text-align:left; padding:10px 8px; color:var(--text-heading);">Primary source</th>
+                                <th style="text-align:left; padding:10px 8px; color:var(--text-heading);">Reviewed</th>
+                            </tr>
+                        </thead>
+                        <tbody style="color:var(--text-secondary);">
+                            <tr style="border-bottom:1px solid var(--border);"><td style="padding:10px 8px;">Compute, storage, egress</td><td style="padding:10px 8px;">AWS / Google Cloud / Azure public pricing pages</td><td style="padding:10px 8px;">Quarterly</td></tr>
+                            <tr style="border-bottom:1px solid var(--border);"><td style="padding:10px 8px;">GPU instance rates</td><td style="padding:10px 8px;">AWS EC2 on-demand, Google Cloud, RunPod, Vast.ai</td><td style="padding:10px 8px;">Quarterly</td></tr>
+                            <tr style="border-bottom:1px solid var(--border);"><td style="padding:10px 8px;">GPU memory and bandwidth</td><td style="padding:10px 8px;">NVIDIA and AMD datasheets</td><td style="padding:10px 8px;">On release</td></tr>
+                            <tr style="border-bottom:1px solid var(--border);"><td style="padding:10px 8px;">Model architecture</td><td style="padding:10px 8px;">Each model's published config — layers, KV heads, head dimension</td><td style="padding:10px 8px;">On release</td></tr>
+                            <tr style="border-bottom:1px solid var(--border);"><td style="padding:10px 8px;">API token prices</td><td style="padding:10px 8px;">Provider pricing pages</td><td style="padding:10px 8px;">Monthly</td></tr>
+                            <tr><td style="padding:10px 8px;">Region-specific rates</td><td style="padding:10px 8px;">The vendor's own region pricing table</td><td style="padding:10px 8px;">Quarterly</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75;">
+                    Where a vendor publishes hundreds of SKUs, we model the ones the workload actually touches rather than an average across the catalogue. An average would be easier to maintain and would describe nobody's bill.
+                </p>
+            </section>
+
+            <section style="margin-bottom:36px;">
+                <h2 style="font-size:1.15rem; color:var(--text-heading); margin:0 0 12px;">The assumptions behind every model</h2>
+                <p style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75;">
+                    Five conventions run through the whole site. When a number looks wrong, it is nearly always one of them.
+                </p>
+                <ol style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75; padding-left:22px;">
+                    <li style="margin-bottom:10px;"><strong style="color:var(--text-heading);">On-demand list price.</strong> Unless a tool names another billing model, it assumes you pay the posted on-demand rate. That is the most expensive way to buy and the only one every vendor publishes honestly.</li>
+                    <li style="margin-bottom:10px;"><strong style="color:var(--text-heading);">A named reference region.</strong> Region changes the price before anything else does. Every rate is tied to a region the tool states explicitly — usually us-east-1 for AWS — rather than to an unlabelled global average.</li>
+                    <li style="margin-bottom:10px;"><strong style="color:var(--text-heading);">No discounts.</strong> No reserved capacity, no savings plans, no committed-use agreements, no negotiated enterprise pricing. All of those typically reduce the bill, so a self-host verdict here is a conservative one.</li>
+                    <li style="margin-bottom:10px;"><strong style="color:var(--text-heading);">GB means the vendor's GB.</strong> Cloud and hardware vendors label capacity in decimal units — an "80 GB" accelerator has 80,000,000,000 bytes, not 80 × 1024³. Storage pages and memory pages treat this differently on purpose, because for storage the gap is real and for memory labels it is a category error.</li>
+                    <li><strong style="color:var(--text-heading);">Utilisation is yours to choose.</strong> We ask for it instead of assuming it. A rented GPU costs the same whether it serves one request or a million, so utilisation — not model size — usually decides whether self-hosting beats an API.</li>
+                </ol>
+            </section>
+
+            <section style="margin-bottom:36px;">
+                <h2 style="font-size:1.15rem; color:var(--text-heading); margin:0 0 12px;">What the models deliberately leave out</h2>
+                <ul style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75; padding-left:22px;">
+                    <li style="margin-bottom:8px;">Reserved-instance, savings-plan, spot and committed-use discounts — except in tools whose entire purpose is comparing them.</li>
+                    <li style="margin-bottom:8px;">Negotiated enterprise pricing, which is not public and therefore not modelable.</li>
+                    <li style="margin-bottom:8px;">Taxes, currency conversion and regional surcharges.</li>
+                    <li style="margin-bottom:8px;">Your real cache-hit ratio: we ask for it rather than assuming a flattering default.</li>
+                    <li>Engineering labour and MLOps overhead. Where a tool includes them, it says so and exposes the number as an input.</li>
+                </ul>
+                <p style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75;">
+                    A model that quietly assumes a 90% cache hit ratio will flatter itself by an order of magnitude. Ours would rather return an uncomfortable number you can act on.
+                </p>
+            </section>
+
+            <section style="margin-bottom:36px;">
+                <h2 style="font-size:1.15rem; color:var(--text-heading); margin:0 0 12px;">Where we have been wrong</h2>
+                <p style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75;">
+                    We keep this list because a site that has never published a correction has probably not been checked closely enough.
+                </p>
+                <div style="border-left:3px solid var(--border); padding-left:16px; margin:18px 0;">
+                    <p style="font-size:0.92rem; color:var(--text-secondary); line-height:1.7; margin-bottom:14px;">
+                        <strong style="color:var(--text-heading);">GPU memory converted when it should not have been.</strong> For a period our VRAM pages applied the storage convention — 1 TB = 931 GiB — to GPU memory labels. Those labels are already binary, so the conversion understated capacity by roughly 7%; an 80 GB accelerator was being modelled as 74.5 GB. The memory pages no longer apply it. The storage pages still do, because there the gap is genuine.
+                    </p>
+                    <p style="font-size:0.92rem; color:var(--text-secondary); line-height:1.7; margin-bottom:14px;">
+                        <strong style="color:var(--text-heading);">KV cache totalled in the wrong unit.</strong> One legacy estimator added a byte count into a gigabyte total, inflating the result by a factor of a million. The current model derives KV cache from the attention geometry directly — <span style="font-family:'SF Mono',Consolas,monospace;">2 × layers × kvHeads × headDim × precision × context × batch</span> — and keeps KV precision independent of weight quantization, because the two are not the same setting.
+                    </p>
+                    <p style="font-size:0.92rem; color:var(--text-secondary); line-height:1.7;">
+                        <strong style="color:var(--text-heading);">Counts that drifted.</strong> Tool and article totals were once maintained by hand across a handful of files and fell out of sync after expansions. They are now derived from a single source of truth and verified mechanically before every deployment, so a stale count fails the build instead of shipping.
+                    </p>
+                </div>
+            </section>
+
+            <section style="margin-bottom:36px;">
+                <h2 style="font-size:1.15rem; color:var(--text-heading); margin:0 0 12px;">How to check any number yourself</h2>
+                <ol style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75; padding-left:22px;">
+                    <li style="margin-bottom:8px;">Open the tool and note the assumption block beneath the result. It names the region, the currency, the price date and the conditions.</li>
+                    <li style="margin-bottom:8px;">Open the vendor's pricing page linked from that block.</li>
+                    <li style="margin-bottom:8px;">Reproduce the arithmetic by hand. Every tool exposes the formula it used, and the numbers are round enough to check without a spreadsheet.</li>
+                    <li>If your result differs, tell us. A reproducible disagreement is the single most useful message we receive.</li>
+                </ol>
+            </section>
+
+            <section style="margin-bottom:36px;">
+                <h2 style="font-size:1.15rem; color:var(--text-heading); margin:0 0 12px;">Corrections</h2>
+                <p style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75;">
+                    Email <a href="mailto:support@jslet.com" style="color:var(--accent);">support@jslet.com</a> with the page and the vendor source. If the source contradicts our figure, we correct the model, note it in the log above, and update the affected pages. Corrections take priority over new features — a wrong number is worse than a missing tool.
+                </p>
+            </section>
+
+            <section style="margin-bottom:36px;">
+                <h2 style="font-size:1.15rem; color:var(--text-heading); margin:0 0 12px;">What this site is not</h2>
+                <ul style="font-size:0.95rem; color:var(--text-secondary); line-height:1.75; padding-left:22px;">
+                    <li style="margin-bottom:8px;">Not affiliated with, sponsored by, or compensated by any cloud or hardware vendor.</li>
+                    <li style="margin-bottom:8px;">No affiliate links. No referral codes. Nothing on a page changes because someone paid.</li>
+                    <li style="margin-bottom:8px;">No accounts, no tracking, no data collection. Every tool runs in your browser and nothing you type leaves it.</li>
+                    <li>Not financial or procurement advice. We publish the arithmetic; the decision is yours.</li>
+                </ul>
+            </section>
+
+        </main>
+
+        <footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 116 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/methodology">Methodology</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">RSS &amp; Updates</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>
