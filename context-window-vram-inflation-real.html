@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The Attention Gap: Why Your KV Cache Estimate Is 8× Too Big</title>
+    <meta name="description" content="Most KV cache estimates divide by KV heads where the head dimension needs attention heads, and come out 8&times; too big. The corrected formula and the sizing rule.">
+    <meta property="og:title" content="The Attention Gap — Why Your KV Cache Estimate Is 8&times; Too Big">
+    <meta property="og:description" content="Two numbers that look like one. The head-dimension substitution that inflates a KV cache estimate 8&times; — and the concurrency maths that decides the real fleet.">
+    <meta property="og:url" content="https://www.jslet.com/context-window-vram-inflation-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-10-04T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-10-04T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Attention Gap: Why Your KV Cache Estimate Is 8&times; Too Big">
+    <meta name="twitter:description" content="Two numbers that look like one. The head-dimension substitution that inflates a KV cache estimate 8&times; — and the concurrency maths that decides the real fleet.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/context-window-vram-inflation-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Attention Gap: Why Your KV Cache Estimate Is 8x Too Big",
+      "description": "How a single head-dimension substitution — d_model divided by KV heads instead of attention heads — cancels the grouped-query saving and inflates every KV cache estimate 8x, and the four numbers that size a cache correctly.",
+      "url": "https://www.jslet.com/context-window-vram-inflation-real",
+      "datePublished": "2026-10-04T00:00:00+00:00",
+      "dateModified": "2026-10-04T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research", "url": "https://www.jslet.com/methodology" },
+      "publisher": { "@type": "Organization", "@id": "https://www.jslet.com/#organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How much VRAM does a 70B model's KV cache need?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "For a 70B with 80 layers, 8,192 hidden width, 64 attention heads and 8 KV heads, at FP16 cache and one sequence: about 2.62 GB at 8K context, 10.49 GB at 32K and 41.94 GB at 128K, which is 320 KiB per token. Multiplying by concurrency is where the numbers become large — 32 concurrent sequences at 128K is 1,342 GB of cache against 140 GB of weights."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why is my KV cache estimate eight times too big?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Almost certainly because the head dimension was computed as d_model divided by the KV head count instead of the attention head count. Written that way the KV head count appears in both numerator and denominator and cancels, leaving the full multi-head attention formula, so the grouped-query saving disappears. The ratio between the two results equals query heads divided by KV heads — 8 on a typical 70B."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does quantizing the weights to INT4 shrink the KV cache?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Weight precision and cache precision are independent settings. INT4 weights divide the 70B weight footprint from 140 GB to 35 GB and leave the FP16 cache exactly where it was, because serving stacks keep the cache at FP16 or BF16 unless a separate KV cache flag changes it. Assuming a 4-bit cache because the weights are 4-bit understates it by 4x."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "At what context length does the KV cache exceed the model weights?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "For one sequence it does not — at 128K the 70B's cache is 41.94 GB against 140 GB of FP16 weights, about 30%. The comparison flips with concurrency: eight concurrent 128K sequences carry 335.5 GB, or 2.4x the weights, and thirty-two carry 1,342 GB, or 9.6x. The question is therefore about batch size as much as about context length."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 116 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>The <span>Attention Gap</span></h1>
+        <p>Two numbers that look like one — and the 8&times; they hide in every KV cache estimate</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-10-04 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 13 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+            <li><a href="#formula" style="color:var(--accent); text-decoration:none;">The Formula That Cancels Itself</a></li>
+            <li><a href="#spectrum" style="color:var(--accent); text-decoration:none;">Two Numbers That Look Like One</a></li>
+            <li><a href="#worth" style="color:var(--accent); text-decoration:none;">What the 8&times; Is Worth</a></li>
+            <li><a href="#precision" style="color:var(--accent); text-decoration:none;">Precision Is a Separate Dial</a></li>
+            <li><a href="#concurrency" style="color:var(--accent); text-decoration:none;">Where the Cache Actually Bites</a></li>
+            <li><a href="#rule" style="color:var(--accent); text-decoration:none;">A Four-Number Sizing Rule</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ol>
+    </div>
+
+    <section class="seo-section">
+        <p>Ask a well-built KV cache calculator what a 70B model needs at 8K context and it will tell you about 21 GB per sequence. For almost every 70B model anyone has deployed since 2023, the true figure is <strong>2.62 GB</strong>. The gap is a factor of eight, and it is not overhead, fragmentation, or a disagreement about batch sizes. It is one substitution: a head dimension computed against KV heads where it should be computed against attention heads.</p>
+        <p>The substitution is easy to make because the algebra appears to close. Write the per-token cache as <code>2 &times; layers &times; kv_heads &times; (d_model / kv_heads) &times; bytes</code> and the <code>kv_heads</code> terms divide out, leaving <code>2 &times; layers &times; d_model &times; bytes</code> — a formula that is correct, tidy, and describes a model with no grouped-query attention at all. Every model released in the last three years uses grouped-query attention. The distance between those two facts is what this briefing is about.</p>
+        <p>It is the written companion to the <a href="/context-window-vram-inflation">KV Cache Context Window calculator</a>, which now computes both forms side by side so the difference is something you can see rather than something you have to trust.</p>
+    </section>
+
+    <section class="seo-section" id="formula">
+        <h2>The Formula That Cancels Itself</h2>
+        <p>The cache footprint per token, in bytes, is:</p>
+        <div class="pull" style="font-family:'SF Mono','Cascadia Code',Consolas,monospace; text-align:center;">
+            KV bytes = 2 &times; layers &times; kv_heads &times; head_dim &times; bytes_per_element &times; context &times; batch
+        </div>
+        <p>Six terms, and every one of them is load-bearing. The <strong>2</strong> covers keys and values, because both are stored. <strong>layers</strong> multiplies because each transformer block keeps its own cache — a 126-layer model pays the per-token cost 126 times. <strong>kv_heads &times; head_dim</strong> is the width of the key and value projection. <strong>bytes_per_element</strong> is the storage precision, 2 for FP16. And <strong>context &times; batch</strong> is what makes the cache a variable cost rather than a fixed one: it grows with every token you hold and every sequence you serve at once.</p>
+        <p>The error enters at <code>head_dim</code>. Head dimension is <code>d_model</code> divided by the number of <em>attention</em> heads. Write it as <code>d_model / kv_heads</code> instead and the expression becomes <code>2 &times; layers &times; kv_heads &times; (d_model / kv_heads) &times; bytes&hellip;</code>, where <code>kv_heads</code> sits in both numerator and denominator and cancels cleanly. What survives is <code>2 &times; layers &times; d_model &times; bytes</code> — the textbook multi-head attention figure, in which the KV head count has no effect whatsoever.</p>
+        <p>This is the part worth pausing on. The error does not <em>underestimate</em> the grouped-query saving; it <strong>deletes the term entirely</strong>. Any calculator or spreadsheet that accepts the cancelling form will return the same number whether you tell it the model has 8 KV heads or 64, because after the cancellation it never asks.</p>
+        <table class="brief-table">
+            <thead><tr><th>Expression</th><th>What it actually computes</th><th class="num">70B, 8K, batch 1, FP16</th></tr></thead>
+            <tbody>
+                <tr class="bad"><td><code>2 &times; L &times; kv_heads &times; (d_model / kv_heads) &times; 2 &times; ctx</code></td><td>Multi-head attention — the KV head count cancels</td><td class="num">20.97 GB</td></tr>
+                <tr class="hi"><td><code>2 &times; L &times; kv_heads &times; (d_model / n_heads) &times; 2 &times; ctx</code></td><td>Grouped-query attention — 8 KV heads of width 128</td><td class="num">2.62 GB</td></tr>
+            </tbody>
+        </table>
+        <p>The two rows differ by the query-to-KV head ratio. On the 70B that ratio is 8. On a model that has moved all the way to multi-query attention it is 64. And on a model with a wide head dimension and a large KV head count it can be 1 — the one case where the cancelling form happens to be right.</p>
+        <div class="pull">The cache formula contains no safety factor you can tune. It contains one substitution that either preserves the attention geometry or erases it.</div>
+    </section>
+
+    <section class="seo-section" id="spectrum">
+        <h2>Two Numbers That Look Like One</h2>
+        <p>Attention geometry is a spectrum, not a binary, and that is precisely why the confusion survives review. Three layouts matter:</p>
+        <table class="brief-table">
+            <thead><tr><th>Layout</th><th class="num">Query heads</th><th class="num">KV heads</th><th class="num">Cache vs MHA</th><th class="num">70B, 8K, FP16</th></tr></thead>
+            <tbody>
+                <tr><td>Multi-head (MHA)</td><td class="num">64</td><td class="num">64</td><td class="num">1.00&times;</td><td class="num">20.97 GB</td></tr>
+                <tr class="hi"><td>Grouped-query (GQA-8)</td><td class="num">64</td><td class="num">8</td><td class="num">0.125&times;</td><td class="num">2.62 GB</td></tr>
+                <tr><td>Multi-query (MQA)</td><td class="num">64</td><td class="num">1</td><td class="num">0.016&times;</td><td class="num">0.33 GB</td></tr>
+            </tbody>
+        </table>
+        <p>In multi-head attention every query head owns a key head and a value head, so the cache scales with the head count. In grouped-query attention, groups of query heads share a single key/value head — this is what Llama-2-70B introduced with its 64 query heads and 8 KV heads, and it became the default for essentially everything that followed. In multi-query attention all query heads share one key/value head, the maximum compression available before you change the attention mechanism itself.</p>
+        <p>Both GQA and MHA feed <code>kv_heads</code> into the formula, which is what makes them look interchangeable. An estimator that is never told the query-head count cannot tell them apart, and will silently answer for the wrong one. The failure is worst exactly where it matters most: the wider the query-to-KV ratio, the larger the error, so a model that has invested the most engineering in shrinking its cache is the one whose cache gets overstated the most.</p>
+        <div class="pull">Two models can carry identical parameter counts and identical KV head counts and still differ by 8&times; in cache. What separates them is how many query heads each KV head serves.</div>
+        <p>The information needed to get this right is not secret. Model config files report both fields — <code>num_attention_heads</code> and <code>num_key_value_heads</code> — and they are equal only for older MHA checkpoints. The gap between them <em>is</em> the grouped-query factor, and it is the first thing a sizing calculation should read.</p>
+    </section>
+
+    <section class="seo-section" id="worth">
+        <h2>What the 8&times; Is Worth</h2>
+        <p>The 70B class is the useful reference point because it is the largest model that still fits on a single 80 GB card at reduced precision, which makes the cache the term that decides the deployment rather than the weights. One sequence, FP16 cache, 80 layers, 8,192 hidden width, 64 attention heads and 8 KV heads:</p>
+        <table class="brief-table">
+            <thead><tr><th>Context length</th><th class="num">KV cache, batch 1</th><th class="num">Weights (FP16)</th><th class="num">Cache as % of weights</th></tr></thead>
+            <tbody>
+                <tr><td>4,000 tokens</td><td class="num">1.31 GB</td><td class="num">140 GB</td><td class="num">0.9%</td></tr>
+                <tr class="hi"><td>8,000 tokens</td><td class="num">2.62 GB</td><td class="num">140 GB</td><td class="num">1.9%</td></tr>
+                <tr><td>32,000 tokens</td><td class="num">10.49 GB</td><td class="num">140 GB</td><td class="num">7.5%</td></tr>
+                <tr><td>128,000 tokens</td><td class="num">41.94 GB</td><td class="num">140 GB</td><td class="num">30.0%</td></tr>
+            </tbody>
+        </table>
+        <p>Two things follow. The first is that the cache is linear in context length, not exponential — the 16&times; context increase from 8K to 128K produces a 16&times; cache increase. It only looks explosive because it is multiplied by concurrency, which is the subject of the next-but-one section. The second is that on a single sequence, even at 128K, the cache is still under a third of the weights. Anyone sizing from the cancelling formula would conclude the opposite: at 21 GB per 8K sequence they would see the cache overtake the weights somewhere around 53K context, and plan a multi-GPU tensor-parallel layout that the real workload never requires.</p>
+        <p>The 8&times; is also not a constant. It is the query-to-KV ratio, and it varies by model — as does the per-token cache itself, which depends on layer count and KV head count rather than on parameter count:</p>
+        <table class="brief-table">
+            <thead><tr><th>Model</th><th class="num">Layers</th><th class="num">KV heads</th><th class="num">Per token, FP16</th><th class="num">8K, batch 1</th><th class="num">128K, batch 1</th></tr></thead>
+            <tbody>
+                <tr><td>Llama 4 Scout 8B</td><td class="num">32</td><td class="num">8</td><td class="num">128 KiB</td><td class="num">1.05 GB</td><td class="num">16.78 GB</td></tr>
+                <tr class="hi"><td>Llama 4 Maverick 70B</td><td class="num">80</td><td class="num">8</td><td class="num">320 KiB</td><td class="num">2.62 GB</td><td class="num">41.94 GB</td></tr>
+                <tr><td>DeepSeek-V3 671B (MoE)</td><td class="num">61</td><td class="num">8</td><td class="num">244 KiB</td><td class="num">2.00 GB</td><td class="num">31.98 GB</td></tr>
+                <tr><td>Mistral Large 2 123B</td><td class="num">88</td><td class="num">8</td><td class="num">352 KiB</td><td class="num">2.88 GB</td><td class="num">46.14 GB</td></tr>
+                <tr class="bad"><td>Gemma 3 27B</td><td class="num">62</td><td class="num">16</td><td class="num">496 KiB</td><td class="num">4.06 GB</td><td class="num">65.01 GB</td></tr>
+                <tr><td>Llama 4 Behemoth 405B</td><td class="num">126</td><td class="num">8</td><td class="num">504 KiB</td><td class="num">4.13 GB</td><td class="num">66.06 GB</td></tr>
+            </tbody>
+        </table>
+        <p>Read the highlighted comparison against the row below it. A <strong>27B</strong> model with 16 KV heads carries a per-token cache a little over <strong>1.5&times; larger</strong> than a <strong>70B</strong> model with 8 — 496 KiB against 320 KiB. Parameter count is not a proxy for cache footprint, and neither is weight size. A 671B mixture-of-experts model, the largest thing in this table by parameter count, has a smaller per-token cache than a 123B dense model, because its 61 layers put it below Mistral Large 2's 88.</p>
+    </section>
+
+    <section class="seo-section" id="precision">
+        <h2>Precision Is a Separate Dial</h2>
+        <p>There is a second error in this area, and this one runs the other way. Weight quantization and cache quantization are different settings, and treating them as one understates the cache by exactly the same class of factor it is commonly overstated by.</p>
+        <table class="brief-table">
+            <thead><tr><th>Component</th><th class="num">FP16 weights</th><th class="num">INT4 weights</th></tr></thead>
+            <tbody>
+                <tr><td>70B weights</td><td class="num">140 GB</td><td class="num">35 GB</td></tr>
+                <tr class="hi"><td>KV cache, 8K, batch 1</td><td class="num">2.62 GB</td><td class="num">2.62 GB</td></tr>
+            </tbody>
+        </table>
+        <p>Quantizing weights to INT4 divides the weight footprint by four and leaves the cache untouched, because in essentially every serving stack the cache stays at FP16 or BF16 unless you configure it otherwise. vLLM, TensorRT-LLM and SGLang all ship FP16 KV by default, and the flag that changes it is a KV cache flag, not a weight flag. Sizing a deployment as though 4-bit weights implied a 4-bit cache understates the cache by 4&times; — the mirror image of the head-dimension error, and just as capable of producing an out-of-memory surprise under load.</p>
+        <p>Cache precision is a real lever, and a powerful one: INT8 or FP8 keys and values halve the cache, which on the 70B is 21 GB back at 128K context. But it is a separate decision with a separate quality trade, and it should be made deliberately rather than assumed as a side effect of the weight format. The rule is short: <strong>read the cache precision from the serving configuration, not from the model name.</strong></p>
+        <div class="pull">Two errors live here with opposite signs. Using KV heads where head dimension belongs inflates the cache 8&times;. Assuming the weights' precision applies to the cache deflates it 4&times;.</div>
+    </section>
+
+    <section class="seo-section" id="concurrency">
+        <h2>Where the Cache Actually Bites</h2>
+        <p>The single-sequence view is the one that makes people think long context is not a memory problem. The concurrent view is the one that actually decides hardware. Same 70B, same FP16 cache, same 128K context — only the batch size changes:</p>
+        <table class="brief-table">
+            <thead><tr><th>Concurrent sequences at 128K</th><th class="num">KV cache</th><th class="num">vs FP16 weights (140 GB)</th></tr></thead>
+            <tbody>
+                <tr><td>1</td><td class="num">41.94 GB</td><td class="num">0.3&times;</td></tr>
+                <tr class="hi"><td>8</td><td class="num">335.5 GB</td><td class="num">2.4&times;</td></tr>
+                <tr class="bad"><td>32</td><td class="num">1,342 GB</td><td class="num">9.6&times;</td></tr>
+            </tbody>
+        </table>
+        <p>At one sequence the cache hides under the weights. At eight it has overtaken them. At thirty-two it is nearly ten times the model, and the number that decides your GPU count is no longer the parameter size at all. This is the honest version of the claim that long context is expensive: not that a single 128K request is a memory disaster — it is 42 GB, which is containable — but that the thing you are actually selling is dozens of concurrent long conversations, and each one carries its own 42 GB.</p>
+        <p>The consequence for layout is direct. When the cache term dominates, tensor parallelism has to cover the cache, not just the weights, and the group size is set by how many concurrent sequences of the target context length you need to hold. That is a different calculation from the one that sizes the weights, and it produces a larger fleet — which is why a deployment planned from parameter count arrives at a GPU count that is too low, while one planned from the cancelling cache formula arrives at a count that is too high for the wrong reason. The fix in both directions is the same: compute the cache with the right head dimension, then multiply by the concurrency you intend to serve.</p>
+        <div class="pull">Long-context serving is not a weights problem. It is a concurrency problem wearing a context-length costume.</div>
+    </section>
+
+    <section class="seo-section" id="rule">
+        <h2>A Four-Number Sizing Rule</h2>
+        <p>The whole calculation reduces to four quantities. Get them right and the rest is multiplication.</p>
+        <ol>
+            <li><strong>Head dimension = d_model &divide; attention heads.</strong> Not KV heads. On a 70B that is 8,192 &divide; 64 = 128. If you only have the KV head count, you cannot compute the cache — go and find the query head count, because the two differ on every modern model.</li>
+            <li><strong>Per-token cache = 2 &times; layers &times; kv_heads &times; head_dim &times; bytes.</strong> With FP16 cache that is 2 bytes per element. For the 70B: 2 &times; 80 &times; 8 &times; 128 &times; 2 = 320 KiB per token, or 0.328 GB per 1,000 tokens.</li>
+            <li><strong>Multiply by the context you will actually hold, then by concurrency.</strong> The product is the cache, and it is the term that moves fastest because both factors are under your product's control rather than yours. A cache sized for 8K single-sequence traffic is 16&times; too small for 128K at eight concurrent — a 128&times; miss from two decisions that each look modest.</li>
+            <li><strong>Add the weights and check the sum against the card — then let the larger term set the layout.</strong> Weights are set by parameters and precision; cache is set by attention geometry, context and concurrency. When the cache wins, the tensor-parallel group is sized by the cache.</li>
+        </ol>
+        <p>And one judgement call that sits outside the four: <strong>state the cache precision explicitly</strong> in the sizing record, because it is a 4&times; lever that defaults silently. FP16 is a defensible default; it just should not be an unexamined one.</p>
+        <p>Steps one and two are what the <a href="/context-window-vram-inflation">KV cache calculator</a> computes directly, with separate inputs for attention heads and KV heads. Step four's weight side is the <a href="/parameters-to-vram-fp16">FP16 VRAM estimator</a> or the <a href="/parameters-to-vram-int4">INT4 equivalent</a>, and the question of whether the resulting fleet fits at all is the <a href="/gpu-model-fit-matrix">fit matrix</a>.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>Frequently Asked Questions</h2>
+        <h3>How much VRAM does a 70B model's KV cache need?</h3>
+        <p>For a 70B with 80 layers, 8,192 hidden width, 64 attention heads and 8 KV heads, at FP16 cache and one sequence: about 2.62 GB at 8K context, 10.49 GB at 32K and 41.94 GB at 128K. Per token it is 320 KiB. Multiplying by concurrency is where the numbers become large — 32 concurrent sequences at 128K is 1,342 GB of cache against 140 GB of weights.</p>
+        <h3>Why is my KV cache estimate eight times too big?</h3>
+        <p>Almost certainly because the head dimension was computed as d_model divided by the KV head count instead of the attention head count. Written that way, the KV head count appears in both numerator and denominator and cancels, leaving the full multi-head attention formula — so the grouped-query saving disappears entirely. The ratio between the two results equals query heads divided by KV heads, which is 8 on a typical 70B.</p>
+        <h3>Does quantizing the weights to INT4 shrink the KV cache?</h3>
+        <p>No. Weight precision and cache precision are independent settings. INT4 weights divide the 70B weight footprint from 140 GB to 35 GB and leave the FP16 cache exactly where it was, because serving stacks keep the cache at FP16 or BF16 unless a separate KV cache flag changes it. Assuming a 4-bit cache because the weights are 4-bit understates it by 4&times;.</p>
+        <h3>At what context length does the KV cache exceed the model weights?</h3>
+        <p>For one sequence, it does not — at 128K the 70B's cache is 41.94 GB against 140 GB of FP16 weights, about 30%. The comparison flips with concurrency: eight concurrent 128K sequences carry 335.5 GB, or 2.4&times; the weights, and thirty-two carry 1,342 GB, or 9.6&times;. The question is therefore about batch size as much as about context length.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;" id="method">
+        <h2>Methodology &amp; Disclosure</h2>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">Cache sizes are computed as <code>2 &times; layers &times; kv_heads &times; head_dim &times; bytes_per_element &times; context &times; batch</code>, where <code>head_dim = d_model / attention_heads</code>. Model geometry — layer counts, KV head counts and head dimensions — is taken from each model's published architecture configuration, not estimated from parameter counts. Context lengths use decimal K (8K = 8,000 tokens, 128K = 128,000) and sizes are reported in decimal GB, consistent with the site's <a href="/data/numbers.json">machine-readable numbers file</a>. Framework overhead, allocator fragmentation, PagedAttention block padding and attention kernel workspace are excluded, so these figures are lower bounds on real allocation. The 70B reference shape is 80 layers, 8,192 hidden width, 64 attention heads, 8 KV heads, FP16 cache. Cache precision is assumed FP16 throughout unless a section says otherwise; INT8 and FP8 caches halve the figures. This site takes no sponsorship, no affiliate commission and no vendor payment of any kind; the vendors named here have no relationship with jslet and did not review this briefing.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;">
+        <h2>References &amp; Further Reading</h2>
+        <ol style="font-size:0.85rem; line-height:1.9; color:var(--text-body);" id="references">
+            <li>Ainslie et al. <em>GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints</em> — the attention layout and the query-to-KV head ratio used throughout. <em>arXiv:2305.13245</em></li>
+            <li>Shazeer. <em>Fast Transformer Decoding: One Write-Head is All You Need</em> — multi-query attention, the limiting case of the same geometry. <em>arXiv:1911.02150</em></li>
+            <li>Meta AI. Llama 2, Llama 3 and Llama 4 model cards and configuration files — layer counts, attention head counts and KV head counts per size class. <em>ai.meta.com</em></li>
+            <li>vLLM documentation. PagedAttention, KV cache memory management and the <code>kv_cache_dtype</code> setting that decouples cache precision from weight precision. <em>docs.vllm.ai</em></li>
+            <li>NVIDIA TensorRT-LLM documentation. KV cache quantization, paged KV memory and multi-GPU deployment guidance. <em>nvidia.github.io/TensorRT-LLM</em></li>
+            <li>Related: <a href="/context-window-vram-inflation">KV Cache Context Window Calculator</a> · <a href="/gpu-model-fit-matrix-real">The VRAM Ceiling: Why 70B Is a Topology Choice</a> · <a href="/gpu-model-fit-matrix">GPU Model Fit Matrix</a> · <a href="/parameters-to-vram-fp16">Parameters to VRAM (FP16)</a> · <a href="/inference-capacity-planner-real">The Reverse Sizing Problem: From QPS to Silicon</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Fcontext-window-vram-inflation-real&amp;text=The%20Attention%20Gap%3A%20why%20your%20KV%20cache%20estimate%20is%208x%20too%20big" target="_blank" rel="noopener" aria-label="Share on X">&#120143;</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Fcontext-window-vram-inflation-real" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/context-window-vram-inflation">&#129518; KV Cache Context Window Calculator &rarr;</a>
+            <a href="/parameters-to-vram-fp16">&#129518; Parameters to VRAM (FP16) &rarr;</a>
+            <a href="/parameters-to-vram-int4">&#129518; Parameters to VRAM (INT4) &rarr;</a>
+            <a href="/gpu-model-fit-matrix">&#129518; GPU Model Fit Matrix &rarr;</a>
+            <a href="/inference-capacity-planner">&#129518; Inference Capacity Planner &rarr;</a>
+            <a href="/llm-inference-latency">&#129518; LLM Inference Latency Estimator &rarr;</a>
+            <a href="/gpu-model-fit-matrix-real">&#128240; The VRAM Ceiling: Why 70B Is a Topology Choice &rarr;</a>
+            <a href="/ai-gpu-compute">&#129302; All AI &amp; GPU Compute Tools &rarr;</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Estimation Disclaimer:</strong> Cache figures are model-based estimates from published architecture parameters, not measurements. Real allocation varies with framework, allocator behaviour, block padding and kernel selection, and is typically higher than the figures here. Validate against measured GPU memory on your target stack before committing to hardware.</p>
+        </div>
+    </section>
+
+
+<footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/ai-gpu-compute">AI &amp; GPU Compute</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>
