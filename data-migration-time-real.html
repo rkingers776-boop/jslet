@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The Churn Ceiling: Why Your Data Migration Never Finishes</title>
+    <meta name="description" content="A migration can be arithmetically impossible — once daily change outruns daily transfer capacity the catch-up rounds never end. The threshold, and the window trap.">
+    <meta property="og:title" content="The Churn Ceiling — Why Your Data Migration Never Finishes">
+    <meta property="og:description" content="100 TB is 23 hours of bandwidth and six weeks of calendar. The gap is a single ratio — and above 1.0 the migration has no end date at all.">
+    <meta property="og:url" content="https://www.jslet.com/data-migration-time-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-10-05T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-10-05T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Churn Ceiling: Why Your Data Migration Never Finishes">
+    <meta name="twitter:description" content="100 TB is 23 hours of bandwidth and six weeks of calendar. The gap is a single ratio — and above 1.0 the migration has no end date at all.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/data-migration-time-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Churn Ceiling: Why Your Data Migration Never Finishes",
+      "description": "A data migration is a race between a transfer and a workload. When the source creates data faster than the link can move it, the incremental catch-up rounds grow instead of shrinking and the migration has no end date. The convergence ratio, the squared penalty from shortening the transfer window, and the five numbers that predict the outcome before the first byte moves.",
+      "url": "https://www.jslet.com/data-migration-time-real",
+      "datePublished": "2026-10-05T00:00:00+00:00",
+      "dateModified": "2026-10-05T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research", "url": "https://www.jslet.com/methodology" },
+      "publisher": { "@type": "Organization", "@id": "https://www.jslet.com/#organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How long does it take to migrate 100 TB?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Raw arithmetic gives 23.3 hours on a 10 Gbps link and 9.7 days on 1 Gbps, both assuming 24/7 transfer and zero overhead. Adding HTTP overhead pushes the 1 Gbps case to 11.0 days. Restricting transfers to an 8-hour nightly window pushes it to 33.1 days. And if the source generates 1% of its own volume per day, the catch-up rounds add 50% on top, for 49.5 days. Each layer is a different question — bandwidth, protocol, calendar, workload — and the last one can make the answer infinite."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does shortening the transfer window cost more than the hours it removes?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because two things change at once. Daily capacity falls in proportion to the window, and the calendar time the transfer occupies rises in inverse proportion — so the amount of new data created during the migration grows even as the capacity to catch up with it shrinks. The convergence ratio scales as the inverse square of the window. On a 100 TB migration over 1 Gbps with 1% daily change, cutting the window from 24 hours to 8 multiplies the total timeline by 4.0 rather than 3, and cutting it to 4 hours multiplies it by 15.8."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can a data migration fail to converge?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, and it is arithmetic rather than bad luck. If the source produces more data per day than the link can transfer per day, every incremental round is longer than the one before it. 100 TB with a 2% daily change rate produces 2,048 GB per day; a 100 Mbps link running an 8-hour nightly window moves 309 GB per day. The second number is smaller than the first, so the migration runs at about one-sixth of the speed it needs, forever."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does adding bandwidth always shorten a migration?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Not until the convergence ratio is comfortably below 1, and not at all if the bottleneck is object count rather than bytes. A single TCP stream is limited by the receive window divided by the round-trip time, so a 1 MB window on a 100 ms path caps one stream near 80 Mbps regardless of the link rate, and 0.1% packet loss cuts that to single-digit Mbps. Datasets dominated by small files are usually bound by per-object metadata operations instead: 100 million 4 KB files carry 381 GB of payload but cost about 5.8 days of metadata handling, against 59 minutes of actual transfer."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 116 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>The <span>Churn Ceiling</span></h1>
+        <p>100 TB is 23 hours of bandwidth and six weeks of calendar — and the difference is not your network</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-10-05 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 15 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+            <li><a href="#bandwidth" style="color:var(--accent); text-decoration:none;">The Bandwidth Answer</a></li>
+            <li><a href="#subtractions" style="color:var(--accent); text-decoration:none;">Three Subtractions and a Ratio</a></li>
+            <li><a href="#ceiling" style="color:var(--accent); text-decoration:none;">The Churn Ceiling</a></li>
+            <li><a href="#window" style="color:var(--accent); text-decoration:none;">The Window Is Squared</a></li>
+            <li><a href="#rounds" style="color:var(--accent); text-decoration:none;">Where the Rounds Never End</a></li>
+            <li><a href="#levers" style="color:var(--accent); text-decoration:none;">The Levers, Ranked</a></li>
+            <li><a href="#metadata" style="color:var(--accent); text-decoration:none;">The Metadata Tax</a></li>
+            <li><a href="#plan" style="color:var(--accent); text-decoration:none;">A Five-Number Plan</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ol>
+    </div>
+
+    <section class="seo-section">
+        <p>A hundred terabytes over a 10 Gbps link is 23.3 hours of arithmetic. Multiply out the bytes, divide by the line rate, and that is the answer — assuming the link runs flat out, twenty-four hours a day, with zero protocol overhead and a source that has stopped changing.</p>
+        <p>Nobody who has run a real migration believes that number, and the reason is rarely that the network is slow. A migration is not a copy operation. It is a race between a transfer and a workload, and the workload does not pause because you have decided to move its data.</p>
+        <p>Two teams can start the same 100 TB on the same link. One finishes in three weeks. The other never finishes at all — not late, not over budget, but genuinely never reaching the point where the copy and the original agree. What separates them is a single ratio: how much data the source creates each day, divided by how much the link can move each day. Below one, the migration is finite and its calendar is predictable. At or above one, the catch-up rounds grow instead of shrinking, and no amount of retrying converges.</p>
+        <p>This is the written companion to the <a href="/data-migration-time">Data Migration Time calculator</a>, which models the three phases and the transfer window directly. What follows is the part a phase model tends to hide: why the window is a squared penalty rather than a linear one, why the incremental rounds form a geometric series, and the five numbers that tell you in advance whether your migration has an end date.</p>
+    </section>
+
+    <section class="seo-section" id="bandwidth">
+        <h2>The Bandwidth Answer</h2>
+        <p>Start with the number everyone computes first. Bytes divided by line rate, no adjustments:</p>
+        <table class="brief-table">
+            <thead><tr><th>Link</th><th class="num">Raw transfer, 24/7, zero overhead</th><th class="num">Same 100 TB, as a working estimate</th></tr></thead>
+            <tbody>
+                <tr><td>10 Gbps</td><td class="num">23.3 hours</td><td class="num">3&#8211;6 weeks</td></tr>
+                <tr class="hi"><td>1 Gbps</td><td class="num">9.7 days</td><td class="num">7&#8211;14 weeks</td></tr>
+                <tr><td>100 Mbps</td><td class="num">97.1 days</td><td class="num">never, at 2% daily change</td></tr>
+                <tr><td>50 Mbps</td><td class="num">194.2 days</td><td class="num">never, at 1% daily change</td></tr>
+            </tbody>
+        </table>
+        <p>The right column is not a fudge factor. Each entry comes from a specific mechanism, and the mechanisms compound rather than add. The gap between 23.3 hours and three weeks is worth decomposing, because only one of the four pieces is about bandwidth.</p>
+        <div class="pull">The raw transfer time is a lower bound that is correct and almost never useful. It answers "how fast can the pipe go", when the question that decides the project is "how fast can the pipe go relative to how fast the data is growing".</div>
+    </section>
+
+    <section class="seo-section" id="subtractions">
+        <h2>Three Subtractions and a Ratio</h2>
+        <p>Three adjustments sit between the raw number and a realistic one, and they behave very differently.</p>
+        <h3>1. Protocol overhead</h3>
+        <p>Moving bytes over a network costs framing, headers, acknowledgements and per-object round trips. The penalty depends entirely on the transfer method, and the spread between methods is a factor of eight:</p>
+        <table class="brief-table">
+            <thead><tr><th>Transfer method</th><th class="num">Overhead</th><th class="num">Effective rate on a 1 Gbps link</th></tr></thead>
+            <tbody>
+                <tr class="hi"><td>Raw TCP stream</td><td class="num">~3%</td><td class="num">970 Mbps</td></tr>
+                <tr><td>Custom UDP / Aspera / GridFTP</td><td class="num">~5%</td><td class="num">950 Mbps</td></tr>
+                <tr><td>HTTP / HTTPS</td><td class="num">~12%</td><td class="num">880 Mbps</td></tr>
+                <tr><td>Object-store multipart (S3-style)</td><td class="num">~18%</td><td class="num">820 Mbps</td></tr>
+                <tr class="bad"><td>rsync / SCP / SFTP</td><td class="num">~25%</td><td class="num">750 Mbps</td></tr>
+            </tbody>
+        </table>
+        <p>The uncomfortable part is that the method most teams reach for by default — <code>rsync</code>, because it is incremental and resumable — is the most expensive one on the list. It buys resumability and delta detection, and pays for them with per-file round trips that the raw-stream methods do not make. That trade is often correct, but it is a trade, not a free upgrade.</p>
+        <h3>2. The transfer window</h3>
+        <p>Production systems rarely hand over a link for twenty-four hours. A nightly maintenance window of eight hours is a generous one, and it removes two-thirds of the day before anything else is considered.</p>
+        <h3>3. Workload change during the migration</h3>
+        <p>The source keeps writing. The baseline pass takes days or weeks, and every byte written during that period has to be re-copied afterwards. That catch-up pass takes time too, during which more data is written, which needs another pass. This is the term that turns a finite job into an infinite one, and it is the only one of the three that can.</p>
+        <p>Stacked on the same 100 TB over 1 Gbps:</p>
+        <table class="brief-table">
+            <thead><tr><th>Adjustment applied</th><th class="num">Timeline</th><th class="num">Multiplier</th></tr></thead>
+            <tbody>
+                <tr><td>Raw transfer, 24/7, no overhead</td><td class="num">9.7 days</td><td class="num">1.0&times;</td></tr>
+                <tr><td>+ HTTP overhead (12%)</td><td class="num">11.0 days</td><td class="num">1.14&times;</td></tr>
+                <tr class="hi"><td>+ 8-hour nightly window</td><td class="num">33.1 days</td><td class="num">3.4&times;</td></tr>
+                <tr class="bad"><td>+ 1% daily change rate</td><td class="num">49.5 days</td><td class="num">5.1&times;</td></tr>
+            </tbody>
+        </table>
+        <p>Protocol overhead is the smallest line in the table, and it is the one teams spend the most time on. The window and the change rate are where the calendar actually goes — and the change rate decides whether there is a calendar at all.</p>
+    </section>
+
+    <section class="seo-section" id="ceiling">
+        <h2>The Churn Ceiling</h2>
+        <p>Define the convergence ratio &rho; as the data the source creates per day divided by the data the link can move per day:</p>
+        <div class="pull" style="font-family:'SF Mono','Cascadia Code',Consolas,monospace; text-align:center;">
+            &rho; = (D &times; c) &divide; C &nbsp;&nbsp;&nbsp; where D &times; c is daily data created and C is daily transfer capacity
+        </div>
+        <p>Everything about the migration's schedule follows from that one number. Below &rho; = 1 the total time is finite and equals the baseline pass divided by (1 &minus; &rho;). At &rho; = 1 it diverges. Above it, the catch-up passes lengthen with each round and the migration runs permanently behind.</p>
+        <p>The ratio is uncomfortable because it is not a property of the network, and it is not a property of the data volume either. It is a property of their relationship. A migration of 10 TB can be impossible while a migration of 1 PB succeeds, if the small one has a busy enough source and the large one is cold.</p>
+        <p>Here is where the ceiling sits for a 100 TB dataset, across a range of daily change rates. The right-hand columns give the minimum effective throughput required to stay below &rho; = 1:</p>
+        <table class="brief-table">
+            <thead><tr><th>Daily change rate</th><th class="num">Data created per day</th><th class="num">Min effective rate, 24h window</th><th class="num">Min effective rate, 8h window</th></tr></thead>
+            <tbody>
+                <tr><td>0.1%</td><td class="num">102 GB</td><td class="num">9.7 Mbps</td><td class="num">29.1 Mbps</td></tr>
+                <tr><td>0.5%</td><td class="num">512 GB</td><td class="num">48.5 Mbps</td><td class="num">146 Mbps</td></tr>
+                <tr class="hi"><td>1%</td><td class="num">1,024 GB</td><td class="num">97 Mbps</td><td class="num">291 Mbps</td></tr>
+                <tr><td>2%</td><td class="num">2,048 GB</td><td class="num">194 Mbps</td><td class="num">583 Mbps</td></tr>
+                <tr class="bad"><td>5%</td><td class="num">5,120 GB</td><td class="num">486 Mbps</td><td class="num">1,456 Mbps</td></tr>
+            </tbody>
+        </table>
+        <p>Two migrations illustrate how quickly this stops being theoretical.</p>
+        <p><strong>Case one.</strong> 100 TB on a 1 Gbps link, transfers restricted to eight hours a night, source regenerating 2% of its volume daily. Daily capacity is 3,094 GB; daily change is 2,048 GB. &rho; is 0.66 — uncomfortable, but finite. The baseline pass alone takes 33 days, and the convergence series stretches it to <strong>97.9 days</strong> against a raw-arithmetic estimate of 9.7. A tenfold miss, from two decisions that each looked reasonable.</p>
+        <p><strong>Case two.</strong> The same 100 TB, the same eight-hour window, the same 2% change rate, but on a 100 Mbps link instead of 1 Gbps. Daily capacity drops to 309 GB. &rho; is now 6.6. The migration moves data about six times slower than the workload creates it, which means the gap widens every day it runs. This project has no completion date, and it will not acquire one by being run for longer. Nothing about the transfer will fail, which is precisely the problem: there is no error to alert on, only a delta that never closes.</p>
+        <div class="pull">A migration that runs out of disk space announces itself. A migration that cannot converge reports healthy throughput every single day while making no progress toward a finish line.</div>
+    </section>
+
+    <section class="seo-section" id="window">
+        <h2>The Window Is Squared</h2>
+        <p>Shrinking the transfer window is the most common way to reduce production impact, and it is usually justified as a linear cost: halve the hours available, double the calendar. On a cold dataset that is exactly right. On a live one it is badly wrong, because two things change at once.</p>
+        <p>Capacity falls in proportion to the window — fewer hours per day, less data moved per day. And the calendar time the transfer occupies rises in inverse proportion, so the number of days over which new data accumulates goes <em>up</em> as the window goes down. The numerator of &rho; grows while its denominator shrinks. The ratio scales as the inverse square of the window.</p>
+        <table class="brief-table">
+            <thead><tr><th>Nightly window</th><th class="num">Capacity/day</th><th class="num">Baseline pass</th><th class="num">&rho;</th><th class="num">Total</th><th class="num">vs 24h</th></tr></thead>
+            <tbody>
+                <tr class="hi"><td>24 hours</td><td class="num">9,281 GB</td><td class="num">11.0 d</td><td class="num">0.110</td><td class="num">12.4 d</td><td class="num">1.0&times;</td></tr>
+                <tr><td>12 hours</td><td class="num">4,641 GB</td><td class="num">22.1 d</td><td class="num">0.221</td><td class="num">28.3 d</td><td class="num">2.3&times;</td></tr>
+                <tr><td>8 hours</td><td class="num">3,094 GB</td><td class="num">33.1 d</td><td class="num">0.331</td><td class="num">49.5 d</td><td class="num">4.0&times;</td></tr>
+                <tr><td>6 hours</td><td class="num">2,320 GB</td><td class="num">44.1 d</td><td class="num">0.441</td><td class="num">79.0 d</td><td class="num">6.4&times;</td></tr>
+                <tr><td>4 hours</td><td class="num">1,547 GB</td><td class="num">66.2 d</td><td class="num">0.662</td><td class="num">196 d</td><td class="num">15.8&times;</td></tr>
+                <tr class="bad"><td>3 hours</td><td class="num">1,160 GB</td><td class="num">88.3 d</td><td class="num">0.883</td><td class="num">752 d</td><td class="num">60.6&times;</td></tr>
+                <tr class="bad"><td>2 hours</td><td class="num">773 GB</td><td class="num">132 d</td><td class="num">1.324</td><td class="num">never</td><td class="num">&#8212;</td></tr>
+            </tbody>
+        </table>
+        <p>Read the last two rows together. Moving a 100 TB migration from an eight-hour window to a four-hour one does not double the timeline, it multiplies it by four — 49.5 days becomes 196. Move it to three hours and the estimate is 752 days, which is a little over two years for a job whose raw transfer time is under ten days. Move it to two hours and the arithmetic stops returning a date.</p>
+        <p>The reason the 1 Gbps link, the 100 TB dataset and the 1% change rate in this table are unremarkable is the point. None of them is extreme. The result is extreme because the penalty is quadratic, and quadratic penalties are invisible on a napkin.</p>
+        <div class="pull">"Reducing the window by half" sounds like a 2&times; cost and is usually a 2.3&times; cost at 12 hours, a 4&times; cost at 8, and an unbounded cost below about 3.</div>
+        <p>The same table read backwards is the cheapest optimisation in this briefing. On the 8-hour row, widening the window to 24 hours takes the estimate from 49.5 days to 12.4 — a fourfold improvement with no hardware purchased, no link upgraded, and no vendor called. It is a decision about who owns the bandwidth at 2 a.m., and it is worth more than any protocol tuning on the list.</p>
+    </section>
+
+    <section class="seo-section" id="rounds">
+        <h2>Where the Rounds Never End</h2>
+        <p>The "incremental catch-up" is not one pass. Each round copies what changed during the previous round, so the round lengths form a geometric series with ratio &rho;:</p>
+        <div class="pull" style="font-family:'SF Mono','Cascadia Code',Consolas,monospace; text-align:center;">
+            Total = T&#8321; &times; (1 + &rho; + &rho;&sup2; + &rho;&sup3; + &hellip;) = T&#8321; / (1 &minus; &rho;)
+        </div>
+        <p>That closed form is the whole story of the churn term. It is mild for small &rho; and violent as &rho; approaches 1:</p>
+        <table class="brief-table">
+            <thead><tr><th class="num">&rho;</th><th class="num">Multiplier on the baseline pass</th><th>What it looks like in practice</th></tr></thead>
+            <tbody>
+                <tr><td class="num">0.10</td><td class="num">1.11&times;</td><td>A rounding error on the schedule</td></tr>
+                <tr><td class="num">0.30</td><td class="num">1.43&times;</td><td>Six weeks becomes nine</td></tr>
+                <tr class="hi"><td class="num">0.50</td><td class="num">2.00&times;</td><td>The catch-up pass is as long as the baseline</td></tr>
+                <tr><td class="num">0.70</td><td class="num">3.33&times;</td><td>Every round is visibly worse than the last</td></tr>
+                <tr class="bad"><td class="num">0.90</td><td class="num">10.0&times;</td><td>The baseline is 10% of the project</td></tr>
+                <tr class="bad"><td class="num">0.99</td><td class="num">100&times;</td><td>Theoretically finite, practically not</td></tr>
+            </tbody>
+        </table>
+        <p>This is also where the conventional three-phase plan quietly fails. The standard migration playbook stops after two incremental rounds — a baseline, one catch-up, one final delta — and declares the cutover. That truncation is harmless while &rho; is small and increasingly dishonest as it grows:</p>
+        <table class="brief-table">
+            <thead><tr><th class="num">&rho;</th><th class="num">After two incremental rounds</th><th class="num">True total</th><th class="num">Understated by</th></tr></thead>
+            <tbody>
+                <tr><td class="num">0.331</td><td class="num">1.44&times; T&#8321;</td><td class="num">1.49&times; T&#8321;</td><td class="num">3.6%</td></tr>
+                <tr><td class="num">0.662</td><td class="num">2.10&times; T&#8321;</td><td class="num">2.96&times; T&#8321;</td><td class="num">29%</td></tr>
+                <tr class="bad"><td class="num">0.883</td><td class="num">2.66&times; T&#8321;</td><td class="num">8.55&times; T&#8321;</td><td class="num">69%</td></tr>
+            </tbody>
+        </table>
+        <p>At &rho; = 0.33, a three-phase plan is within 4% of the truth and there is no reason to complicate it. At 0.66 it understates the job by nearly a third. At 0.88 it reports 2.7 baseline passes for a job that will take 8.6, and the third incremental round is not the last one.</p>
+        <p>The practical consequence is that you stop planning for rounds and start planning for a threshold. Rather than asking "how many catch-up passes will it take", set a convergence target — a delta small enough to cut over on, say 0.1% of the total volume — and compute when the series reaches it. Waiting for a delta of exactly zero is not an engineering plan; it is a definition under which the migration never ends.</p>
+    </section>
+
+    <section class="seo-section" id="levers">
+        <h2>The Levers, Ranked</h2>
+        <p>&rho; has four inputs, and every real intervention moves exactly one of them. Ranking them by how much of the calendar they buy back, on the same 100 TB with a 1% daily change rate:</p>
+        <table class="brief-table">
+            <thead><tr><th>Change</th><th>Which lever</th><th class="num">&rho;</th><th class="num">Total</th><th class="num">Saving</th></tr></thead>
+            <tbody>
+                <tr><td>Baseline: 1 Gbps &middot; 8h &middot; HTTP</td><td>&#8212;</td><td class="num">0.331</td><td class="num">49.5 d</td><td class="num">&#8212;</td></tr>
+                <tr><td>Switch HTTP to raw TCP</td><td>overhead &minus;9 pts</td><td class="num">0.300</td><td class="num">42.9 d</td><td class="num">13%</td></tr>
+                <tr class="hi"><td>Widen the window to 24 hours</td><td>window &times;3</td><td class="num">0.110</td><td class="num">12.4 d</td><td class="num">75%</td></tr>
+                <tr><td>Run 4 parallel streams</td><td>concurrency &times;4</td><td class="num">0.083</td><td class="num">9.0 d</td><td class="num">82%</td></tr>
+                <tr><td>Upgrade the link to 10 Gbps</td><td>bandwidth &times;10</td><td class="num">0.033</td><td class="num">3.4 d</td><td class="num">93%</td></tr>
+                <tr class="bad"><td>4 streams <em>and</em> a 24-hour window</td><td>both</td><td class="num">0.028</td><td class="num">2.8 d</td><td class="num">94%</td></tr>
+            </tbody>
+        </table>
+        <p>Protocol optimisation is the smallest lever on the list and the most popular one, because it is the only one that can be done entirely inside engineering. A 9-point overhead reduction buys 13% of the calendar. A schedule conversation buys 75%.</p>
+        <h3>Why one stream cannot use one link</h3>
+        <p>Parallelism is not a trick to work around a slow network; it is required by how TCP works. A single stream's throughput is bounded by the receive window divided by the round-trip time — the bandwidth-delay product. A 1 MB window on a 100 ms cross-region path caps one stream at 10 MB/s, which is about 80 Mbps on a link rated at ten thousand. The link is idle; the window is the constraint.</p>
+        <p>Loss makes the bound worse than linear. A standard approximation puts a single stream near 1.22 &times; MSS / (RTT &times; &radic;p): at 100 ms of latency, 1,460-byte segments and 0.1% packet loss, that is roughly <strong>4.5 Mbps</strong>. One lost segment in a thousand costs two orders of magnitude on a long-haul path. Chasing that with a bigger window is a tuning project; opening eight streams is an afternoon.</p>
+        <h3>The lever that is not on the network</h3>
+        <p>The largest available lever moves no bytes at all. A hundred 20 TB drives hold 2 PB, and a 24-hour drive moves them — which works out to roughly 185 Gbps of equivalent bandwidth, against 185 days for the same data on a 1 Gbps line. This is not an analogy; it is the arithmetic behind seeding phases and offline transfer appliances at every large cloud provider. The trade is latency: the van has a day of it where the network has milliseconds, which makes physical transfer a bulk-pass tool only. The incremental catch-up still runs over the wire, but by then &rho; is being compared against a baseline that is already done.</p>
+        <div class="pull">Two levers dominate: raise capacity per day, or lower data created per day. Bandwidth does the first slowly and expensively; freezing writes, archiving cold data before the move, and seeding the bulk physically do it quickly.</div>
+    </section>
+
+    <section class="seo-section" id="metadata">
+        <h2>The Metadata Tax</h2>
+        <p>Everything above counts bytes. Storage systems also count objects, and a migration's cost per object is paid in round trips that have nothing to do with payload size. Two datasets with wildly different byte counts can invert the picture entirely:</p>
+        <table class="brief-table">
+            <thead><tr><th>Dataset</th><th class="num">Objects</th><th class="num">Payload</th><th class="num">Metadata at 5 ms/object</th><th class="num">Payload at 1 Gbps</th></tr></thead>
+            <tbody>
+                <tr class="bad"><td>4 KB files</td><td class="num">100 M</td><td class="num">381 GB</td><td class="num">5.79 days</td><td class="num">59 minutes</td></tr>
+                <tr class="hi"><td>4 MB files</td><td class="num">10 M</td><td class="num">38.1 TB</td><td class="num">0.58 days</td><td class="num">4.21 days</td></tr>
+            </tbody>
+        </table>
+        <p>The first row is the one that ruins schedules. A hundred million small objects hold less than half a terabyte, which is under an hour of transfer on a gigabit link — and about six days of open, stat and close operations. The metadata is 141 times the payload. No bandwidth upgrade touches this, because the link is not the resource being consumed.</p>
+        <p>Object stores add a second ceiling of the same kind. Request rates are provisioned per partition rather than per byte, and the widely documented working figure is on the order of 3,500 write requests per second per partitioned prefix. A hundred million objects is therefore at least eight hours of requests even in the ideal case, before any data is considered — and that ideal case assumes the prefixes are spread well enough to avoid a single hot partition, which is an application-side property, not a service-side one.</p>
+        <p>The practical test is one question asked early: <strong>what is the average object size?</strong> Above a megabyte or so, the migration is a bandwidth problem and the ratios above apply directly. Below it, the migration is an object-count problem, and the fix is compaction or batching on the source side — fewer, larger objects — rather than anything in the network path.</p>
+        <div class="pull">Two datasets of identical size can differ by three orders of magnitude in the time it takes to move them. Only one of the two is a bandwidth problem, and the tell is the object count.</div>
+    </section>
+
+    <section class="seo-section" id="plan">
+        <h2>A Five-Number Plan</h2>
+        <p>Before committing to a window, a link or a date, collect five numbers. Four of them are arithmetic; the fifth decides whether the arithmetic applies.</p>
+        <ol>
+            <li><strong>Bytes to move (D).</strong> The baseline volume, measured rather than estimated. Include the data you are not planning to migrate but will end up moving anyway.</li>
+            <li><strong>Bytes created per day.</strong> Measure the source's write rate over a full business cycle — a week, not an hour. This is the number teams guess, and it is the one that decides everything.</li>
+            <li><strong>Effective throughput (C).</strong> Link rate &times; (1 &minus; protocol overhead) &times; parallel streams. Use the overhead table above; do not use the link's headline rate.</li>
+            <li><strong>Window hours (w).</strong> The hours per day you are actually permitted to saturate the link, not the hours the link exists.</li>
+            <li><strong>Object count and average size.</strong> If the average is under a megabyte, re-derive C as requests per second and take the smaller of the two ceilings.</li>
+        </ol>
+        <p>Then compute &rho; = (D &times; c) &divide; C and act on the result:</p>
+        <ul>
+            <li><strong>&rho; &ge; 1.</strong> The migration has no end date. Adding retries, resuming better or upgrading the tooling changes nothing. Fix one of the four inputs first: more capacity, a wider window, fewer parallel sources of change, or a seeding pass that removes the bulk from the race entirely.</li>
+            <li><strong>0.5 &le; &rho; &lt; 1.</strong> Finite, but not in the time the phase plan says. Use T&#8321; / (1 &minus; &rho;), not the two-round model, and treat the third incremental round as unlikely to be the last.</li>
+            <li><strong>&rho; &lt; 0.3.</strong> A three-phase plan is accurate to within a few percent. Plan normally and spend your effort on the cutover instead.</li>
+        </ul>
+        <p>Steps one through three are what the <a href="/data-migration-time">Data Migration Time calculator</a> computes directly, including the window and the three phases. Step two — the change rate — is the one no calculator can measure for you, and it is the only input that can turn a three-week project into one that never finishes.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>Frequently Asked Questions</h2>
+        <h3>How long does it take to migrate 100 TB?</h3>
+        <p>Raw arithmetic gives 23.3 hours on a 10 Gbps link and 9.7 days on 1 Gbps, both assuming 24/7 transfer and zero overhead. HTTP overhead pushes the 1 Gbps case to 11.0 days; restricting transfers to an eight-hour nightly window pushes it to 33.1 days; and a source generating 1% of its own volume per day pushes it to 49.5 days. Each layer answers a different question — bandwidth, protocol, calendar, workload — and the last one can make the answer infinite.</p>
+        <h3>Why does shortening the transfer window cost more than the hours it removes?</h3>
+        <p>Because two things change at once. Daily capacity falls in proportion to the window, and the calendar time the transfer occupies rises in inverse proportion, so the amount of new data created during the migration grows as the capacity to catch up with it shrinks. The convergence ratio scales as the inverse square of the window. On 100 TB over 1 Gbps with 1% daily change, cutting the window from 24 hours to 8 multiplies the timeline by 4.0 rather than 3, and cutting it to 4 hours multiplies it by 15.8.</p>
+        <h3>Can a data migration fail to converge?</h3>
+        <p>Yes, and it is arithmetic rather than bad luck. If the source produces more data per day than the link moves per day, every round is longer than the one before it. 100 TB at a 2% daily change rate produces 2,048 GB per day; a 100 Mbps link in an eight-hour nightly window moves 309 GB per day. The second number is smaller than the first, so the migration runs at roughly one-sixth of the rate it needs, indefinitely.</p>
+        <h3>Does adding bandwidth always shorten a migration?</h3>
+        <p>Not until &rho; is comfortably below 1, and not at all when the bottleneck is object count rather than bytes. A single TCP stream is limited by the receive window divided by the round-trip time, so a 1 MB window on a 100 ms path caps one stream near 80 Mbps whatever the link is rated, and 0.1% packet loss cuts that to single-digit Mbps. Datasets dominated by small files are usually bound by per-object metadata instead: 100 million 4 KB files carry 381 GB of payload but cost about 5.8 days of metadata handling against 59 minutes of transfer.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;" id="method">
+        <h2>Methodology &amp; Disclosure</h2>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">Durations are computed as <code>T = T&#8321; / (1 &minus; &rho;)</code>, where <code>T&#8321; = D / C</code> is the baseline pass, <code>&rho; = (D &times; c) / C</code> is the convergence ratio, <code>C = B &times; (1 &minus; o) &times; n &times; w &times; 3600 / 8192</code> is daily capacity in GB, B is link rate in Mbps, o is protocol overhead, n is parallel streams and w is the daily window in hours. Protocol overheads are the calculator's fixed coefficients — 3% raw TCP, 5% custom UDP/Aspera/GridFTP, 12% HTTP/HTTPS, 18% object-store multipart, 25% rsync/SCP/SFTP — and reflect transport framing and per-object round trips, not congestion. Storage volumes use 1 TB = 1,024 GB to match the <a href="/data-migration-time">paired calculator</a>; throughput uses 1 MB = 1,024 KB.</p>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">The change rate c is assumed constant and linear, which overstates the total for workloads with a diurnal peak and understates it for workloads that grow. Capacity assumes the link is fully available for every hour of the window and that disk I/O is never the bottleneck; real migrations hit source read limits before they hit link limits, so these figures are floors. The metadata estimate uses 5 ms per object for open, stat and close round trips, which is conservative for local filesystems and optimistic for high-latency object stores. The 3,500 requests-per-second prefix figure is the documented working order of magnitude for partitioned object-store prefixes and assumes well-distributed key prefixes. Ceilings from TCP windowing and loss use the standard bandwidth-delay product and Mathis-style approximations and describe single streams, not aggregate capacity. The three-phase truncation table compares the calculator's phase model against the closed-form series. This site takes no sponsorship, no affiliate commission and no vendor payment of any kind; the vendors named here have no relationship with jslet and did not review this briefing.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;">
+        <h2>References &amp; Further Reading</h2>
+        <ol style="font-size:0.85rem; line-height:1.9; color:var(--text-body);" id="references">
+            <li>Tanenbaum, A. S. <em>Computer Networks</em> — the observation that a station wagon full of tapes has more bandwidth than a data link, which is a load-bearing assumption in every large migration plan rather than a joke. <em>Pearson</em></li>
+            <li>Jacobson, V., Braden, R., Borman, D. <em>TCP Extensions for High Performance</em> (RFC 1323) and its successor RFC 7323 — window scaling and the bandwidth-delay product that caps a single stream on a long path. <em>IETF</em></li>
+            <li>Mathis, M., Semke, J., Mahdavi, J., Ott, T. <em>The Macroscopic Behavior of the TCP Congestion Avoidance Algorithm</em> — the throughput bound under loss used for the single-stream figures. <em>ACM SIGCOMM Computer Communication Review</em></li>
+            <li>Amazon Web Services. <em>Amazon S3 request rate and performance guidelines</em> — the per-prefix request rates that set an object-count ceiling separate from bandwidth. <em>docs.aws.amazon.com</em></li>
+            <li>AWS DataSync, rclone and AzCopy documentation — multi-threaded transfer defaults, verification behaviour and resumability trade-offs. <em>aws.amazon.com &middot; rclone.org &middot; learn.microsoft.com</em></li>
+            <li>Related: <a href="/data-migration-time">Data Migration Time Calculator</a> &#183; <a href="/gbps-to-tb-per-day">Gbps to TB per Day</a> &#183; <a href="/cloud-storage-cost">Cloud Storage Cost</a> &#183; <a href="/log-storage-cost">Log Storage &amp; Retention</a> &#183; <a href="/latency-budget-real">The Tail Latency Trap</a> &#183; <a href="/network-economics">Network &amp; Bandwidth Economics</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Fdata-migration-time-real&amp;text=The%20Churn%20Ceiling%3A%20why%20some%20data%20migrations%20never%20finish" target="_blank" rel="noopener" aria-label="Share on X">&#120143;</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Fdata-migration-time-real" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/data-migration-time">&#129518; Data Migration Time Estimator &rarr;</a>
+            <a href="/gbps-to-tb-per-day">&#129518; Gbps to TB per Day Egress &rarr;</a>
+            <a href="/cloud-storage-cost">&#129518; Cloud Storage Cost &rarr;</a>
+            <a href="/log-storage-cost">&#129518; Log Storage &amp; Retention &rarr;</a>
+            <a href="/latency-budget-calculator">&#129518; Latency Budget Calculator &rarr;</a>
+            <a href="/data-migration-time">&#128202; Model the Three Phases &rarr;</a>
+            <a href="/latency-budget-real">&#128240; The Tail Latency Trap: P99 vs Reality &rarr;</a>
+            <a href="/network-economics">&#127760; All Network &amp; Bandwidth Tools &rarr;</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Estimation Disclaimer:</strong> Transfer durations are model-based estimates from link rate, protocol overhead, transfer window and change rate, not measurements of any specific migration. Real cutovers vary with source I/O, network contention, failure retries and validation overhead, and are typically longer than the figures here. Validate against a pilot transfer of a representative subset before committing to a date.</p>
+        </div>
+    </section>
+
+
+<footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/network-economics">Network &amp; Bandwidth</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>

@@ -239,6 +239,7 @@
         <div class="related-tools">
             <h3>Related Tools</h3>
             <div class="related-grid">
+                <a href="/data-migration-time-real">&#128240; The Churn Ceiling: Why Your Data Migration Never Finishes (Full Briefing) &rarr;</a>
                 <a href="/latency-budget-calculator">Latency Budget Calculator &rarr;</a>
                 <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
                 <a href="/gbps-to-tb-per-day">Gbps to TB/Day Egress &rarr;</a>
@@ -355,26 +356,29 @@
         var dailyCapacityGB = (totalEffectiveMbps * windowHours * 3600) / (8 * 1024);
 
         // Phase 1: Full baseline sync
+        // dailyCapacityGB is already a per-calendar-day figure - it includes windowHours.
+        // So fullPhaseDays IS the calendar-day duration; dividing by (windowHours/24) again
+        // multiplies the estimate by 24/windowHours (3x on the default 8h window).
         var fullPhaseDays = dataGB / Math.max(dailyCapacityGB, 0.001);
-        var fullPhaseHours = fullPhaseDays * 24;
-        var fullPhaseWallDays = fullPhaseDays / (windowHours / 24);
+        var fullPhaseHours = fullPhaseDays * windowHours;
+        var fullPhaseWallDays = fullPhaseDays;
 
         // Data that changes during full phase
         var changedDuringFullGB = dataGB * (dailyChangePct / 100) * fullPhaseWallDays;
 
         // Phase 2: First incremental catch-up
         var incr1Days = changedDuringFullGB / Math.max(dailyCapacityGB, 0.001);
-        var incr1WallDays = incr1Days / (windowHours / 24);
+        var incr1WallDays = incr1Days;
 
         // Data that changes during Phase 2
         var changedDuringIncr1GB = dataGB * (dailyChangePct / 100) * incr1WallDays;
 
         // Phase 3: Final delta sync
         var incr2Days = changedDuringIncr1GB / Math.max(dailyCapacityGB, 0.001);
-        var incr2WallDays = incr2Days / (windowHours / 24);
+        var incr2WallDays = incr2Days;
 
         // Cutover: final sync + validation buffer
-        var cutoverHours = Math.max(cutoverBuffer, incr2Days * 24 / (windowHours / 24));
+        var cutoverHours = Math.max(cutoverBuffer, incr2Days * 24);
 
         // Total wall-clock time
         var totalWallDays = fullPhaseWallDays + incr1WallDays + incr2WallDays + (cutoverHours / 24);
@@ -535,9 +539,9 @@
             var sOverhead = s.overheadOverride ? PROTOCOL_OVERHEAD[s.overheadOverride] : overhead;
             var sEffMbps = bandwidthMbps * (1 - sOverhead) * s.links;
             var sDailyCap = (sEffMbps * s.win * 3600) / (8 * 1024);
-            var sFullDays = dataGB / Math.max(sDailyCap, 0.001) / (s.win / 24);
+            var sFullDays = dataGB / Math.max(sDailyCap, 0.001);
             var changedGB = dataGB * (dailyChangePct / 100) * sFullDays;
-            var sIncrDays = changedGB / Math.max(sDailyCap, 0.001) / (s.win / 24);
+            var sIncrDays = changedGB / Math.max(sDailyCap, 0.001);
             var sTotal = sFullDays + sIncrDays + (cutoverBuffer / 24);
             var isCurrent = i === 0;
             return `<tr ${isCurrent ? 'style="font-weight:700;"' : ''}>
