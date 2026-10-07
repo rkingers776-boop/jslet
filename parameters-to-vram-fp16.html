@@ -109,7 +109,7 @@
           "name": "Why can't my 16 GB consumer GPU serve LLaMA-7B at batch size 8?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "7B × 2 bytes (FP16 weights) = 14 GB. Add ~1 GB for the KV cache at 2048 context with batch 1, ~500 MB for activations, and ~2 GB framework overhead. You're already at ~17.5 GB — over the 16 GB limit. At batch 8, the KV cache scales linearly to ~8 GB, pushing total VRAM past 24 GB. You need INT4 quantization or a 24 GB GPU like an RTX 4090."
+            "text": "7B × 2 bytes (FP16 weights) = 14 GB. Add ~1 GB for the KV cache at 2048 context with batch 1, ~500 MB for activations, and ~2 GB framework overhead. You're already at ~17.5 GB — past the 17.2 GB a 16 GB card actually holds, because the label is a binary size. At batch 8, the KV cache scales linearly to ~8 GB, pushing total VRAM past 24 GB. You need INT4 quantization or a 24 GB GPU like an RTX 4090."
           }
         },
         {
@@ -117,7 +117,7 @@
           "name": "How much VRAM does a 70B parameter model need for inference?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "At FP16: 140 GB just for weights, plus 10-40 GB for KV cache depending on context length and batch size. Total: 150-180 GB. That requires 2× A100 80GB or 2× H100 80GB with tensor parallelism. At INT4 quantization, weights drop to ~35 GB, making the model fit on a single A100 80GB for batch-1 inference at moderate context lengths."
+            "text": "At FP16: 140 GB just for weights, plus 10-40 GB for KV cache depending on context length and batch size. Total: 150–180 GB. Two 80 GB cards hold 171.8 GB between them, so the lower half of that range fits on two GPUs and the top of it needs a third. At INT4 quantization, weights drop to ~35 GB, making the model fit on a single A100 80GB for batch-1 inference at moderate context lengths."
           }
         },
         {
@@ -190,7 +190,7 @@
 <table>
                 <thead><tr><th>Component</th><th>Formula</th><th>Description</th></tr></thead>
                 <tbody>
-                    <tr><td><strong>Raw Weights</strong></td><td><code>Parameters × Precision Bits ÷ 8</code></td><td>Converts parameter count and bit-width into raw byte storage. A 7B parameter model at FP16 (16 bits = 2 bytes) requires 14 GiB of raw weight storage.</td></tr>
+                    <tr><td><strong>Raw Weights</strong></td><td><code>Parameters × Precision Bits ÷ 8</code></td><td>Converts parameter count and bit-width into raw byte storage. A 7B parameter model at FP16 (16 bits = 2 bytes) requires 14 GB of raw weight storage.</td></tr>
                     <tr><td><strong>Overhead Multiplier</strong></td><td><code>1 + Overhead%</code></td><td>Accounts for KV cache (key-value attention states), CUDA context allocations, framework runtime (PyTorch/vLLM/TGI), and activation memory. Production deployments typically observe 20–30% overhead beyond raw weights.</td></tr>
                     <tr><td><strong>Total VRAM</strong></td><td><code>Raw Weights × (1 + Overhead%)</code></td><td>The final per-GPU or aggregate VRAM requirement. This number determines how many GPUs you need and whether tensor parallelism or pipeline parallelism is necessary.</td></tr>
                 </tbody>
@@ -324,19 +324,29 @@
         var p = parseFloat(document.getElementById('params').value) || 0;
         var b = parseFloat(document.getElementById('bits').value) || 0;
         var ov = parseFloat(document.getElementById('overhead').value) / 100 || 0;
-        var raw = p * 1e9 * b / 8 / 1073741824;
+        // Weights are counted in decimal GB (params x bytes), the unit the shared
+        // datablock at /llm-hardware-data.js uses. The card capacities below carry
+        // the same unit, so the two can be compared directly.
+        var raw = p * b / 8;
         var t = raw * (1 + ov);
+
+        // Vendor memory labels are binary sizes, so an "80 GB" card really holds
+        // 80 GiB = 85.9 GB. t is decimal GB; divide by decimal GB.
+        var GIB = 1073741824;
+        var capA100 = 80 * GIB / 1e9;
+        var capA6000 = 48 * GIB / 1e9;
+        var cap4090 = 24 * GIB / 1e9;
 
         document.getElementById('results-params').innerText =
             p + 'B parameters · ' + b + '-bit precision · ' + (ov * 100).toFixed(0) + '% overhead';
 
         document.getElementById('recommendations').innerHTML =
             '<div class="metric-grid">' +
-                '<div class="metric-tile"><div class="metric-val">' + raw.toFixed(2) + ' GiB</div><div class="metric-label">Raw Weights (GiB)</div></div>' +
-                '<div class="metric-tile"><div class="metric-val">' + t.toFixed(2) + ' GiB</div><div class="metric-label">Total VRAM</div></div>' +
-                '<div class="metric-tile"><div class="metric-val">' + Math.ceil(t / 80) + '</div><div class="metric-label">A100-80GB GPUs</div></div>' +
-                '<div class="metric-tile"><div class="metric-val">' + Math.ceil(t / 48) + '</div><div class="metric-label">A6000-48GB GPUs</div></div>' +
-                '<div class="metric-tile"><div class="metric-val">' + Math.ceil(t / 24) + '</div><div class="metric-label">RTX 4090-24GB GPUs</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + raw.toFixed(2) + ' GB</div><div class="metric-label">Raw Weights (GB)</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + t.toFixed(2) + ' GB</div><div class="metric-label">Total VRAM</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + Math.ceil(t / capA100) + '</div><div class="metric-label">A100-80GB GPUs</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + Math.ceil(t / capA6000) + '</div><div class="metric-label">A6000-48GB GPUs</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + Math.ceil(t / cap4090) + '</div><div class="metric-label">RTX 4090-24GB GPUs</div></div>' +
             '</div>';
 
         document.getElementById('results-card').style.display = 'block';

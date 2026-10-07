@@ -162,8 +162,8 @@
 <table>
                 <thead><tr><th>Component</th><th>Formula</th><th>Description</th></tr></thead>
                 <tbody>
-                    <tr><td><strong>Quantized Weights</strong></td><td><code>Parameters × Precision Bits ÷ 8</code></td><td>The compressed weight matrix. At 4 bits, a 70B model stores weights in 35 GiB instead of 140 GiB at FP16 — a 75% reduction.</td></tr>
-                    <tr><td><strong>Scale Overhead</strong></td><td><code>(Parameters ÷ Group Size) × 2 bytes</code></td><td>Each group of weights shares a 16-bit floating-point scale factor. Smaller group sizes improve accuracy but increase scale memory. At group size 128, a 70B model has ~546 million scale factors consuming ~1.02 GiB. At group size 32, that jumps to ~4.07 GiB.</td></tr>
+                    <tr><td><strong>Quantized Weights</strong></td><td><code>Parameters × Precision Bits ÷ 8</code></td><td>The compressed weight matrix. At 4 bits, a 70B model stores weights in 35 GB instead of 140 GB at FP16 — a 75% reduction.</td></tr>
+                    <tr><td><strong>Scale Overhead</strong></td><td><code>(Parameters ÷ Group Size) × 2 bytes</code></td><td>Each group of weights shares a 16-bit floating-point scale factor. Smaller group sizes improve accuracy but increase scale memory. At group size 128, a 70B model has ~546 million scale factors consuming ~1.09 GB. At group size 32, that jumps to ~4.38 GB.</td></tr>
                     <tr><td><strong>Total VRAM</strong></td><td><code>(Quantized Weights + Scale Overhead) × 1.15</code></td><td>A 15% overhead buffer accounts for activation memory, CUDA context, and the inference framework runtime (e.g., ExLlamaV2, AutoGPTQ).</td></tr>
                 </tbody>
             </table>
@@ -175,16 +175,16 @@
 <table>
                 <thead><tr><th>Group Size</th><th>Scale Overhead (70B Model)</th><th>Accuracy Impact</th><th>Use Case</th></tr></thead>
                 <tbody>
-                    <tr><td><strong>32</strong></td><td>~4.07 GiB</td><td>Negligible perplexity increase. Near-FP16 quality.</td><td>High-quality chat, code generation, academic benchmarks.</td></tr>
-                    <tr><td><strong>64</strong></td><td>~2.04 GiB</td><td>Very minor perplexity increase (~0.1–0.3 PPL).</td><td>General-purpose inference, acceptable for most production use cases.</td></tr>
-                    <tr><td><strong>128</strong></td><td>~1.02 GiB</td><td>Moderate perplexity increase (~0.3–0.8 PPL). Standard GPTQ default.</td><td>Consumer GPU deployment, throughput-optimized serving.</td></tr>
-                    <tr><td><strong>256</strong></td><td>~0.51 GiB</td><td>Noticeable degradation on reasoning tasks.</td><td>Extreme compression, edge devices.</td></tr>
+                    <tr><td><strong>32</strong></td><td>~4.38 GB</td><td>Negligible perplexity increase. Near-FP16 quality.</td><td>High-quality chat, code generation, academic benchmarks.</td></tr>
+                    <tr><td><strong>64</strong></td><td>~2.19 GB</td><td>Very minor perplexity increase (~0.1–0.3 PPL).</td><td>General-purpose inference, acceptable for most production use cases.</td></tr>
+                    <tr><td><strong>128</strong></td><td>~1.09 GB</td><td>Moderate perplexity increase (~0.3–0.8 PPL). Standard GPTQ default.</td><td>Consumer GPU deployment, throughput-optimized serving.</td></tr>
+                    <tr><td><strong>256</strong></td><td>~0.55 GB</td><td>Noticeable degradation on reasoning tasks.</td><td>Extreme compression, edge devices.</td></tr>
                 </tbody>
             </table>
 </div>
 
             <h3>INT4 vs. FP16: The Memory Savings Reality</h3>
-            <p>While INT4 theoretically reduces weight memory by 75%, the <strong>effective VRAM savings</strong> are typically 65–72% once scale factors and runtime overhead are accounted for. This is still transformative: a 70B model that requires 2–4 A100 GPUs at FP16 can fit on a <strong>single RTX 4090 (24 GB)</strong> or dual RTX 3090s at INT4. For local inference enthusiasts and small teams, INT4 quantization is the only practical path to running frontier-scale models without enterprise GPU clusters.</p>
+            <p>While INT4 theoretically reduces weight memory by 75%, the <strong>effective VRAM savings</strong> are typically 65–72% once scale factors and runtime overhead are accounted for. This is still transformative: a 70B model that requires 2–4 A100 GPUs at FP16 can fit on <strong>a pair of 24 GB consumer cards</strong> at INT4. For local inference enthusiasts and small teams, INT4 quantization is the only practical path to running frontier-scale models without enterprise GPU clusters.</p>
 
             <h3>Quantization Formats: GPTQ vs. AWQ vs. GGUF</h3>
             <p>Several INT4 quantization ecosystems exist, each with different trade-offs:</p>
@@ -288,19 +288,21 @@
         var p = parseFloat(document.getElementById('params').value) || 0;
         var b = parseFloat(document.getElementById('bits').value) || 0;
         var gs = parseFloat(document.getElementById('group').value) || 128;
-        var w = p * 1e9 * b / 8 / 1073741824;
-        var s = (p * 1e9 / gs) * 2 / 1073741824;
+        // Decimal GB throughout, matching the shared datablock at
+        // /llm-hardware-data.js: params x bytes, no binary conversion.
+        var w = p * b / 8;
+        var s = (p / gs) * 2;
         var t = (w + s) * 1.15;
-        var fp16 = p * 1e9 * 2 / 1073741824;
+        var fp16 = p * 2;
 
         document.getElementById('results-params').innerText =
             p + 'B parameters · ' + b + '-bit quantization · group size ' + gs;
 
         document.getElementById('recommendations').innerHTML =
             '<div class="metric-grid">' +
-                '<div class="metric-tile"><div class="metric-val">' + w.toFixed(2) + ' GiB</div><div class="metric-label">Quantized Weights</div></div>' +
-                '<div class="metric-tile"><div class="metric-val">' + s.toFixed(2) + ' GiB</div><div class="metric-label">Scale Overhead</div></div>' +
-                '<div class="metric-tile"><div class="metric-val">' + t.toFixed(2) + ' GiB</div><div class="metric-label">Total VRAM</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + w.toFixed(2) + ' GB</div><div class="metric-label">Quantized Weights</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + s.toFixed(2) + ' GB</div><div class="metric-label">Scale Overhead</div></div>' +
+                '<div class="metric-tile"><div class="metric-val">' + t.toFixed(2) + ' GB</div><div class="metric-label">Total VRAM</div></div>' +
                 '<div class="metric-tile"><div class="metric-val">' + ((1 - t / fp16) * 100).toFixed(0) + '% smaller</div><div class="metric-label">vs FP16</div></div>' +
             '</div>';
 

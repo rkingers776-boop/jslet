@@ -534,6 +534,24 @@
         var model = HW.MODELS[modelKey];
         var gpu = HW.GPUS[gpuKey];
         var bytesPerParam = HW.QUANT_BYTES[quantKey];
+
+        // FP8 halves the resident weights on any card, but only Hopper and Blackwell
+        // run the matmuls in FP8. Elsewhere the framework falls back to BF16, so the
+        // bytes read per token stay at 2 even though the weights in VRAM are 1 byte.
+        // The memory saving is real; the bandwidth saving is not.
+        var bytesPerTokenPerParam = bytesPerParam;
+        if (quantKey === 'fp8' && HW.fp8Status(gpuKey) !== 'full') {
+            bytesPerTokenPerParam = HW.QUANT_BYTES.bf16;
+        }
+
+        // FP8 halves the resident weights on any card, but only Hopper and Blackwell
+        // run the matmuls in FP8. Elsewhere the framework falls back to BF16, so the
+        // bytes read per token stay at 2 even though the weights in VRAM are 1 byte.
+        // The memory saving is real; the bandwidth saving is not.
+        var bytesPerTokenPerParam = bytesPerParam;
+        if (quantKey === 'fp8' && HW.fp8Status(gpuKey) !== 'full') {
+            bytesPerTokenPerParam = HW.QUANT_BYTES.bf16;
+        }
         var batchSize = parseInt(batchStr) || 1;
 
         // Total params (for dense models) for VRAM calculation
@@ -554,7 +572,7 @@
 
         // Theoretical tokens/sec from memory bandwidth
         // For decode, each token requires reading all active params once
-        var bytesPerToken = activeParams * bytesPerParam;
+        var bytesPerToken = activeParams * bytesPerTokenPerParam;
         var theoreticalTokPerSec = gpu.memBW / (bytesPerToken / 1e9); // memBW in GB/s, bytesPerToken in raw bytes
 
         // Real efficiency factor
