@@ -6,7 +6,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <title>Load Balancer Ingress Rule Latency</title>
-    <meta name="description" content="Each ALB rule adds ~1ms. 20 rules = 20ms. In a 200ms SLA budget, that's 10% gone before your code runs. Model rule evaluation overhead across ALB and NGINX.">
+    <meta name="description" content="ALB rule evaluation costs ~0.12 μs — not the "1 ms per rule" blogs repeat. 80 rules at 10,000 rps burns 48 ms of CPU every second. Model it.">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="manifest" href="/manifest.json">
     <link rel="stylesheet" href="style.css">
@@ -81,7 +81,7 @@
       "name": "How much latency does each load balancer rule add?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Each additional ALB ingress rule adds roughly 1 ms of evaluation time. Twenty rules is 20 ms — on a 200 ms SLA budget that is 10% of your latency gone before your application code even runs. This calculator models rule-evaluation overhead across ALB and NGINX so you can see the tax your routing table is imposing."
+        "text": "Rule evaluation is measured in nanoseconds, not milliseconds: a first-match linear scan costs about 0.12 μs per rule, so even 100 rules add roughly 12 μs per request — the "1 ms per rule" figure circulating online is off by four orders of magnitude. The cost that does compound is aggregate CPU: 80 rules at 10,000 requests per second burns about 48 ms of evaluation time every second, roughly 5% of one vCPU core. This calculator models rule-evaluation overhead across ALB and NGINX so you can see the real tax your routing table imposes."
       }
     },
     {
@@ -114,14 +114,14 @@
     <div class="container" id="main-content">
         <header>
             <h1>⚖️ Load Balancer <span>Ingress Rule</span> Latency</h1>
-            <p>Each ALB rule adds ~1ms of evaluation overhead. 20 rules = 20ms. In a 200ms SLA budget, that is 10% gone before a single line of your application code executes. Input your rule count and evaluation model — first-match linear scan vs. prefix-trie — and quantify the latency tax before it eats your error budget.</p>
+            <p>Each ALB rule adds ~0.12 μs of evaluation overhead — not the "1 ms" that gets repeated in blog posts, which is off by four orders of magnitude. Rule count still matters, but not the way that folk number implies: 80 rules at 10,000 rps burns about 48 ms of CPU every second, and ALB's hard ceiling of 100 rules per listener forces an architecture decision long before latency does. Input your rule count and evaluation model — first-match linear scan vs. prefix-trie — and quantify the real tax.</p>
         </header>
 
         <main class="matrix-grid">
             <!-- INPUT CARD -->
             <div class="calculator-card" style="grid-column: 1 / -1;">
                 <h3>📐 Ingress Rule Configuration</h3>
-                <p class="card-desc">Set rule count and evaluation model. First-match linear scan adds ~1ms/rule. Prefix-trie ~0.2ms/rule. Choose your architecture. The engine computes total overhead, percentage of SLA budget consumed, and aggregate tax at scale.</p>
+                <p class="card-desc">Set rule count and evaluation model. First-match linear scan costs ~0.12 μs per rule. Prefix-trie ~0.04 μs per rule. Choose your architecture. The engine computes per-request overhead, the aggregate CPU tax at 10,000 rps, and how much of a core it consumes.</p>
                 <div class="multi-input-row">
                     <div class="input-group">
                         <label for="rules">Active Rules</label>
@@ -153,7 +153,7 @@
         <!-- SEO SECTION -->
         <section class="seo-section">
             <h2>Load Balancer Rule Count and Latency: The Microsecond Tax</h2>
-            <p>Every rule added to a load balancer's ingress configuration imposes a <strong>per-request evaluation cost</strong>. While individual rule evaluation times are measured in microseconds — typically 40 to 120 nanoseconds per rule depending on the matching algorithm — these costs compound linearly with rule count and accumulate across the request rate. A load balancer processing 10,000 requests per second with 80 active rules under a first-match model can burn approximately 48 milliseconds of CPU time per second purely on rule evaluation, consuming nearly 5% of a single vCPU core before any application logic executes.</p>
+            <p>Every rule added to a load balancer's ingress configuration imposes a <strong>per-request evaluation cost</strong>. While individual rule evaluation times are measured in nanoseconds — typically 40 to 120 ns per rule depending on the matching algorithm — these costs compound linearly with rule count and accumulate across the request rate. A load balancer processing 10,000 requests per second with 80 active rules under a first-match model can burn approximately 48 milliseconds of CPU time per second purely on rule evaluation, consuming nearly 5% of a single vCPU core before any application logic executes.</p>
 
             <h3>How This Calculator Works</h3>
             <div class="table-scroll">
