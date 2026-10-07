@@ -49,7 +49,7 @@
           "name": "How much VRAM does a 70B model need?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Weights alone: 140 GB at FP16, 70 GB at INT8, 35 GB at INT4. Working set is higher because the KV cache and framework overhead must be added: a dense 70B at FP16 at 8K context lands around 151 GB, and at 128K context with 32 concurrent requests the same model exceeds 1.34 TB. No single datacenter GPU holds 140 GB, so the FP16 deployment is not a GPU choice — it is a topology choice of 2 or 4 cards with tensor parallelism. At INT4 the same model fits on one 80 GB card for short contexts and needs sharding again once the context grows."
+            "text": "Weights alone: 140 GB at FP16, 70 GB at INT8, 35 GB at INT4. Working set is higher because the KV cache and framework overhead must be added: a dense 70B at FP16 at 8K context lands around 151 GB, and at 128K context with 32 concurrent requests the working set reaches about 1.38 TB. No single datacenter GPU holds 140 GB, so the FP16 deployment is not a GPU choice — it is a topology choice of 2 or 4 cards with tensor parallelism. At INT4 the same model fits on one 80 GB card for short contexts and needs sharding again once the context grows."
           }
         },
         {
@@ -124,7 +124,7 @@
             <li><a href="#moe" style="color:var(--accent); text-decoration:none;">MoE Breaks the Memory-Speed Link</a></li>
             <li><a href="#fp8" style="color:var(--accent); text-decoration:none;">FP8 Saves Nothing on the Wrong Card</a></li>
             <li><a href="#headroom" style="color:var(--accent); text-decoration:none;">Why 10% Headroom Is Not Headroom</a></li>
-            <li><a href="#vendor" style="color:var(--accent); text-decoration:none;">The 80 GB That Isn't 80 GiB</a></li>
+            <li><a href="#vendor" style="color:var(--accent); text-decoration:none;">The 80 GB That Is 80 GiB</a></li>
             <li><a href="#procedure" style="color:var(--accent); text-decoration:none;">A Five-Question Fit Check</a></li>
             <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
             <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
@@ -132,7 +132,7 @@
     </div>
 
     <section class="seo-section">
-        <p>There is a model size that no vendor has an obvious answer for, and 70 billion parameters sits right on it. At FP16 the weights are 140 GB. That number is larger than every datacenter card on the market — the H100 and A100 both cap at 80 GB, the H200 at 141 GB, and the B200 at 192 GB. Only one of those fits a bare FP16 70B, and it is the most expensive card in the rack. So the 70B class is not a question of which GPU to rent. It is a question of how many, in what arrangement, at what cost in throughput lost to sharding.</p>
+        <p>There is a model size that no vendor has an obvious answer for, and 70 billion parameters sits right on it. At FP16 the weights alone are 140 GB, and the working set at 8K context is 151 GB. Nothing below the top of the range can hold that. The H100 and A100 both carry 80 GiB, which is 85.9 GB once the label is converted to the same unit as the weights; the H200's 141 GiB is 151.4 GB, clearing 151 GB by two tenths of a percent, which is not a fit anyone should ship. Only the B200's 192 GiB — 206 GB — leaves room to plan against. So the 70B class is not a question of which GPU to rent. It is a question of how many, in what arrangement, at what cost in throughput lost to sharding.</p>
         <p>Most VRAM calculators answer the question they were asked — how big is this model — and stop. That number is the easy half.</p>
     </section>
 
@@ -157,7 +157,7 @@
         </table>
         <p>Figures for a dense 70B model at 8K context and a single concurrent request. Three things in that table are worth pausing on.</p>
         <p>First, the KV cache column is flat — identical across all three quantization levels. That is deliberate and it is the part most people get wrong. Quantizing weights to INT4 does not quantize the KV cache; nearly every production serving stack keeps KV at FP16 regardless. A 4-bit model still pays 2 bytes per KV element.</p>
-        <p>Second, overhead is not negligible at these sizes. Eight point four gigabytes at FP16 is CUDA context, cuBLAS workspaces, activation buffers and the engine's own allocations. That is the margin that decides whether a 76 GB working set squeezes onto an 80 GB card, and it is routinely omitted.</p>
+        <p>Second, overhead is not negligible at these sizes. Eight point four gigabytes at FP16 — 4.2 GB at INT8 — is CUDA context, cuBLAS workspaces, activation buffers and the engine's own allocations, and it is routinely left out of the arithmetic. Drop it and an INT8 70B looks like it has 15% of headroom on an 80 GiB card; include it and the honest figure is 10.6%, a hair past the 10% line. That is the margin where a framework upgrade turns a working deployment into an out-of-memory crash at 3 a.m.</p>
         <p>Third, and most important: look at what happens when context grows. The weights do not move. Everything else does.</p>
     </section>
 
@@ -170,10 +170,10 @@
                 <tr><td>8K context, 1 request</td><td class="num">2.6 GB</td><td class="num">40 GB</td><td>Comfortable</td></tr>
                 <tr><td>32K context, 1 request</td><td class="num">10.5 GB</td><td class="num">48 GB</td><td>Comfortable</td></tr>
                 <tr><td>32K context, 32 requests</td><td class="num">336 GB</td><td class="num">373 GB</td><td>Needs sharding</td></tr>
-                <tr class="hi"><td>128K context, 32 requests</td><td class="num">1,342 GB</td><td class="num">1,379 GB</td><td>18 cards minimum</td></tr>
+                <tr class="hi"><td>128K context, 32 requests</td><td class="num">1,342 GB</td><td class="num">1,379 GB</td><td>17 cards minimum</td></tr>
             </tbody>
         </table>
-        <p>The same model, the same quantization, the same card — and the answer moves from "one card with room to spare" to "eighteen cards" without the model changing at all. Only the workload shape changed.</p>
+        <p>The same model, the same quantization, the same card — and the answer moves from "one card with room to spare" to "seventeen cards" without the model changing at all. Only the workload shape changed.</p>
         <p>This is why long-context deployments are so much more expensive than their weight arithmetic suggests, and why provisioning reviews that start from parameter count end up surprised. The KV cache is the quantity that scales with the thing you are actually selling, which is concurrent users holding long conversations.</p>
         <p>There is a genuine mitigation, and it is worth knowing about: grouped-query attention. A 70B model with 64 query heads but 8 KV heads carries an eighth of the KV footprint a full multi-head layout would need. That factor of eight is why modern long-context deployments are feasible at all, and why architecture matters as much as parameter count. A model with the same size and a less efficient attention layout can need eight times the cache for the same traffic.</p>
         <div class="pull">Two models with identical parameter counts can differ by 8× in KV footprint. Parameter count is not a proxy for memory requirement.</div>
@@ -224,10 +224,10 @@
     </section>
 
     <section class="seo-section" id="vendor">
-        <h2>The 80 GB That Isn't 80 GiB</h2>
-        <p>One more number causes more confusion than it should. An "80 GB" H100 holds 80,000,000,000 bytes of memory. It does not hold 80 × 1024³ = 85,899,345,920 bytes. GPU vendors label memory in decimal gigabytes, the same way storage vendors do, and the difference between the two conventions is 7.4%.</p>
-        <p>So when a tool reports 76.3 GiB for an 80 GB card, that is not a card that shipped short. It is the same number expressed under a different convention. Applying the conversion to a hardware label is a category error — the label already means decimal bytes, and converting it again subtracts memory that does not exist.</p>
-        <p>This matters for fit calculations because 7.4% is well inside the headroom margin we just said to treat as unsafe. If your planning tool subtracts 7% from a card's capacity and your other tool does not, you will get two different verdicts for the same model and spend an afternoon chasing a bug that is not there. The full explanation of when the GB–GiB gap is real and when it is a category error is in <a href="/gib-to-gb-marketing-gap">the marketing gap briefing</a>.</p>
+        <h2>The 80 GB That Is 80 GiB</h2>
+        <p>One more number causes more confusion than it should. An "80 GB" H100 holds 80 GiB of memory — 85,899,345,920 bytes — and that is exactly what the card reports in nvidia-smi: 81,920 MiB. Nothing is absent and nothing is reserved by the driver. The label is binary, the convention operating systems use for main memory and for file sizes, not the decimal convention storage vendors use for drive capacity.</p>
+        <p>So where does the familiar "my 80 GB card only shows 74.5 GB" come from? From treating the label as a storage capacity and dividing it by 1024³. 80,000,000,000 bytes would indeed be 74.5 GiB, but the card does not hold 80,000,000,000 bytes. Applying the storage convention to a memory label subtracts 5.5 GiB — 6.9% — that was never missing.</p>
+        <p>The trap is that the correction can overshoot. Weights and KV cache are computed in decimal gigabytes here, because bandwidth is quoted in decimal gigabytes per second and that is the unit in which the arithmetic stays transparent. Comparing a decimal-GB working set against a raw binary label is a 7.4% error pointing the other way — it understates every card — and 7.4% sits well inside the headroom margin we just called unsafe. So the calculator converts each label into decimal GB before comparing: 80 GiB is 85.9 GB, not 80. A planning tool that skips that step, and another that subtracts 7% instead, will hand you two different verdicts for the same model. The rule for memory, and the genuinely opposite rule for storage, are set out in <a href="/vram-gb-to-mib">VRAM GB → MiB</a> and <a href="/gib-to-gb-marketing-gap">the marketing gap briefing</a>.</p>
     </section>
 
     <section class="seo-section" id="procedure">
@@ -257,7 +257,7 @@
 
     <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;" id="method">
         <h2>Methodology &amp; Disclosure</h2>
-        <p style="font-size:0.9rem; color: var(--text-secondary);">Weight figures are parameter count × bytes per parameter at the stated precision, using vendor decimal gigabytes. KV cache is derived from each model's published attention configuration — layer count, grouped-query KV head count and head dimension — as 2 × layers × KV heads × head dimension × tokens × KV bytes, with KV precision held at FP16 regardless of weight quantization. Framework overhead is modelled as 6% of weight footprint with a 0.5 GB floor, a sizing heuristic rather than a measured constant. Tensor-parallel efficiency figures (92% at TP=2, 80% at TP=4, 63% at TP=8, 48% at TP=16) are representative published measurements for NVLink-interconnected deployments and are treated as upper bounds for PCIe. GPU memory capacities are vendor decimal labels and are not converted to GiB. This site takes no sponsorship, no affiliate commission and no vendor payment of any kind; the vendors named here have no relationship with jslet and did not review this briefing.</p>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">Weight figures are parameter count × bytes per parameter at the stated precision, using vendor decimal gigabytes. KV cache is derived from each model's published attention configuration — layer count, grouped-query KV head count and head dimension — as 2 × layers × KV heads × head dimension × tokens × KV bytes, with KV precision held at FP16 regardless of weight quantization. Framework overhead is modelled as 6% of weight footprint with a 0.5 GB floor, a sizing heuristic rather than a measured constant. Tensor-parallel efficiency figures (92% at TP=2, 80% at TP=4, 63% at TP=8, 48% at TP=16) are representative published measurements for NVLink-interconnected deployments and are treated as upper bounds for PCIe. GPU memory capacities are binary labels — a card sold as "80 GB" holds 80 GiB = 85,899,345,920 bytes, which nvidia-smi reports as 81,920 MiB — and each label is converted to decimal GB with a factor of 2^30/10^9 = 1.0737 so that capacity and working set are compared in the same unit. Storage pages take the opposite convention, because there the label genuinely is decimal. This site takes no sponsorship, no affiliate commission and no vendor payment of any kind; the vendors named here have no relationship with jslet and did not review this briefing.</p>
     </section>
 
     <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;">

@@ -4,16 +4,23 @@
  * Keep every edit here and in no other place — duplicating these tables is how
  * three copies of the same VRAM figure start disagreeing.
  *
- * VRAM figures are vendor decimal marketing sizes (80 GB = 80,000,000,000 bytes).
- * They are NOT GiB and must not be converted. See /gib-to-gb-marketing-gap for
- * why the two conventions differ and where each one applies.
+ * VRAM labels are binary sizes, not decimal ones: a card sold as "80 GB" holds
+ * 80 GiB, which is 85,899,345,920 bytes and which nvidia-smi reports as 81,920
+ * MiB. Every figure this file computes — weights, KV cache, framework overhead —
+ * is in decimal GB, because that is the unit bandwidth and price are quoted in.
+ * A label must therefore be converted with capacityGB() before it is ever
+ * compared against a working set; comparing a decimal-GB requirement with a raw
+ * label understates the card by 7.4%. See /vram-gb-to-mib for the rule, and
+ * /gib-to-gb-marketing-gap for the storage case, where the opposite holds.
  */
 (function (global) {
   'use strict';
 
   /* ── GPU database ────────────────────────────────────────────────
    * memBW  : HBM/GDDR bandwidth in GB/s (vendor decimal)
-   * vramGB : on-board memory in GB (vendor decimal)
+   * vramGB : on-board memory as the vendor labels it, which is a binary size
+   *          (80 means 80 GiB). Never compare this with weightGB/kvGB output —
+   *          call capacityGB() to get the same card in decimal GB first.
    * fp8    : FP8 datapath class — 'full' (Hopper/Blackwell tensor cores),
    *          'ada' (FP8 with FP16 accumulate), 'none' (no FP8 units;
    *          frameworks silently fall back to BF16)
@@ -74,6 +81,16 @@
   };
 
   /* ── Shared arithmetic ─────────────────────────────────────────── */
+
+  /* Decimal GB in one GiB. Vendor memory labels are binary sizes: a card sold as
+   * "80 GB" holds 80 GiB = 85.899e9 bytes, not 80e9. weightGB, kvGB and
+   * overheadGB all return decimal GB, so a card's capacity has to be converted
+   * into that unit before the two can be compared at all. */
+  var BYTES_PER_GIB = 1073741824;
+
+  function capacityGB(gpu) {
+    return (gpu.vramGB * BYTES_PER_GIB) / 1e9;
+  }
 
   /* Weights resident in VRAM. MoE uses total params because every expert
    * must be resident even though only activeParams are read per token. */
@@ -181,6 +198,7 @@
   global.JSLET_HW = {
     GPUS: GPUS,
     MODELS: MODELS,
+    capacityGB: capacityGB,
     QUANT_BYTES: QUANT_BYTES,
     QUANT_LABELS: QUANT_LABELS,
     weightGB: weightGB,

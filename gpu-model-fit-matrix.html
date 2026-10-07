@@ -265,9 +265,10 @@
         </div>
 
         <table class="calc-table" id="fit-table">
-            <thead><tr><th>GPU</th><th class="num">VRAM</th><th class="num">Need (1 replica)</th><th class="num">Cards</th><th>Verdict</th></tr></thead>
+            <thead><tr><th>GPU</th><th class="num">Capacity</th><th class="num">Need (1 replica)</th><th class="num">Cards</th><th>Verdict</th></tr></thead>
             <tbody id="fit-tbody"></tbody>
         </table>
+        <p style="font-size:0.85rem; color:var(--text-secondary); margin-top:10px;">Capacity and Need are both in decimal GB. A card sold as "80 GB" holds 80 GiB of memory, which is 86 GB in this column — see <a href="/vram-gb-to-mib">why</a>.</p>
     </section>
 
     <!-- ═══ How the math works ═══ -->
@@ -278,11 +279,11 @@
         <p>Parameter count times bytes per parameter. A 70B model at FP16 is 70e9 × 2 = 140e9 bytes = 140 GB. Switch to INT8 and it halves to 70 GB; INT4 quarters it to 35 GB. The arithmetic is trivial, which is exactly why people stop here and get the provisioning wrong.</p>
         <h3>2. KV cache</h3>
         <p>The KV cache holds the key and value tensors for every token in the context window, for every concurrent request. It grows linearly with context length and linearly with batch size, and it is stored at the model's KV precision — 2 bytes per value at FP16/BF16 regardless of how aggressively you quantized the weights. A dense 70B model at INT4 weights still pays FP16 prices for its KV cache. At 8K context with a single request this is a few gigabytes; at 128K context with 32 concurrent requests it is tens of gigabytes, and it is the number that turns a comfortable fit into a failed one.</p>
-        <p>This calculator uses the same heuristic as our <a href="/llm-inference-latency">inference latency estimator</a>: approximately 0.000025 bytes of KV per parameter per 1K tokens of context, scaled by KV precision. It is a sizing heuristic, not an architecture-exact formula — real KV footprint depends on layer count, KV head count and head dimension, which vary by model. It is calibrated to be conservative rather than optimistic.</p>
+        <p>This calculator derives the cache from each model's published attention shape rather than from a per-parameter rule of thumb: <span style="font-family:'SF Mono',Consolas,monospace;">2 × layers × KV heads × head dimension × tokens × KV bytes</span>. The KV head count is what decides the answer. A 70B model with 8 grouped-query KV heads carries an eighth of the cache the same layer count would need at 64 query heads — 2.6 GB instead of 21 GB at 8K — and that factor of eight is the difference between long context fitting on one card and not. Layer counts, KV head counts and head dimensions are published architecture figures rather than estimates, but the result is still a sizing model: validate it against your serving stack before committing to hardware.</p>
         <h3>3. Framework overhead</h3>
-        <p>CUDA context, cuBLAS workspaces, activation buffers and the inference engine's own allocations consume VRAM that is not weights and not KV cache. In practice this runs about 6% of the weight footprint, with a 1 GB floor. It sounds small until you are trying to fit a 76 GB working set onto an 80 GB card — then it is the difference between fitting and not fitting.</p>
+        <p>CUDA context, cuBLAS workspaces, activation buffers and the inference engine's own allocations consume VRAM that is not weights and not KV cache. In practice this runs about 6% of the weight footprint, with a 0.5 GB floor. It sounds small until you price it: a 70B model at FP16 carries more than 8 GB of overhead on top of 140 GB of weights, which is enough to push a deployment that looked comfortable past the ceiling.</p>
         <h3>The vendor VRAM convention</h3>
-        <p>An "80 GB" H100 has 80,000,000,000 bytes of memory, not 80 × 1024³ = 85,899,345,920 bytes. GPU vendors label memory in decimal gigabytes. That is the opposite of what operating systems and file managers report, and it is the source of the persistent "my 80 GB GPU only shows 74.5 GB" confusion — a GB-to-GiB conversion that should never have been applied to a hardware label. This tool uses vendor decimal figures throughout. If you want the full explanation of when the gap is real and when it is a category error, see <a href="/gib-to-gb-marketing-gap">GB vs GiB: the marketing gap</a>.</p>
+        <p>An "80 GB" H100 holds 80 GiB of memory — 85,899,345,920 bytes — which is exactly what nvidia-smi reports as 81,920 MiB. Nothing is missing and nothing is being held back: the label is binary, the same convention operating systems use for main memory, and the familiar "my 80 GB GPU only shows 74.5 GB" complaint comes from dividing that binary label by 1024³ as though it were a storage capacity. Weights and KV cache, by contrast, are computed in decimal gigabytes here, because bandwidth and price are both quoted that way. So this tool converts each card's label into decimal GB before comparing it with the working set: 80 GiB becomes 85.9 GB. Skipping that step would understate every card by 7.4%, which is well inside the headroom margin we tell you to treat as unsafe. See <a href="/vram-gb-to-mib">VRAM GB → MiB</a> for the conversion, and <a href="/gib-to-gb-marketing-gap">GB vs GiB: the marketing gap</a> for the storage case, where the opposite is true.</p>
     </section>
 
     <!-- ═══ Reading the result ═══ -->
@@ -400,7 +401,7 @@
         var need = wGB + kv + oh;
 
         // Determine cards required.
-        var perCard = gpu.vramGB;
+        var perCard = HW.capacityGB(gpu);
         var cardsNeeded = Math.max(1, Math.ceil(need / perCard));
         // Valid TP sizes are powers of two.
         var tpSizes = [1, 2, 4, 8, 16];
@@ -423,7 +424,6 @@
         if (!canFitAtAll) {
             box.classList.add('fail');
             head = '❌ Does not fit';
-            var needed8 = need / perCard;
             sub = 'This configuration needs ' + fmtGB(need) + ' of VRAM. The largest tensor-parallel topology modelled here is ' +
                   maxFeasible + ' × ' + gpu.name + ' = ' + fmtGB(perCard * maxFeasible) +
                   ', which is still short by ' + fmtGB(need - perCard * maxFeasible) +
@@ -475,21 +475,21 @@
         tbody.innerHTML = '';
         order.forEach(function (k) {
             var g = HW.GPUS[k];
-            var needs = Math.max(1, Math.ceil(need / g.vramGB));
+            var needs = Math.max(1, Math.ceil(need / HW.capacityGB(g)));
             var tp = 1;
             for (var j = 0; j < tpSizes.length; j++) { if (tpSizes[j] >= needs) { tp = tpSizes[j]; break; } tp = tpSizes[j]; }
-            var fits = need <= g.vramGB * tpSizes[tpSizes.length - 1];
+            var fits = need <= HW.capacityGB(g) * tpSizes[tpSizes.length - 1];
             var row = document.createElement('tr');
             var verdict, cls;
             if (!fits) { verdict = 'Does not fit'; cls = 'no'; }
             else if (tp === 1) {
-                var hr = (g.vramGB - need) / g.vramGB * 100;
+                var hr = (HW.capacityGB(g) - need) / HW.capacityGB(g) * 100;
                 verdict = hr < 10 ? 'Tight (' + hr.toFixed(0) + '% headroom)' : 'Fits on one card';
                 cls = hr < 10 ? 'partial' : 'ok';
             } else { verdict = 'Needs ' + tp + ' cards (TP=' + tp + ')'; cls = 'partial'; }
             row.className = cls;
             row.innerHTML = '<td>' + g.name + '</td>' +
-                '<td class="num">' + g.vramGB + ' GB</td>' +
+                '<td class="num">' + fmtGB(HW.capacityGB(g)) + '</td>' +
                 '<td class="num">' + fmtGB(need) + '</td>' +
                 '<td class="num">' + (fits ? tp : '—') + '</td>' +
                 '<td>' + verdict + '</td>';

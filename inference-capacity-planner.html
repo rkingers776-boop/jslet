@@ -467,10 +467,10 @@
         var oh = HW.overheadGB(wGB);
         var workingSet = wGB + kv + oh;
 
-        var cardsMem = workingSet / gpu.vramGB;
+        var cardsMem = workingSet / HW.capacityGB(gpu);
         var tpMem = 1;
         for (var i = 0; i < tpSizes.length; i++) { if (tpSizes[i] >= cardsMem) { tpMem = tpSizes[i]; break; } tpMem = tpSizes[i]; }
-        var memFeasible = workingSet <= gpu.vramGB * tpSizes[tpSizes.length - 1];
+        var memFeasible = workingSet <= HW.capacityGB(gpu) * tpSizes[tpSizes.length - 1];
 
         // 4) Choose a deployment shape.
         //
@@ -485,12 +485,12 @@
         // preferring a smaller group when tied (fewer cards per replica means a
         // smaller blast radius and no interconnect penalty).
         var nMax = tpSizes[tpSizes.length - 1];
-        var memFeasible = workingSet <= gpu.vramGB * nMax;
+        var memFeasible = workingSet <= HW.capacityGB(gpu) * nMax;
 
         var best = null;
         for (var gi = 0; gi < tpSizes.length; gi++) {
             var tp = tpSizes[gi];
-            if (workingSet > gpu.vramGB * tp) continue;      // memory infeasible at this group size
+            if (workingSet > HW.capacityGB(gpu) * tp) continue;      // memory infeasible at this group size
             var replicaCap = perCardTok * tp * HW.tpEfficiency(tp);
             var reps = Math.max(1, Math.ceil(peakTokPerSec / (replicaCap * utilCeil)));
             var cards = tp * reps;
@@ -529,17 +529,17 @@
             ' tokens/sec at ' + batchLabel + ' — ' + fmtInt(HW.theoreticalTokPerSec(gpu, model, effQuant)) +
             ' theoretical, ' + (HW.batchEfficiency(batch) * 100).toFixed(0) + '% realised. Working set is ' +
             fmtGB(workingSet) + ' per replica (' + fmtGB(wGB) + ' weights + ' + fmtGB(kv) + ' KV + ' + fmtGB(oh) + ' overhead). ';
-        var minTP = Math.max(1, Math.ceil(workingSet / gpu.vramGB));
+        var minTP = Math.max(1, Math.ceil(workingSet / HW.capacityGB(gpu)));
         var validTP = 1;
         for (var mi = 0; mi < tpSizes.length; mi++) { if (tpSizes[mi] >= minTP) { validTP = tpSizes[mi]; break; } validTP = tpSizes[mi]; }
-        if (workingSet > gpu.vramGB) {
+        if (workingSet > HW.capacityGB(gpu)) {
             note += 'The working set exceeds one card, so the model cannot run unsharded — memory alone forces TP=' + validTP + '. ';
         } else {
             note += 'The working set fits on one card, so the layout is driven by throughput rather than memory. ';
         }
         if (best && best.infeasible) {
-            note += 'This model cannot be held on any valid group size for this GPU (' + fmtGB(gpu.vramGB) + ' × ' + nMax +
-                ' = ' + fmtGB(gpu.vramGB * nMax) + ' is still short of ' + fmtGB(workingSet) + '). Pick a larger card, quantize further, or shorten the context. ';
+            note += 'This model cannot be held on any valid group size for this GPU (' + fmtGB(HW.capacityGB(gpu)) + ' × ' + nMax +
+                ' = ' + fmtGB(HW.capacityGB(gpu) * nMax) + ' is still short of ' + fmtGB(workingSet) + '). Pick a larger card, quantize further, or shorten the context. ';
         }
         if (tpFinal > 1) {
             note += 'Sharding costs efficiency: TP=' + tpFinal + ' runs at ' + (HW.tpEfficiency(tpFinal) * 100).toFixed(0) +

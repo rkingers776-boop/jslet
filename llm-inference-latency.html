@@ -499,46 +499,17 @@
 </div>
 
 <script src="nav.js"></script>
+<script src="/llm-hardware-data.js"></script>
 <script>
 (function() {
     'use strict';
 
-    // ── Model Database ──────────────────────────────────────────────
-    var MODELS = {
-        'llama4-scout-8b':     { name: 'Llama 4 Scout', params: 8e9, activeParams: 8e9, bytesPerParamKV: 2 },
-        'llama4-maverick-70b': { name: 'Llama 4 Maverick', params: 70e9, activeParams: 70e9, bytesPerParamKV: 2 },
-        'llama4-behemoth-405b':{ name: 'Llama 4 Behemoth', params: 405e9, activeParams: 405e9, bytesPerParamKV: 2 },
-        'mistral-small-7b':    { name: 'Mistral Small 3', params: 7e9, activeParams: 7e9, bytesPerParamKV: 2 },
-        'mistral-large-123b':  { name: 'Mistral Large 2', params: 123e9, activeParams: 123e9, bytesPerParamKV: 2 },
-        'deepseek-v3-671b':    { name: 'DeepSeek-V3 (MoE)', params: 671e9, activeParams: 37e9, bytesPerParamKV: 2 },
-        'deepseek-r1-671b':    { name: 'DeepSeek-R1 (MoE)', params: 671e9, activeParams: 37e9, bytesPerParamKV: 2 },
-        'qwen25-72b':          { name: 'Qwen 2.5', params: 72e9, activeParams: 72e9, bytesPerParamKV: 2 },
-        'commandr-plus-104b':  { name: 'Command R+', params: 104e9, activeParams: 104e9, bytesPerParamKV: 2 },
-        'phi4-14b':            { name: 'Phi-4', params: 14e9, activeParams: 14e9, bytesPerParamKV: 2 },
-        'gemma3-27b':          { name: 'Gemma 3', params: 27e9, activeParams: 27e9, bytesPerParamKV: 2 },
-        'olmoe-7b':            { name: 'OLMoE (MoE)', params: 7e9, activeParams: 1e9, bytesPerParamKV: 2 }
-    };
+    var HW = window.JSLET_HW;
 
-    // ── GPU Database ─────────────────────────────────────────────────
-    var GPUS = {
-        'h100-80gb':    { name: 'NVIDIA H100', memBW: 3350, vramGB: 80, memBWUnit: 'GB/s' },
-        'h200-141gb':   { name: 'NVIDIA H200', memBW: 4800, vramGB: 141, memBWUnit: 'GB/s' },
-        'b200-192gb':   { name: 'NVIDIA B200', memBW: 8000, vramGB: 192, memBWUnit: 'GB/s' },
-        'a100-80gb':    { name: 'NVIDIA A100-80GB', memBW: 2039, vramGB: 80, memBWUnit: 'GB/s' },
-        'a100-40gb':    { name: 'NVIDIA A100-40GB', memBW: 1555, vramGB: 40, memBWUnit: 'GB/s' },
-        'l40s-48gb':    { name: 'NVIDIA L40S', memBW: 864, vramGB: 48, memBWUnit: 'GB/s' },
-        'rtx4090-24gb': { name: 'NVIDIA RTX 4090', memBW: 1008, vramGB: 24, memBWUnit: 'GB/s' },
-        'rtx3090-24gb': { name: 'NVIDIA RTX 3090', memBW: 936, vramGB: 24, memBWUnit: 'GB/s' },
-        't4-16gb':      { name: 'NVIDIA T4', memBW: 300, vramGB: 16, memBWUnit: 'GB/s' },
-        'a10-24gb':     { name: 'NVIDIA A10', memBW: 600, vramGB: 24, memBWUnit: 'GB/s' }
-    };
-
-    var QUANT_BYTES = { 'fp16': 2, 'bf16': 2, 'fp8': 1, 'int8': 1, 'int4': 0.5 };
-
-    // FP8 executes on tensor cores only where the silicon has the units:
-    // Hopper/Blackwell run the full FP8 datapath, Ada accelerates FP8 with FP16 accumulate,
-    // and Ampere/Turing have no FP8 units at all — frameworks silently fall back to BF16.
-    var FP8_NATIVE = { 'h100-80gb': 'full', 'h200-141gb': 'full', 'b200-192gb': 'full', 'l40s-48gb': 'ada', 'rtx4090-24gb': 'ada' };
+    // Model shapes, GPU specs and quantization sizes all come from the shared
+    // datablock at /llm-hardware-data.js (window.JSLET_HW). These tables used to be
+    // duplicated here, which is how three copies of the same VRAM figure start
+    // disagreeing — see /methodology.
 
     function formatBytes(bytes) {
         if (bytes >= 1e12) return (bytes / 1e12).toFixed(2) + ' TB';
@@ -560,9 +531,9 @@
         var quantKey = document.getElementById('quant-input').value;
         var batchStr = document.getElementById('batch-input').value;
 
-        var model = MODELS[modelKey];
-        var gpu = GPUS[gpuKey];
-        var bytesPerParam = QUANT_BYTES[quantKey];
+        var model = HW.MODELS[modelKey];
+        var gpu = HW.GPUS[gpuKey];
+        var bytesPerParam = HW.QUANT_BYTES[quantKey];
         var batchSize = parseInt(batchStr) || 1;
 
         // Total params (for dense models) for VRAM calculation
@@ -570,15 +541,16 @@
         var totalParamsForVRAM = model.params;
         var activeParams = model.activeParams;
 
-        // Weight size in VRAM
+        // Weight size in VRAM, in decimal GB — the unit the shared datablock uses.
         var weightBytes = totalParamsForVRAM * bytesPerParam;
         var weightGB = weightBytes / 1e9;
 
-        // KV cache estimate (rough: 2 * n_layers * n_kv_heads * d_head * context_len * batch_size)
-        // Simplified: ~0.5 bytes per parameter per 1K context per batch for KV cache at FP16
-        var kvCachePerReqPer1K = totalParamsForVRAM * 0.000025 * bytesPerParam; // rough heuristic
-        var kvCacheTotal = kvCachePerReqPer1K * 8 * batchSize; // assume 8K context default
-        var totalVRAM = weightGB + kvCacheTotal;
+        // Working set = weights + framework overhead + KV cache, taken from the
+        // shared attention-geometry model at an 8K default context. The previous
+        // version added a KV figure in *bytes* to a weights figure in *GB*, which
+        // inflated the total by six orders of magnitude and made every single
+        // configuration report OOM. See /methodology.
+        var totalVRAM = HW.totalVRAMGB(model, quantKey, 8, batchSize);
 
         // Theoretical tokens/sec from memory bandwidth
         // For decode, each token requires reading all active params once
@@ -613,7 +585,7 @@
         // Bottleneck analysis
         var bottleneckLabel = 'Memory BW';
         var bottleneckClass = 'warn';
-        if (totalVRAM > gpu.vramGB * 1.05) {
+        if (totalVRAM > HW.capacityGB(gpu) * 1.05) {
             bottleneckLabel = 'VRAM (OOM)';
             bottleneckClass = 'warn';
         } else if (theoreticalTokPerSec > 5000) {
@@ -625,11 +597,11 @@
         var metrics = document.getElementById('perf-metrics');
         if (!metrics) return;
 
-        var fits = totalVRAM <= gpu.vramGB * 1.05;
+        var fits = totalVRAM <= HW.capacityGB(gpu) * 1.05;
 
         var fp8Notice = '';
         if (quantKey === 'fp8') {
-            var fp8Status = FP8_NATIVE[gpuKey] || 'none';
+            var fp8Status = HW.fp8Status(gpuKey);
             if (fp8Status === 'none') {
                 fp8Notice = 'FP8 is not native on this GPU. The framework will silently fall back to BF16, so expect roughly 1.0x throughput despite the halved weight footprint — the memory saving is real, the speedup is not. Choose INT8 or INT4 for a throughput gain on this hardware.';
             } else if (fp8Status === 'ada') {
@@ -639,7 +611,7 @@
 
         var tokSecClass = realTokPerSecSingle > 100 ? 'good' : (realTokPerSecSingle > 20 ? '' : 'warn');
         var vramClass = fits ? 'good' : 'warn';
-        var vramStr = fits ? formatBytes(weightBytes) : 'OOM — ' + formatBytes(weightBytes);
+        var vramStr = (fits ? '' : 'OOM — ') + formatBytes(totalVRAM * 1e9);
 
         var html = '';
         html += '<div class="metric-tile"><div class="metric-val ' + tokSecClass + '">' + (fits ? formatNum(realTokPerSecSingle) : '—') + '</div><div class="metric-label">Tokens/sec (decode)</div></div>';
