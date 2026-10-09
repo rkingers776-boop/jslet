@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The 730-Hour Month: Why Your Cloud Invoice Is Never 730 Hours</title>
+    <meta name="description" content="A month is 730 hours in your cloud provider's calculator, 720 in its SLA, and 744 on the invoice — the same word, three numbers, and a gap nobody audits.">
+    <meta property="og:title" content="The 730-Hour Month — Why Your Cloud Invoice Is Never 730 Hours">
+    <meta property="og:description" content="Cloud cost models use a 730-hour month, reliability contracts use a 720-hour one, and your invoice uses the calendar. Why all three are right, and where the gap compounds.">
+    <meta property="og:url" content="https://www.jslet.com/cloud-billing-hours-per-month">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-10-09T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-10-09T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The 730-Hour Month: Why Your Cloud Invoice Is Never 730 Hours">
+    <meta name="twitter:description" content="Cloud cost models use a 730-hour month, reliability contracts use a 720-hour one, and your invoice uses the calendar. Why all three are right, and where the gap compounds.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/cloud-billing-hours-per-month">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The 730-Hour Month: Why Your Cloud Invoice Is Never 730 Hours",
+      "description": "A cloud 'month' is 730 hours in every pricing calculator, 720 hours in every SLA table, and 672 to 744 hours on the invoice. Why a single word carries a 10.7% spread, and how to pick the right convention for budgets, commitments and SLOs.",
+      "url": "https://www.jslet.com/cloud-billing-hours-per-month",
+      "datePublished": "2026-10-09T00:00:00+00:00",
+      "dateModified": "2026-10-09T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research", "url": "https://www.jslet.com/methodology" },
+      "publisher": { "@type": "Organization", "@id": "https://www.jslet.com/#organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How many hours are in a month for cloud billing?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The billing convention is 730 hours, defined as (365 days &times; 24 hours) &divide; 12 months. AWS states this explicitly in its pricing calculator FAQ. No actual month is 730 hours long: a 28-day February is 672, a 30-day month is 720 and a 31-day month is 744. The 730 figure is an annual average, which is why it is exactly right over a year and wrong in every individual month."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does AWS actually charge 730 hours per month?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. AWS bills per second with a 60-second minimum on Linux, so an always-on instance in a 31-day month is charged 744 hours and one in February is charged 672. The 730-hour figure is a modelling convention used by the pricing calculator, not a billing rule. AWS's own FAQ notes that its monthly estimate \"may be less or more than the actual hours in the current billing period.\""
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does 99.9% uptime equal 43.2 minutes per month?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because the SLA tables use a 30-day month of 720 hours, not the 730-hour billing month. 720 hours &times; 0.1% = 0.72 hours = 43.2 minutes, which is the figure Google Cloud publishes for a 30-day month. The same 99.9% allows 44.64 minutes in a 31-day month and 40.32 minutes in a 28-day February. Across a whole year the allowance is 8.76 hours."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How many hours are in a year for reserved instance commitments?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "8,760 hours (365 days &times; 24 hours), and 26,280 hours for a 3-year term. Reserved Instances and Savings Plans are commitments measured in hours of coverage, not in months, so a one-year commitment covers 8,760 hours of a given instance regardless of how the calendar falls. Modelling the year as twelve 720-hour months gives 8,640 hours and leaves 120 hours a year uncovered at on-demand rates."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 116 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>The <span>730-Hour Month</span></h1>
+        <p>One word, three numbers — and the 10.7% spread that no cost review ever audits</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-10-09 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 14 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+            <li><a href="#four" style="color:var(--accent); text-decoration:none;">Four Numbers, One Word</a></li>
+            <li><a href="#why" style="color:var(--accent); text-decoration:none;">Why 730 Is Not Arbitrary</a></li>
+            <li><a href="#invoice" style="color:var(--accent); text-decoration:none;">The Number on the Invoice</a></li>
+            <li><a href="#commitment" style="color:var(--accent); text-decoration:none;">Commitments Are Measured in Hours</a></li>
+            <li><a href="#sla" style="color:var(--accent); text-decoration:none;">Your SLA Uses a Different Month</a></li>
+            <li><a href="#mix" style="color:var(--accent); text-decoration:none;">Where the Mixing Bites</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ol>
+    </div>
+
+    <section class="seo-section">
+        <p>Ask your cloud provider's pricing calculator how many hours are in a month and it will say 730. Ask the same provider's service level agreement and it will say 30 days — 720 hours. Ask the billing system and it charged you 744 hours for an instance that ran all of October, 720 for November, and 672 for February. Three answers, one word, and no reconciliation anywhere in between.</p>
+        <p>Each individual gap is small enough to look like rounding: 1.9% between the calculator's month and a 31-day invoice, 7.9% between the calculator's month and February. That is exactly why it survives. A number that is wrong by two percent does not look like a modelling convention that nobody wrote down. It looks like noise, and noise gets averaged away in a spreadsheet that was never designed to notice it.</p>
+        <p>This briefing is about that spread — where each convention comes from, which one your invoice, your commitment and your uptime contract are each measured in, and how to stop three of them from living in the same model. It is the written companion to the <a href="/vcpu-to-core-hours">vCPU to Compute Hours calculator</a>, which converts a fleet into vCPU-hours against a stated month length so the convention is an input rather than an assumption.</p>
+    </section>
+
+    <section class="seo-section" id="four">
+        <h2>Four Numbers, One Word</h2>
+        <p>A month is not a unit of time. It is a name we give to twelve unequal intervals, and any engineering calculation that consumes one has to pick a length for it. There are five candidates, and they differ by more than ten percent:</p>
+        <table class="brief-table">
+            <thead><tr><th>What you call a month</th><th class="num">Hours</th><th class="num">vs the 730-hour convention</th></tr></thead>
+            <tbody>
+                <tr><td>February, non-leap (28 days)</td><td class="num">672</td><td class="num">&minus;58 h (&minus;7.9%)</td></tr>
+                <tr><td>February, leap (29 days)</td><td class="num">696</td><td class="num">&minus;34 h (&minus;4.7%)</td></tr>
+                <tr><td>Any 30-day month</td><td class="num">720</td><td class="num">&minus;10 h (&minus;1.4%)</td></tr>
+                <tr class="hi"><td>Annual average (365 &divide; 12)</td><td class="num">730</td><td class="num">&mdash;</td></tr>
+                <tr><td>Leap-year average (366 &divide; 12)</td><td class="num">732</td><td class="num">+2 h (+0.3%)</td></tr>
+                <tr><td>Any 31-day month</td><td class="num">744</td><td class="num">+14 h (+1.9%)</td></tr>
+            </tbody>
+        </table>
+        <p>The full spread from 672 to 744 is <strong>10.7%</strong>. Two people estimating the same always-on instance with the same hourly rate can disagree by a tenth of the bill without either of them making a mistake — they simply chose different months. And this is not a hypothetical: the industry currently runs on two of these conventions at once, and they belong to different departments.</p>
+        <table class="brief-table">
+            <thead><tr><th>System</th><th class="num">Hours in a "month"</th><th>Where the number comes from</th></tr></thead>
+            <tbody>
+                <tr class="hi"><td>Cloud pricing calculators</td><td class="num">730</td><td>(365 &times; 24) &divide; 12, the annual average</td></tr>
+                <tr class="bad"><td>SLA and SLO tables</td><td class="num">720</td><td>A 30-day month, by long-standing convention</td></tr>
+                <tr><td>Your actual invoice</td><td class="num">672&ndash;744</td><td>The calendar, billed per second</td></tr>
+                <tr><td>A one-year commitment</td><td class="num">8,760</td><td>365 &times; 24 hours of coverage in a year</td></tr>
+            </tbody>
+        </table>
+        <div class="pull">A month is 730 hours in the cost model, 720 hours in the reliability contract and 744 hours on the invoice. All three are published by the same provider.</div>
+        <p>None of the four is a bug. Each is correct within its own frame, and each frame was chosen by someone who had a good reason and no obligation to tell the next person. The failure mode is not picking the wrong one. It is picking two.</p>
+    </section>
+
+    <section class="seo-section" id="why">
+        <h2>Why 730 Is Not Arbitrary</h2>
+        <p>The 730-hour month is not a marketing rounding. Multiply it back out and the reason appears immediately: 730 &times; 12 = <strong>8,760</strong>, which is exactly 365 &times; 24. The convention is not a month at all — it is a <em>year divided by twelve</em>. Every calendar year contains 8,760 hours (8,784 in a leap year), so dividing by twelve produces a number whose only useful property is that it recomposes into the right annual total.</p>
+        <p>That single property explains both why the convention is everywhere and why every monthly projection built on it is wrong. Cloud providers state the definition plainly rather than hide it. AWS's pricing calculator FAQ puts it in one sentence — the calculator "assumes there are 730 hours in a month ((365 days &times; 24 hours) / 12 months in a year), which may be less or more than the actual hours in the current billing period" — and then walks through the divergence for a $0.10/hour On-Demand instance:</p>
+        <table class="brief-table">
+            <thead><tr><th>Period</th><th class="num">Hours</th><th class="num">Cost at $0.10/hour</th><th class="num">vs the 730-hour estimate</th></tr></thead>
+            <tbody>
+                <tr><td>Calculator's estimate</td><td class="num">730</td><td class="num">$73.00</td><td class="num">&mdash;</td></tr>
+                <tr class="bad"><td>February, non-leap</td><td class="num">672</td><td class="num">$67.20</td><td class="num">&minus;$5.80</td></tr>
+                <tr><td>November (30 days)</td><td class="num">720</td><td class="num">$72.00</td><td class="num">&minus;$1.00</td></tr>
+                <tr class="bad"><td>October (31 days)</td><td class="num">744</td><td class="num">$74.40</td><td class="num">+$1.40</td></tr>
+                <tr class="hi"><td>Twelve months, non-leap</td><td class="num">8,760</td><td class="num">$876.00</td><td class="num">$0.00</td></tr>
+            </tbody>
+        </table>
+        <p>Read the last row against the first. Monthly, the estimate is off by as much as 7.9%. Annually, it is off by nothing at all. The 730-hour month is a lossless compression of the year into twelve identical boxes, and every individual box is the wrong size.</p>
+        <div class="pull">A 730-hour month is annually exact and monthly wrong. Every month is mis-stated; the errors cancel by December.</div>
+        <p>There is one more drift worth naming. Because 730 is built from a 365-day year, the convention silently discards the leap day. In a leap year the true annual total is 8,784 hours and the average month is 732. An organisation that models every month as 730 will under-forecast a leap year by 24 hours of always-on capacity per instance — the only case where the annual total does not cancel, and the one nobody adjusts for.</p>
+    </section>
+
+    <section class="seo-section" id="invoice">
+        <h2>The Number on the Invoice</h2>
+        <p>What you are actually billed is neither 730 nor 720. Since 2017, AWS has billed Linux instances per second with a 60-second minimum, and the other major providers meter sub-hourly as well. Metering granularity does not change the arithmetic of a full month though: an instance that is on for every second of a 31-day month is on for 744 hours, and that is what appears on the bill. Here is a non-leap year, month by month, for a single always-on instance priced at $0.10/hour:</p>
+        <table class="brief-table">
+            <thead><tr><th>Month</th><th class="num">Days</th><th class="num">Billed hours</th><th class="num">vs 730</th></tr></thead>
+            <tbody>
+                <tr class="bad"><td>January</td><td class="num">31</td><td class="num">744</td><td class="num">+14</td></tr>
+                <tr class="bad"><td>February</td><td class="num">28</td><td class="num">672</td><td class="num">&minus;58</td></tr>
+                <tr><td>March</td><td class="num">31</td><td class="num">744</td><td class="num">+14</td></tr>
+                <tr><td>April</td><td class="num">30</td><td class="num">720</td><td class="num">&minus;10</td></tr>
+                <tr class="bad"><td>May</td><td class="num">31</td><td class="num">744</td><td class="num">+14</td></tr>
+                <tr><td>June</td><td class="num">30</td><td class="num">720</td><td class="num">&minus;10</td></tr>
+                <tr><td>July</td><td class="num">31</td><td class="num">744</td><td class="num">+14</td></tr>
+                <tr><td>August</td><td class="num">31</td><td class="num">744</td><td class="num">+14</td></tr>
+                <tr><td>September</td><td class="num">30</td><td class="num">720</td><td class="num">&minus;10</td></tr>
+                <tr class="bad"><td>October</td><td class="num">31</td><td class="num">744</td><td class="num">+14</td></tr>
+                <tr><td>November</td><td class="num">30</td><td class="num">720</td><td class="num">&minus;10</td></tr>
+                <tr><td>December</td><td class="num">31</td><td class="num">744</td><td class="num">+14</td></tr>
+                <tr class="hi"><td>Year</td><td class="num">365</td><td class="num">8,760</td><td class="num">0</td></tr>
+            </tbody>
+        </table>
+        <p>Seven months bill 744 hours, four bill 720, one bills 672 — and only one of the twelve is within a rounding error of the 730-hour estimate. The practical consequence is a forecasting rule that most cost dashboards get backwards. A monthly projection built on 730 will show a "budget variance" of +1.9% every 31-day month and &minus;7.9% every February, and an engineer will spend time investigating the long months and the short months as though traffic moved, when the only thing that moved was the Gregorian calendar.</p>
+        <p>Scale it and the false signal gets expensive to chase. A fleet with a $100,000 monthly compute bill running flat out will show +$1,920 in October and &minus;$7,950 in February against a 730-hour forecast. None of that is a change in usage, and all of it lands in a variance report that someone has to explain. The fix is not to model better months. It is to forecast in hours per year and reconcile in days per month, so that the calendar is visible as a factor rather than baked into the baseline.</p>
+        <div class="pull">An always-on instance is billed for 8,760 hours a year, not 8,760 &divide; 12 hours twelve times. The annual number is stable; the monthly numbers are the calendar talking.</div>
+    </section>
+
+    <section class="seo-section" id="commitment">
+        <h2>Commitments Are Measured in Hours</h2>
+        <p>Reserved Instances and Savings Plans do not sell months. They sell <strong>hours of coverage</strong>, and the term is fixed in hours regardless of how the calendar falls: 8,760 for a one-year commitment, 26,280 for three years. That makes the month convention a first-order input to any commitment calculation, in a way that is easy to miss because the pricing pages quote discounts as percentages rather than hour counts.</p>
+        <table class="brief-table">
+            <thead><tr><th>Term</th><th class="num">Hours of coverage</th><th class="num">If you model it as 12 &times; 730</th><th class="num">If you model it as 12 &times; 720</th></tr></thead>
+            <tbody>
+                <tr class="hi"><td>1 year</td><td class="num">8,760</td><td class="num">8,760 &mdash; exact</td><td class="num">8,640 &minus; 120 h short</td></tr>
+                <tr><td>3 years</td><td class="num">26,280</td><td class="num">26,280 &mdash; exact</td><td class="num">25,920 &minus; 360 h short</td></tr>
+            </tbody>
+        </table>
+        <p>The 720-hour path is the one to watch, and it is the one people reach for, because a "30-day month" feels like the conservative choice. It is not. Twelve 720-hour months is 8,640 hours, which leaves <strong>120 hours</strong> a year of a continuously running instance outside the commitment — 1.4% of the term, billed at on-demand rates for every instance in the fleet. On a 100-instance fleet that is 12,000 uncovered instance-hours a year, and the discount you negotiated does not apply to a single one of them.</p>
+        <p>The mirror error is subtler and sits on the capacity-planning side. A commitment covers hours whether or not your workload runs in them: if you buy a 1-year RI and only use 4,800 hours, the remaining 3,960 hours are paid for and unused. That is why the breakeven question is really about utilisation — 8,760 hours of coverage against the hours your workload actually occupies — and why the same fleet can be over-committed in one quarter and under-committed in the next. Both readings need the hours, not the months, to be computed at all.</p>
+        <div class="pull">A commitment is a number of hours, not a number of months. Model the term in days and you will find 120 hours a year that no discount reaches.</div>
+    </section>
+
+    <section class="seo-section" id="sla">
+        <h2>Your SLA Uses a Different Month</h2>
+        <p>Here is where the two conventions stop being a curiosity and start being a contract. Cost models run on 730 hours. Reliability contracts run on 720. Google Cloud's reliability documentation states the basis in the column heading itself — "Estimated maximum downtime in a 30-day month" — and lists 99.9% as 43.2 minutes. That figure is not a coincidence: 720 hours &times; 0.1% = 0.72 hours = 43.2 minutes. A 730-hour month would give 43.8 minutes, and a 31-day month gives 44.64.</p>
+        <table class="brief-table">
+            <thead><tr><th>Availability target</th><th class="num">28-day (672 h)</th><th class="num">30-day (720 h)</th><th class="num">31-day (744 h)</th><th class="num">Year (8,760 h)</th></tr></thead>
+            <tbody>
+                <tr><td>99.9% (three nines)</td><td class="num">40.32 min</td><td class="num">43.2 min</td><td class="num">44.64 min</td><td class="num">8.76 h</td></tr>
+                <tr class="hi"><td>99.95%</td><td class="num">20.16 min</td><td class="num">21.6 min</td><td class="num">22.32 min</td><td class="num">4.38 h</td></tr>
+                <tr><td>99.99% (four nines)</td><td class="num">4.03 min</td><td class="num">4.32 min</td><td class="num">4.46 min</td><td class="num">52.6 min</td></tr>
+            </tbody>
+        </table>
+        <p>The 30-day convention is honest and it is the industry standard — budget arithmetic in the SRE literature has always assumed a 30-day window, which is why the burn-rate thresholds in the error-budget model are expressed against a 720-hour month. The trap is not the convention. The trap is comparing a vendor's "43.2 minutes per month" against your own measurement taken in a 31-day month, where the contract actually allows 44.64. Do that and your incident review will flag a breach that never happened, by 1.44 minutes. Run the comparison in February instead and the same 43.2-minute reference is 2.88 minutes <em>stricter</em> than the contract, so a genuine breach passes unnoticed.</p>
+        <div class="pull">A 99.9% promise is 44.64 minutes of allowance in a 31-day month and 40.32 in February. Neither is the number in the table, and both are the contract.</div>
+        <p>The only figure that is comparable across the whole year is the annual one — 8.76 hours for three nines — and it is the figure almost nobody measures against, because dashboards are built monthly. If you want a monthly view that tracks the contract, compute the allowance from the month's own length. If you want a number that does not move, use the year.</p>
+    </section>
+
+    <section class="seo-section" id="mix">
+        <h2>Where the Mixing Bites</h2>
+        <p>The failure mode is rarely a wrong convention. It is two right conventions in one calculation — the kind of thing that happens when a headline number and a formula are written on different days. A fleet-sizing sheet says "16 vCPUs &times; 730 hours = 11,680 vCPU-hours per month" on its summary tab, while the tab that turns hours into months divides by 720, because a different person built it and a 30-day month felt like the safer choice. Neither line is wrong on its own. They are 1.4% apart, and they describe different months.</p>
+        <p>That 1.4% does not stay small, because it is multiplied twice — once by the number of instances, and once by every downstream thing that consumes the figure:</p>
+        <table class="brief-table">
+            <thead><tr><th>Quantity</th><th class="num">730-hour basis</th><th class="num">720-hour basis</th><th class="num">Gap</th></tr></thead>
+            <tbody>
+                <tr><td>One 16-vCPU instance, one month</td><td class="num">11,680 vCPU-h</td><td class="num">11,520 vCPU-h</td><td class="num">160</td></tr>
+                <tr class="hi"><td>Ten such instances, one month</td><td class="num">116,800 vCPU-h</td><td class="num">115,200 vCPU-h</td><td class="num">1,600</td></tr>
+                <tr class="bad"><td>Ten such instances, one year</td><td class="num">1,401,600 vCPU-h</td><td class="num">1,382,400 vCPU-h</td><td class="num">19,200</td></tr>
+                <tr><td>At $0.05 per vCPU-hour</td><td class="num">$70,080</td><td class="num">$69,120</td><td class="num">$960</td></tr>
+            </tbody>
+        </table>
+        <p>Nine hundred and sixty dollars a year of pure ambiguity, from a fleet small enough to fit in one rack, decided by which line of which document someone copied. The same 1.4% applied to a commitment calculation leaves hours uncovered; applied to an SLA leaves minutes misattributed; applied to a capacity plan shifts the instance count. The number does not have to be large to matter — it has to be <em>multiplied</em>, and in infrastructure arithmetic everything is multiplied.</p>
+        <p>The remedy is a three-line note that goes at the top of the model rather than in a footnote, so that the next person to open the spreadsheet inherits the convention instead of guessing it:</p>
+        <table class="brief-table">
+            <thead><tr><th>If you are&hellip;</th><th>use</th><th>because</th></tr></thead>
+            <tbody>
+                <tr><td>Building an annual budget</td><td>730 h/month, or 8,760 h/year</td><td>Annually exact; the monthly errors cancel</td></tr>
+                <tr class="hi"><td>Reconciling a monthly invoice</td><td>actual days &times; 24</td><td>It is what you were billed</td></tr>
+                <tr><td>Sizing an RI or Savings Plan</td><td>8,760 h/year (26,280 for 3 years)</td><td>How the commitment is denominated</td></tr>
+                <tr><td>Measuring against an SLA</td><td>720 h for the month, 8,760 h for the year</td><td>The contract's own stated basis</td></tr>
+            </tbody>
+        </table>
+        <p>Two rules make the note enforceable. First, never let a monthly figure and an annual figure into the same comparison — convert one of them. Second, when a number derived from hours turns up somewhere new, carry the month length with it; "11,680 vCPU-hours on a 730-hour month" survives a change of convention, and "11,680 vCPU-hours" does not.</p>
+        <div class="pull">The convention is not the problem. The problem is a model that contains two of them and no line saying which is which.</div>
+        <p>The calculators that this briefing pairs with all take the month length as an argument rather than assume it, so the arithmetic stays honest whichever convention a team has standardised on. The <a href="/vcpu-to-core-hours">vCPU to Compute Hours calculator</a> converts a fleet profile into vCPU-hours, vCPU-days and vCPU-months against the length you supply; the <a href="/ri-vs-spot-breakeven">RI vs Spot Breakeven calculator</a> prices a commitment against the hours a workload actually occupies; the <a href="/error-budget-calculator">Error Budget calculator</a> applies the 30-day window that the SLO literature uses; and the <a href="/cron-execution-frequency-per-month">Cron Execution Frequency matrix</a> shows how many times a schedule fires in a standard month, which is the same convention question asked by a scheduler instead of a billing system.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>Frequently Asked Questions</h2>
+        <h3>How many hours are in a month for cloud billing?</h3>
+        <p>The billing convention is <strong>730 hours</strong>, defined as (365 days &times; 24 hours) &divide; 12 months. AWS states this explicitly in its pricing calculator FAQ. No actual month is 730 hours long: a 28-day February is 672, a 30-day month is 720 and a 31-day month is 744. The 730 figure is an annual average, which is why it is exactly right over a year and wrong in every individual month.</p>
+        <h3>Does AWS actually charge 730 hours per month?</h3>
+        <p>No. AWS bills per second with a 60-second minimum on Linux, so an always-on instance in a 31-day month is charged 744 hours and one in February is charged 672. The 730-hour figure is a modelling convention used by the pricing calculator, not a billing rule. AWS's own FAQ notes that its monthly estimate "may be less or more than the actual hours in the current billing period."</p>
+        <h3>Why does 99.9% uptime equal 43.2 minutes per month?</h3>
+        <p>Because SLA tables use a 30-day month of 720 hours, not the 730-hour billing month. 720 hours &times; 0.1% = 0.72 hours = 43.2 minutes, which is the figure Google Cloud publishes for a 30-day month. The same 99.9% allows 44.64 minutes in a 31-day month and 40.32 minutes in a 28-day February. Across a whole year the allowance is 8.76 hours.</p>
+        <h3>How many hours are in a year for reserved instance commitments?</h3>
+        <p><strong>8,760 hours</strong> (365 days &times; 24 hours), and 26,280 hours for a 3-year term. Reserved Instances and Savings Plans are commitments measured in hours of coverage, not in months, so a one-year commitment covers 8,760 hours of a given instance regardless of how the calendar falls. Modelling the year as twelve 720-hour months gives 8,640 hours and leaves 120 hours a year uncovered at on-demand rates.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;" id="method">
+        <h2>Methodology &amp; Disclosure</h2>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">Hour counts are exact arithmetic on the Gregorian calendar: a day is 24 hours, a non-leap year is 365 days (8,760 hours), a leap year is 366 days (8,784 hours), and the 730-hour monthly convention is (365 &times; 24) &divide; 12 as defined by AWS's pricing calculator documentation. The month-by-month billed-hour table is a non-leap year (2026) for a single continuously running instance, and assumes second-level metering with a 60-second minimum, which rounds to a whole hour only in this table and never on an invoice. Uptime allowances are computed as (1 &minus; availability) &times; window length, using a 30-day month of 720 hours for the convention column because that is the basis the published SLA tables state, and the month's own length for the other columns. Hourly prices in worked examples are illustrative and stated in USD; they are used only to make a percentage legible and are not vendors' current list rates — verify rates at the source before budgeting. Reserved Instance and Savings Plan terms are taken as 8,760 hours for one year and 26,280 hours for three. This site takes no sponsorship, no affiliate commission and no vendor payment of any kind; the vendors named here have no relationship with jslet and did not review this briefing.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;">
+        <h2>References &amp; Further Reading</h2>
+        <ol style="font-size:0.85rem; line-height:1.9; color:var(--text-body);" id="references">
+            <li>AWS Pricing Calculator, <em>Frequently Asked Questions</em> — the 730-hour month definition, "may be less or more than the actual hours in the current billing period", and the month-by-month variance worked example. <em>calculator.aws</em></li>
+            <li>AWS Pricing Calculator, <em>Pricing Assumptions</em> — monthly normalisation to 730 hours, 4.34 weeks per month and 4.3 occurrences of a weekday per month. <em>calculator.aws</em></li>
+            <li>Google Cloud Architecture Center, <em>Building blocks of reliability</em> — uptime SLA tables with "estimated maximum downtime in a 30-day month", including 99.9% as 43.2 minutes. <em>cloud.google.com/architecture</em></li>
+            <li>Beyer et al. <em>Site Reliability Engineering</em> and <em>The Site Reliability Workbook</em> — error budgets and burn-rate thresholds defined over a 30-day window. <em>sre.google</em></li>
+            <li>Amazon EC2 documentation — per-second billing with a 60-second minimum for Linux instances, and Reserved Instance term lengths expressed in hours. <em>docs.aws.amazon.com</em></li>
+            <li>Related: <a href="/vcpu-to-core-hours">vCPU to Compute Hours Calculator</a> · <a href="/ri-vs-spot-breakeven-real">The Reservation Trap: 3-Year RI vs AWS Spot</a> · <a href="/error-budget-real">The Error Budget: 99.9% = 43.2 Minutes/Month</a> · <a href="/cron-execution-frequency-per-month">Cron Execution Frequency Matrix</a> · <a href="/kubernetes-pod-cost">Kubernetes Pod Cost Calculator</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Fcloud-billing-hours-per-month&amp;text=The%20730-Hour%20Month%3A%20why%20your%20cloud%20invoice%20is%20never%20730%20hours" target="_blank" rel="noopener" aria-label="Share on X">&#120143;</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Fcloud-billing-hours-per-month" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/vcpu-to-core-hours">&#129518; vCPU to Compute Hours &rarr;</a>
+            <a href="/ri-vs-spot-breakeven">&#129518; RI vs Spot Breakeven &rarr;</a>
+            <a href="/error-budget-calculator">&#129518; Error Budget &amp; SLO Burn Rate &rarr;</a>
+            <a href="/system-availability-sla">&#129518; System Availability SLA &rarr;</a>
+            <a href="/cron-execution-frequency-per-month">&#129518; Cron Execution Frequency &rarr;</a>
+            <a href="/kubernetes-pod-cost">&#129518; Kubernetes Pod Cost &rarr;</a>
+            <a href="/ri-vs-spot-breakeven-real">&#128240; The Reservation Trap: 3-Year RI vs AWS Spot &rarr;</a>
+            <a href="/cloud-quotas">&#9729; All Cloud Quota Tools &rarr;</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Estimation Disclaimer:</strong> Hour counts, uptime allowances and percentage gaps are exact arithmetic on stated calendar assumptions and are not measurements of any particular provider's billing system. Billing implementations and SLA wordings vary; read your own contract and your own invoice before relying on any figure here for a commitment or a dispute.</p>
+        </div>
+    </section>
+
+
+<footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/cloud-quotas">Cloud Quotas</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>
