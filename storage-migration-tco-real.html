@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The Egress Asymmetry: Why Your Migration Bill Depends on Direction</title>
+    <meta name="description" content="100 TB costs $7,791 to leave AWS and $0 to arrive. Six paths, one dataset, and the two lines no provider quotes: the dual-write window and the outage.">
+    <meta property="og:title" content="The Egress Asymmetry — Why Your Migration Bill Depends on Direction">
+    <meta property="og:description" content="Moving 100 TB out of a cloud costs $7,791; moving it in costs nothing. The largest line on the invoice is the outage no vendor calculator models.">
+    <meta property="og:url" content="https://www.jslet.com/storage-migration-tco-real">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-10-11T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-10-11T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Egress Asymmetry: Why Your Migration Bill Depends on Direction">
+    <meta name="twitter:description" content="100 TB costs $7,791 to leave a cloud and $0 to arrive. Six paths priced on one dataset — and the line that dwarfs them all.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/storage-migration-tco-real">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Egress Asymmetry: Why Your Migration Bill Depends on Direction",
+      "description": "A storage migration bill is set by the direction the bytes travel, not the bandwidth they travel over. Moving 100 TB out of AWS costs $7,791; moving the same 100 TB in costs nothing. Six paths priced on an identical dataset, the cumulative egress tier that makes the headline rate fictional, why the dual-write period bills twice, and why the largest line item is the outage that no vendor calculator models.",
+      "url": "https://www.jslet.com/storage-migration-tco-real",
+      "datePublished": "2026-10-11T00:00:00+00:00",
+      "dateModified": "2026-10-11T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research", "url": "https://www.jslet.com/methodology" },
+      "publisher": { "@type": "Organization", "@id": "https://www.jslet.com/#organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why is moving data into the cloud free while moving it out is not?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Inbound transfer is $0.00/GB on every major provider, and outbound transfer is metered. The economics are structural rather than technical: ingress is how a provider wins a workload and egress is one of the costs of leaving, so the asymmetry is deliberate and is written into the price list rather than into the network. On AWS a 100 TB move out over the public internet bills $7,791; the same 100 TB moved in bills nothing. Regulators have noticed — the EU Data Act's cloud-switching provisions require switching charges to be phased out, and the UK competition authority has examined egress fees in the cloud market study — but any model built today has to price the tariffs that exist today."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What actually costs the most in a storage migration?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The outage, on almost every migration that has a business attached. On 100 TB with a 14-day dual-write period, an internet-egress transfer bills $8,771 and the duplicate copy adds $1,073 — but an eight-hour cutover at $5,000 per hour of business loss is $40,000, which is 80.2% of a $49,844 total and 4.6 times the entire transfer bill. Teams routinely spend weeks choosing between transfer paths and a single meeting choosing the cutover window. The transfer path is the smallest lever in the model, and it is the one that gets optimised."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is shipping a physical device cheaper than transferring over the network?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It is cheaper per byte on a slow link, and it is beaten by a Direct Connect port on a fast one. An AWS Snowball Edge Storage Optimized job is a flat $1,800 for up to 100 TB of load and $3,200 for 101–210 TB, plus round-trip shipping and network egress for every byte that changes while the device is in transit. At 100 TB that lands near $3,331 against $2,520 for a 1 Gbps Direct Connect port, because the port finishes in about 800 billed hours while the device is still in a van. The job fee also steps by $1,400 the moment the load passes 100 TB."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does the headline egress rate apply to a large migration?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Almost never. AWS egress is tiered and the tiers are cumulative across the whole account for the month, so a 100 TB transfer walks up through $0.09, $0.085 and $0.07 per GB and bills $7,791 — an effective $0.0779/GB rather than the $0.09 on the pricing page. Push 500 TB and the effective rate falls to $0.0576/GB. The same pooling cuts the other way: because the migration shares a bucket with the account's ordinary egress, a heavy month elsewhere can pull a migration's marginal bytes into a cheaper band, and a quiet month can leave them in the expensive one."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 117 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>The <span>Egress Asymmetry</span></h1>
+        <p>Moving 100 TB out of a cloud costs $7,791. Moving it in costs nothing — and neither number is the largest line on the invoice</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-10-11 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 15 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ol style="margin:0; padding-left:20px; font-size:0.9rem; line-height:2.2; color:var(--text-body); columns:2; column-gap:24px;">
+            <li><a href="#direction" style="color:var(--accent); text-decoration:none;">The Direction Is the Price</a></li>
+            <li><a href="#paths" style="color:var(--accent); text-decoration:none;">Six Paths, One Dataset</a></li>
+            <li><a href="#tier" style="color:var(--accent); text-decoration:none;">The Rate on the Page Is Not Your Rate</a></li>
+            <li><a href="#dualwrite" style="color:var(--accent); text-decoration:none;">The Bill That Arrives in Two Invoices</a></li>
+            <li><a href="#downtime" style="color:var(--accent); text-decoration:none;">The Largest Line Nobody Models</a></li>
+            <li><a href="#cliff" style="color:var(--accent); text-decoration:none;">The Integer Cliff</a></li>
+            <li><a href="#plan" style="color:var(--accent); text-decoration:none;">A Five-Number Plan</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ol>
+    </div>
+
+    <section class="seo-section">
+        <p>Ask what it costs to move a hundred terabytes and you will get a bandwidth answer. Ask what the migration actually cost and you will get an invoice with almost nothing in common with it. The two numbers diverge for a reason that has nothing to do with network engineering: a migration is priced by the <em>direction</em> the bytes travel, and most cost models do not have a direction in them at all.</p>
+        <p>The asymmetry is easy to state and hard to believe. Moving 100 TB out of AWS over the public internet bills <strong>$7,791</strong>. Moving the same 100 TB <em>into</em> AWS bills <strong>$0</strong>. Not a discount, not a credit, not a promotional rate — the published list price for inbound transfer is zero at every location on every major provider. The most expensive line in a migration is frequently the one that exists only because you chose to leave.</p>
+        <p>That single fact reshapes the rest of the model. If the transfer has no price, then the transfer cannot be the thing worth optimising, and the bill has to be coming from somewhere else. It is: a duplicate copy that exists for as long as both systems run, and an outage that is priced by your business rather than by your provider. Between them they are usually more than three-quarters of the total.</p>
+        <p>This is the written companion to the <a href="/storage-migration-tco">Storage Migration TCO calculator</a>, which prices all six transfer paths against an identical dataset and keeps the dual-write and downtime lines visible. What follows is the part a transfer-path comparison hides: why the tier makes the headline rate fictional, why the dual-write period bills twice, why the largest line is the one no vendor calculator models, and the arithmetic cliff that makes 101 TB more expensive per byte than 100.</p>
+    </section>
+
+    <section class="seo-section" id="direction">
+        <h2>The Direction Is the Price</h2>
+        <p>Cloud transfer pricing is a one-way tariff. Inbound is free; outbound is metered, tiered, and pooled across the account. The technical justification is thin — a byte arriving and a byte leaving cost roughly the same to move across a provider's backbone — and the commercial logic is straightforward. Ingress is customer acquisition. Egress is one of the costs of leaving, and leaving is the thing a provider is least motivated to make cheap.</p>
+        <p>Put the two directions side by side on the same 100 TB and the tariff stops looking like a network charge:</p>
+        <table class="brief-table">
+            <thead><tr><th>Direction</th><th>Published rate</th><th class="num">Bill for 100 TB</th></tr></thead>
+            <tbody>
+                <tr class="hi"><td>Outbound — cloud to internet</td><td>Tiered, $0.09 → $0.05/GB</td><td class="num">$7,791</td></tr>
+                <tr><td>Inbound — on-prem to cloud</td><td>$0.00/GB at all locations</td><td class="num">$0</td></tr>
+            </tbody>
+        </table>
+        <p>Nothing about the second row is a technical accident. It is the price a provider is willing to pay to win the workload, and it is refunded in full the first time the workload wants to leave.</p>
+        <p>This also explains a pattern that otherwise looks like carelessness: migration cost calculators published by cloud providers almost always price one path — theirs — and the path they price is usually the one that ends with data inside their own region. A calculator that prices all six paths against the same dataset is a different kind of tool, because it makes the asymmetry visible as a line item rather than a footnote.</p>
+        <div class="pull">The question is not "how fast can we move 100 TB". It is "which direction is this 100 TB travelling, and is the expensive direction avoidable" — and that question is answered before any bandwidth is provisioned.</div>
+    </section>
+
+    <section class="seo-section" id="paths">
+        <h2>Six Paths, One Dataset</h2>
+        <p>Take a hundred terabytes, a 1% daily change rate, and a fourteen-day dual-write period. The dataset is identical in every row below; only the route changes.</p>
+        <table class="brief-table">
+            <thead><tr><th>Transfer path</th><th>Billing basis</th><th class="num">100 TB + 14 TB delta</th></tr></thead>
+            <tbody>
+                <tr><td>Same-region (cloud → cloud)</td><td>No transfer charge between these services</td><td class="num">$0</td></tr>
+                <tr><td>Inbound (on-prem → cloud)</td><td>$0.00/GB ingress</td><td class="num">$0</td></tr>
+                <tr><td>Cross-region (cloud → cloud)</td><td>$0.02/GB inter-region</td><td class="num">$2,280</td></tr>
+                <tr><td>Direct Connect</td><td>$0.02/GB + $0.30 per port-hour</td><td class="num">$2,520</td></tr>
+                <tr><td>Physical shipment (Snowball Edge)</td><td>$1,800 job + shipping + delta egress</td><td class="num">$3,331</td></tr>
+                <tr class="bad"><td>Internet egress</td><td>Tiered $0.09 → $0.085 → $0.07 → $0.05 per GB</td><td class="num">$8,771</td></tr>
+            </tbody>
+        </table>
+        <p>The gap between the top and bottom of that table is not a proportional difference; it is a category change. The internet path costs <strong>3.5&times;</strong> what a Direct Connect port costs for the same bytes, and the two paths at the top cost nothing at all. Within one provider's price list, the same 100 TB has four different prices depending on where it is going.</p>
+        <p>Two of those rows deserve a note, because they are the ones people skip.</p>
+        <h3>Direct Connect is not just a cheaper rate</h3>
+        <p>A 1 Gbps dedicated port is billed at $0.30 per hour whether or not it is moving anything, and the data itself at $0.02/GB. On 100 TB the bytes are $2,000 at that rate and the port adds roughly 800 billed hours — about $240. Add the 14 TB of delta, and the line lands near $2,520 against $8,771 on the internet path. That is a 71% reduction, and it comes entirely from the rate, not from the port.</p>
+        <p>The port has a property worth understanding before it is treated as free: it is billed by the hour and there is no minimum commitment, but <em>provisioning</em> a physical port takes two to twelve weeks, and nobody tears one down the day a migration ends. Teams that open a port for a six-week migration usually keep it, which means the correct comparison is not "800 hours" but "the months we are actually going to pay for". Even so, a month of 1 Gbps port is $219 against $5,791 of egress saved on 100 TB, so the port is rarely the deciding factor. It is the rate that decides.</p>
+        <h3>Physical shipment is cheap per byte and expensive in weeks</h3>
+        <p>A device in a van still has to be caught up by a wire afterwards, and the dual-write period runs the whole time it is away. That is why the Snowball row lands above the Direct Connect row despite a lower headline transfer cost — a point worth its own section, below.</p>
+    </section>
+
+    <section class="seo-section" id="tier">
+        <h2>The Rate on the Page Is Not Your Rate</h2>
+        <p>Every AWS pricing page quotes egress at $0.09/GB. Almost nobody pays $0.09/GB on a migration, because the tiers are <strong>cumulative across the entire account for the month</strong> — a 100 TB transfer walks up through every band on its way to the top.</p>
+        <table class="brief-table">
+            <thead><tr><th>Cumulative monthly egress</th><th class="num">Marginal rate</th><th class="num">Total bill</th><th class="num">Effective $/GB</th></tr></thead>
+            <tbody>
+                <tr><td>1 TB</td><td class="num">$0.090</td><td class="num">$81</td><td class="num">$0.0810</td></tr>
+                <tr><td>10 TB</td><td class="num">$0.085</td><td class="num">$891</td><td class="num">$0.0891</td></tr>
+                <tr><td>50 TB</td><td class="num">$0.085</td><td class="num">$4,291</td><td class="num">$0.0858</td></tr>
+                <tr class="hi"><td>100 TB</td><td class="num">$0.070</td><td class="num">$7,791</td><td class="num">$0.0779</td></tr>
+                <tr><td>150 TB</td><td class="num">$0.070</td><td class="num">$11,291</td><td class="num">$0.0753</td></tr>
+                <tr><td>500 TB</td><td class="num">$0.050</td><td class="num">$28,791</td><td class="num">$0.0576</td></tr>
+            </tbody>
+        </table>
+        <p>Read the last column, not the first. The effective rate falls from $0.0810/GB at one terabyte to $0.0576/GB at five hundred, and it does so <em>within</em> a single month's billing period. Two consequences follow, and they point in opposite directions.</p>
+        <p>The first is that a large migration is cheaper per byte than a small one, which runs against the intuition that scale grows cost. The second, and the more interesting one, is that <strong>the migration does not get its own bill</strong>. It is pooled with the account's ordinary egress. A month in which something else is already pushing traffic out will drag the migration's marginal bytes into a cheaper band; a quiet month will leave them stranded in the expensive one. Two teams running byte-identical migrations in the same region can pay different amounts for them, and neither is doing anything wrong.</p>
+        <div class="pull">A migration's effective egress rate is a property of the account's month, not of the migration. Budgeting from the headline rate overstates a large move and understates a small one.</div>
+        <p>There is a second-order effect worth flagging for anyone considering a rate-reduction strategy. Pushing total account egress past 150 TB drops the marginal rate to $0.05/GB — marginally cheaper than a Direct Connect port's $0.02/GB only after the port is added, and then only on the bytes above the threshold. Consolidating traffic to reach a tier is a real technique, but it optimises a line that is, as the next two sections show, rarely the largest one.</p>
+    </section>
+
+    <section class="seo-section" id="dualwrite">
+        <h2>The Bill That Arrives in Two Invoices</h2>
+        <p>Very few migrations run as a single copy. The safe and standard pattern keeps the old system authoritative while the new one catches up, which means both copies exist simultaneously and every write is forwarded. That period — the dual-write window — has a cost with two halves, and neither half is labelled "dual-write" on any invoice.</p>
+        <p>The first half is <strong>storage</strong>: a full second copy exists for as long as the window is open. The second half is <strong>traffic</strong>: every day's changes have to be moved, on top of the baseline transfer. Both scale linearly with the length of the window, which makes the window a control that very few migration plans treat as one.</p>
+        <table class="brief-table">
+            <thead><tr><th>Dual-write period</th><th class="num">Delta transported</th><th class="num">Transfer bill</th><th class="num">Extra storage</th><th class="num">Combined</th></tr></thead>
+            <tbody>
+                <tr><td>0 days</td><td class="num">0 GB</td><td class="num">$7,791</td><td class="num">$0</td><td class="num">$7,791</td></tr>
+                <tr><td>7 days</td><td class="num">7,000 GB</td><td class="num">$8,281</td><td class="num">$537</td><td class="num">$8,818</td></tr>
+                <tr class="hi"><td>14 days</td><td class="num">14,000 GB</td><td class="num">$8,771</td><td class="num">$1,073</td><td class="num">$9,844</td></tr>
+                <tr><td>30 days</td><td class="num">30,000 GB</td><td class="num">$9,891</td><td class="num">$2,300</td><td class="num">$12,191</td></tr>
+                <tr><td>60 days</td><td class="num">60,000 GB</td><td class="num">$11,791</td><td class="num">$4,600</td><td class="num">$16,391</td></tr>
+            </tbody>
+        </table>
+        <p>Doubling the window from 30 to 60 days adds $4,200 to a migration whose entire transfer line is under $12,000. The reason this line escapes scrutiny is not that it is hidden but that it is <em>decomposed</em>: it arrives as a slightly larger storage bill and a slightly larger egress bill, and both look unremarkable in isolation. Nothing on the invoice says "this is the dual-write period"; there is only a storage line that grew and a transfer line that grew, in a month when a migration happened to be running.</p>
+        <p>Which is why the window belongs in the cost model rather than in the project plan. It is a duration, and durations are cheap to change before the migration starts and expensive to change after it does.</p>
+    </section>
+
+    <section class="seo-section" id="downtime">
+        <h2>The Largest Line Nobody Models</h2>
+        <p>Here is the number that decides most migrations and appears in almost none of their cost models.</p>
+        <p>The transfer path can be chosen and the dual-write window can be tuned. Downtime is a property of the business, and on any migration with revenue attached it dominates everything else. The table below holds the 100 TB workload and the 14-day dual-write period fixed and varies only the length and the cost of the cutover outage:</p>
+        <table class="brief-table">
+            <thead><tr><th>Cutover outage</th><th class="num">Loss per hour</th><th class="num">Downtime cost</th><th class="num">Share of TCO</th></tr></thead>
+            <tbody>
+                <tr><td>4 hours</td><td class="num">$500</td><td class="num">$2,000</td><td class="num">16.9%</td></tr>
+                <tr><td>8 hours</td><td class="num">$500</td><td class="num">$4,000</td><td class="num">28.9%</td></tr>
+                <tr><td>8 hours</td><td class="num">$2,000</td><td class="num">$16,000</td><td class="num">61.9%</td></tr>
+                <tr class="bad"><td>8 hours</td><td class="num">$5,000</td><td class="num">$40,000</td><td class="num">80.2%</td></tr>
+                <tr><td>24 hours</td><td class="num">$5,000</td><td class="num">$120,000</td><td class="num">92.4%</td></tr>
+                <tr><td>8 hours</td><td class="num">$50,000</td><td class="num">$400,000</td><td class="num">97.6%</td></tr>
+            </tbody>
+        </table>
+        <p>At $5,000 per hour, an eight-hour cutover is $40,000 — <strong>4.6&times; the entire transfer bill</strong> and 80.2% of a $49,844 total cost of ownership. The transfer line, the thing with six paths and a tier ladder and a port-hour discussion, is under a fifth of the total. The outage is four fifths, and it appears in no cloud provider's migration calculator.</p>
+        <p>Two structural points follow from that table, and they are the reason it is worth building the whole model around this line rather than around the network.</p>
+        <h3>The transfer path is the smallest lever in the migration</h3>
+        <p>Choosing the worst path over the best costs $8,771. Choosing an eight-hour cutover over a four-hour one costs $20,000 at a $5,000/hour rate. Halving the outage does more for the bill than perfecting the transfer, and it does more for the customer experience at the same time. Teams that spend a sprint comparing Direct Connect against physical shipment and a meeting comparing Saturday night against Sunday night have the priorities exactly inverted.</p>
+        <h3>The correct trade is usually longer dual-write against shorter outage</h3>
+        <p>Extending the dual-write window by two weeks costs roughly $2,350 on a 100 TB migration — the 30-day column against the 14-day one. If that extra window is what allows the cutover to shrink from eight hours to two, the trade closes with an enormous margin at any realistic loss rate, and it keeps closing until the loss rate falls below roughly $400 per hour. This is the trade the standard migration plan never surfaces, because the two sides of it live in different documents: the dual-write window in the project schedule, the outage cost in the finance team's head.</p>
+        <div class="pull">A migration cost model that prices the network and assumes the outage is not a cost model. It is a network plan with a budget attached to the least expensive part of the problem.</div>
+    </section>
+
+    <section class="seo-section" id="cliff">
+        <h2>The Integer Cliff</h2>
+        <p>Physical shipment is the classic answer to "the link is too slow", and at the top of the range it is genuinely the cheapest per byte available. It is also priced in steps rather than in rates, and the steps are not where people expect them.</p>
+        <p>An AWS Snowball Edge Storage Optimized job is a flat <strong>$1,800 for up to 100 TB of load</strong>, and <strong>$3,200 for 101–210 TB</strong>. Fifteen on-site days are included; further days bill at $250 each; round-trip shipping is extra; ingest into S3 is free.</p>
+        <table class="brief-table">
+            <thead><tr><th>Load on the device</th><th class="num">Job fee</th><th class="num">Effective $/GB</th></tr></thead>
+            <tbody>
+                <tr><td>100 TB</td><td class="num">$1,800</td><td class="num">$0.018</td></tr>
+                <tr class="bad"><td>101 TB</td><td class="num">$3,200</td><td class="num">$0.032</td></tr>
+                <tr><td>210 TB</td><td class="num">$3,200</td><td class="num">$0.015</td></tr>
+            </tbody>
+        </table>
+        <p>One terabyte past the threshold raises the job fee by <strong>$1,400</strong> — a 78% increase for a 1% volume increase — and it makes the marginal terabyte the most expensive one on the device. The block at 210 TB then amortises the same $3,200 down to $0.015/GB, cheaper per byte than the tier below it. Neither step is signposted, and both are reachable without anyone making a decision.</p>
+        <p>Three structural caveats keep physical shipment from being an automatic win, and together they explain why it lands <em>above</em> Direct Connect in the six-path table:</p>
+        <ul>
+            <li><strong>The device stretches the dual-write window.</strong> It is on site for days and in transit for weeks, and both systems run the whole time. The window that was two weeks by plan becomes four or five, and the two billing lines that scale with it grow accordingly.</li>
+            <li><strong>The delta still travels by wire.</strong> A device cannot carry changes that happen while it is in a van. Whatever the source writes during transit has to be synced over the network afterwards, and at 14 TB of change that is about $1,231 of egress on its own — enough to erase the difference between the job fee and a Direct Connect transfer.</li>
+            <li><strong>The job fee is not the bill.</strong> Add round-trip shipping at carrier rates, the on-site day overage, and the destination storage for every ingested byte, and the flat fee stops being flat.</li>
+        </ul>
+        <p>Place them together and the ranking is counter-intuitive in a useful way. At 100 TB on a 1 Gbps link, a Direct Connect port costs about $2,520 and finishes inside 800 billed hours; a Snowball job costs about $3,331 and takes weeks, during which the dual-write period and its storage bill keep running. Physical shipment wins decisively when the link is slow and the volume is large — the case it was designed for — and loses when the link is fast enough to finish before the truck does.</p>
+        <p>There is also a fifth path worth stating explicitly, because it removes the entire question: if source and destination share a region, or if the direction is <em>into</em> a cloud provider, the transfer line is zero. Before optimising a transfer path, confirm the transfer has a price at all. Half of all migration cost models are solving a problem the architecture already deleted.</p>
+    </section>
+
+    <section class="seo-section" id="plan">
+        <h2>A Five-Number Plan</h2>
+        <p>Five numbers determine the total cost of a storage migration. Three of them are usually collected; two are usually guessed.</p>
+        <ol>
+            <li><strong>Direction, then volume.</strong> Outbound is metered, inbound is free, same-region is free. Establish which one applies before anything else, because it decides whether there is a transfer cost to optimise at all.</li>
+            <li><strong>The effective rate, not the published one.</strong> Egress is cumulative per account per month. On 100 TB the effective rate is $0.0779/GB rather than $0.09, and it moves with whatever else the account is doing that month.</li>
+            <li><strong>The dual-write window, as a number of days.</strong> Not "until it's done" — a date. Every week adds delta traffic and a duplicate copy, and on a 100 TB migration each week is worth roughly $500 of storage plus its share of transfer.</li>
+            <li><strong>An hour of downtime, as a currency figure.</strong> Even a coarse estimate changes the plan. This is the number that decides whether the migration is a network exercise or a scheduling exercise, and it is the number most often left blank.</li>
+            <li><strong>The device threshold, if shipping physically.</strong> Check where the volume falls relative to 100 TB and relative to the egress tiers. Neither boundary is linear, and both are easy to cross without noticing.</li>
+        </ol>
+        <p>Collect those five and the answer is a three-line budget with a dominant term, which is a far more useful artifact than a network throughput estimate. The dominant term will almost always be the outage — and knowing that in advance is what turns a migration from an infrastructure project into a business decision with a schedule attached.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>Frequently Asked Questions</h2>
+        <h3>Why is moving data into the cloud free while moving it out is not?</h3>
+        <p>Inbound transfer is $0.00/GB on every major provider and outbound is metered. The asymmetry is structural rather than technical: ingress wins a workload and egress is a cost of leaving it, so the difference is written into the price list rather than into the network. On AWS, 100 TB out over the public internet bills $7,791 and the same 100 TB in bills nothing. Regulators have taken notice — the EU Data Act's cloud-switching provisions require switching charges to be phased out, and the UK competition authority examined egress fees in its cloud market study — but a model built today has to price the tariffs that exist today.</p>
+        <h3>What actually costs the most in a storage migration?</h3>
+        <p>The outage, on nearly every migration with a business attached. On 100 TB with a 14-day dual-write period, the internet-egress transfer bills $8,771 and the duplicate copy adds $1,073, while an eight-hour cutover at $5,000 per hour of business loss is $40,000 — 80.2% of a $49,844 total and 4.6 times the entire transfer bill. Teams spend weeks choosing a transfer path and one meeting choosing the cutover window.</p>
+        <h3>Is shipping a physical device cheaper than transferring over the network?</h3>
+        <p>Cheaper per byte on a slow link, beaten by a Direct Connect port on a fast one. A Snowball Edge Storage Optimized job is $1,800 for up to 100 TB of load and $3,200 for 101–210 TB, plus round-trip shipping and network egress for every byte that changes while the device is in transit. At 100 TB that lands near $3,331 against $2,520 for a 1 Gbps port, because the port finishes in roughly 800 billed hours while the device is still in a van. The job fee also steps by $1,400 the moment the load passes 100 TB.</p>
+        <h3>Does the headline egress rate apply to a large migration?</h3>
+        <p>Almost never. AWS egress tiers are cumulative across the whole account for the month, so a 100 TB transfer walks through the $0.09, $0.085 and $0.07 bands and bills $7,791 — an effective $0.0779/GB rather than the $0.09 on the pricing page. Push 500 TB and the effective rate falls to $0.0576/GB. Pooling cuts the other way too: a heavy month elsewhere in the account can pull a migration's marginal bytes into a cheaper band, and a quiet month can leave them in the expensive one.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;" id="method">
+        <h2>Methodology &amp; Disclosure</h2>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">All figures use published on-demand list prices in USD for US East (N. Virginia), tax excluded, with volumes decimal (1 TB = 1,000 GB). Internet egress is charged on the cumulative monthly volume: the first 100 GB free, then $0.09/GB to 10 TB, $0.085/GB to 50 TB, $0.07/GB to 150 TB, and $0.05/GB above. Direct Connect uses $0.02/GB data transfer out to a US Direct Connect location plus the port-hour rate matching the link capacity — $0.30/hr at 1 Gbps, $2.25/hr at 10 Gbps, $22.50/hr at 100 Gbps — with port hours billed for the transfer period. <code>Transfer days = (GB &times; 8) &divide; (Mbps &times; 24)</code>, rounded up to whole port hours. Cross-region is modelled at $0.02/GB and same-region and inbound at $0.00. Snowball Edge Storage Optimized (210 TB) is $1,800 per job up to 100 TB of load and $3,200 for 101–210 TB, with 15 included on-site days at $250 per extra day and shipping modelled at $300.</p>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">The dual-write period holds a source and a target copy at once. Duplicate storage is priced at S3 Standard $0.023/GB-month prorated over a 30-day month; delta traffic is priced on the same path as the primary transfer, except for physical shipment, where the delta necessarily runs over the network and is billed as egress. Downtime is a user-supplied business-loss rate multiplied by the outage duration — it is not a vendor price and no provider publishes one. The model excludes egress charged by a non-AWS source provider, per-request charges ($0.005 per 1,000 PUTs, $0.0004 per 1,000 GETs), DataSync or Storage Gateway service hours, engineering time, source-side early-deletion or minimum-duration penalties, retrieval fees, bundled egress allowances, tax, credits, private pricing agreements, and EU Data Act migration waivers. Estimates are model outputs from list prices, not quotations; vendor tariffs change without notice and should be re-checked before committing spend. This site takes no sponsorship, no affiliate commission and no vendor payment of any kind; the vendors named here have no relationship with jslet and did not review this briefing.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;">
+        <h2>References &amp; Further Reading</h2>
+        <ol style="font-size:0.85rem; line-height:1.9; color:var(--text-body);" id="references">
+            <li>Amazon Web Services. <em>Amazon EC2 On-Demand Pricing — Data Transfer</em> — the internet egress tier ladder ($0.09 / $0.085 / $0.07 / $0.05 per GB), the 100 GB monthly free allowance, and the statement that tiers apply to aggregate account volume. <em>aws.amazon.com</em></li>
+            <li>Amazon Web Services. <em>AWS Direct Connect Pricing</em> — dedicated and hosted port-hour rates by capacity, data-transfer-out rates by source region and Direct Connect location, and the $0.00/GB data-transfer-in rate at all locations. <em>aws.amazon.com</em></li>
+            <li>Amazon Web Services. <em>AWS Snowball Pricing</em> — service fee per job by device and load band, the 15 included on-site days, the per-day extension fee, and free data transfer in to S3. <em>aws.amazon.com</em></li>
+            <li>Amazon Web Services. <em>Amazon S3 Pricing</em> — Standard storage rate per GB-month and per-request charges. <em>aws.amazon.com</em></li>
+            <li>European Union. <em>Regulation (EU) 2023/2854 (Data Act)</em> — the cloud-switching provisions requiring providers to remove switching charges over a defined transition period, and the tariff-transparency requirements that make the coming change visible in published price lists. <em>eur-lex.europa.eu</em></li>
+            <li>Related: <a href="/storage-migration-tco">Storage Migration TCO Calculator</a> &#183; <a href="/data-migration-time">Data Migration Time Estimator</a> &#183; <a href="/terabytes-egress-to-aws-cost">AWS Egress Cost Estimator</a> &#183; <a href="/cloud-storage-cost">Cloud Storage Cost</a> &#183; <a href="/aws-cross-az-data-transfer-cost">Cross-AZ Data Transfer Cost</a> &#183; <a href="/data-migration-time-real">The Churn Ceiling</a> &#183; <a href="/backup-cost">Backup Strategy Cost</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Fstorage-migration-tco-real&amp;text=The%20Egress%20Asymmetry%3A%20why%20moving%20100%20TB%20out%20costs%20%247%2C791%20and%20in%20costs%20nothing" target="_blank" rel="noopener" aria-label="Share on X">&#120143;</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Fstorage-migration-tco-real" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/storage-migration-tco">&#129518; Storage Migration TCO Calculator &rarr;</a>
+            <a href="/data-migration-time">&#129518; Data Migration Time Estimator &rarr;</a>
+            <a href="/terabytes-egress-to-aws-cost">&#129518; AWS Egress Cost Estimator &rarr;</a>
+            <a href="/cloud-storage-cost">&#129518; Cloud Storage Cost &rarr;</a>
+            <a href="/aws-cross-az-data-transfer-cost">&#129518; Cross-AZ Data Transfer Cost &rarr;</a>
+            <a href="/backup-cost">&#129518; Backup Strategy Cost &rarr;</a>
+            <a href="/data-migration-time-real">&#128240; The Churn Ceiling: Why Your Data Migration Never Finishes &rarr;</a>
+            <a href="/network-economics">&#127760; All Network &amp; Bandwidth Tools &rarr;</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Cost-Model Disclaimer:</strong> Figures are model outputs from published vendor list prices, not quotations or measurements of any specific migration. Real bills vary with the account's aggregate monthly transfer, actual port provisioning and retention, delta volume and object count, source-side charges, and negotiated pricing. Validate against a pilot migration and a current price check before committing budget.</p>
+        </div>
+    </section>
+
+
+<footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/network-economics">Network &amp; Bandwidth</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>

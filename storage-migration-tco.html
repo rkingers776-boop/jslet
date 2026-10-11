@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Storage Migration TCO Calculator — Egress, Dual-Write &amp; Downtime</title>
+    <meta name="description" content="100 TB out of AWS costs $7,791 in egress; the same data moved in is free. Price all six transfer paths, the dual-write period, and downtime into one TCO. Free.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .tco-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) { .tco-input-row { grid-template-columns: 1fr; } }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .tco-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 22px; }
+        @media (max-width: 640px) { .tco-grid { grid-template-columns: 1fr 1fr; } }
+        .tco-tile { text-align: center; padding: 14px 10px; background: var(--bg-input); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+        .tco-tile .big { font-size: 1.28rem; font-weight: 700; color: var(--accent); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+        .tco-tile.total { border-color: var(--success); background: var(--success-bg); }
+        .tco-tile.total .big { color: var(--success); }
+        .tco-tile .tag { font-size: 0.66rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin-top: 3px; }
+        .stack-bar { display: flex; height: 34px; border-radius: var(--radius-sm); overflow: hidden; margin: 6px 0 12px; border: 1px solid var(--border); }
+        .stack-seg { display: flex; align-items: center; justify-content: center; font-size: 0.68rem; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; }
+        .stack-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.76rem; color: var(--text-secondary); margin-bottom: 20px; }
+        .stack-legend span b { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; color: var(--text-heading); }
+        .path-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 8px; }
+        .path-table th { background: var(--bg-input); }
+        .path-table tr.best td { background: var(--success-bg); font-weight: 700; }
+        .path-table tr.worst td { background: #fef2f2; font-weight: 700; }
+        .mini-track { height: 7px; border-radius: 4px; background: var(--border); overflow: hidden; margin-top: 3px; }
+        .mini-fill { height: 100%; border-radius: 4px; background: var(--accent); }
+        .callout { border: 1px solid var(--border); border-left: 3px solid var(--gold); border-radius: var(--radius-sm); background: var(--bg-card); padding: 14px 18px; margin: 16px 0; font-size: 0.88rem; line-height: 1.65; color: var(--text-body); }
+        .callout strong { color: var(--text-heading); }
+        .step-list { padding-left: 20px; font-size: 0.9rem; color: var(--text-body); line-height: 1.9; }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Storage Migration TCO",
+      "description": "Total cost of ownership for a storage migration: six transfer paths, the dual-write period, and business downtime priced together into one figure.",
+      "url": "https://www.jslet.com/storage-migration-tco",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+    <link rel="canonical" href="https://www.jslet.com/storage-migration-tco">
+    <meta property="og:title" content="Storage Migration TCO Calculator — Egress, Dual-Write &amp; Downtime">
+    <meta property="og:description" content="Egress, Direct Connect, or physical shipping — plus the dual-write period and business downtime — priced across six transfer paths into one migration TCO.">
+    <meta property="og:url" content="https://www.jslet.com/storage-migration-tco">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Storage Migration TCO Calculator — Egress, Dual-Write &amp; Downtime">
+    <meta name="twitter:description" content="Six transfer paths, the dual-write period, and downtime priced into one migration TCO. Moving data out of the cloud is billed; moving it in is not.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why does moving data out of the cloud cost money but moving it in does not?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Providers price inbound transfer at $0.00/GB and outbound transfer on a tiered scale, because ingress is how they win a workload and egress is how they keep it. AWS internet egress is billed cumulatively per account per month: the first 100 GB are free, then $0.09/GB to 10 TB, $0.085/GB to 50 TB, $0.07/GB to 150 TB, and $0.05/GB above that. A 100 TB move out of AWS therefore bills $7,791 while the same 100 TB moved in bills nothing. This calculator prices all six paths side by side so the asymmetry is visible before the migration is scheduled."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is it cheaper to ship a physical drive than to transfer over the internet?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Only on cost, and only above a threshold. An AWS Snowball Edge Storage Optimized job costs a flat $1,800 for up to 100 TB of load, rising to $3,200 once you load 101 TB, plus round-trip shipping and network egress for whatever changes during the transit window. At 100 TB that is roughly $2,100 against $7,791 of internet egress. But the device is in transit and on site for weeks, the dual-write period extends with it, and any incremental sync still runs over the network — so a Direct Connect port can beat it outright once the port is counted. The calculator shows both lines."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is usually the most expensive part of a storage migration?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Downtime, by a wide margin. On a 100 TB migration with 14 days of dual-write, the transfer bill is around $8,000 in the worst case and the dual-write storage is around $1,000, but eight hours of cutover at $5,000 per hour of business loss is $40,000 — 80% of the total. Teams spend weeks optimising the transfer path and a meeting choosing the cutover window. The calculator keeps all three lines visible so the engineering effort lands on the line that actually dominates."
+      }
+    }
+  ]
+}
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 117 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>Storage Migration <span>TCO Calculator</span></h1>
+            <p>Moving 100 TB out of AWS over the internet bills $7,791. Moving the same 100 TB in bills nothing. Between those two numbers sit four more paths — Direct Connect, cross-region, same-region, and a physical shipment. Price the transfer, the dual-write period, and the business downtime into one total cost of ownership before you book the window.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📦 Migration Cost Profile</h3>
+                <p class="card-desc">Choose the data volume, the transfer path, and the business parameters. The engine prices the primary transfer, the extra storage and sync traffic of the dual-write period, and the cost of the cutover outage — then ranks all six paths on the same workload.</p>
+                <div class="tco-input-row">
+                    <div class="input-group">
+                        <label for="data-tb">Total Data Volume (TB)</label>
+                        <input type="number" class="unit-input" id="data-tb" value="100" step="any" min="0.1">
+                    </div>
+                    <div class="input-group">
+                        <label for="path">Transfer Path</label>
+                        <select class="unit-input" id="path">
+                            <option value="internet" selected>Internet egress (cloud → internet, billed)</option>
+                            <option value="dx">Direct Connect (DTO + port hours)</option>
+                            <option value="cross-region">Cross-region (cloud → cloud)</option>
+                            <option value="same-region">Same-region (cloud → cloud)</option>
+                            <option value="onprem-in">Inbound (on-prem → cloud, free)</option>
+                            <option value="snowball">Physical shipment (Snowball Edge)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="tco-input-row">
+                    <div class="input-group">
+                        <label for="daily-change-pct">Daily Data Change Rate (%)</label>
+                        <input type="number" class="unit-input" id="daily-change-pct" value="1" step="any" min="0" max="100">
+                    </div>
+                    <div class="input-group">
+                        <label for="dual-write-days">Dual-Write Period (days)</label>
+                        <input type="number" class="unit-input" id="dual-write-days" value="14" step="any" min="0" max="365">
+                    </div>
+                </div>
+                <div class="tco-input-row">
+                    <div class="input-group">
+                        <label for="bandwidth-mbps">Link Bandwidth (Mbps)</label>
+                        <input type="number" class="unit-input" id="bandwidth-mbps" value="1000" step="any" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="storage-rate">Target Storage Rate ($/GB-month)</label>
+                        <input type="number" class="unit-input" id="storage-rate" value="0.023" step="any" min="0">
+                    </div>
+                </div>
+                <div class="tco-input-row">
+                    <div class="input-group">
+                        <label for="downtime-hours">Cutover Downtime (hours)</label>
+                        <input type="number" class="unit-input" id="downtime-hours" value="8" step="any" min="0" max="720">
+                    </div>
+                    <div class="input-group">
+                        <label for="downtime-rate">Business Loss per Downtime Hour ($)</label>
+                        <input type="number" class="unit-input" id="downtime-rate" value="5000" step="any" min="0">
+                    </div>
+                </div>
+                <button class="btn-calc">Run Migration TCO Analysis</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>💰 Total Cost of Ownership</h3>
+                <div class="tco-grid" id="tco-summary"></div>
+                <div class="stack-bar" id="tco-stack"></div>
+                <div class="stack-legend" id="tco-legend"></div>
+                <p class="card-desc" id="results-params"></p>
+
+                <h3 style="margin-top: 22px;">🧭 Six Paths, Same Workload</h3>
+                <p class="card-desc">Every row prices the identical dataset through a different route, with the same dual-write window and the same cutover outage. Transfer includes the delta that moves during the dual-write period; the storage line is the duplicate copy.</p>
+                <div class="table-scroll">
+                    <table class="path-table" id="path-table"></table>
+                </div>
+
+                <div id="insight-block"></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>Why the Migration Bill Has Almost Nothing to Do With Bandwidth</h2>
+            <p>Ask an engineer what a 100 TB migration costs and the answer is usually a bandwidth calculation — how many days at how many Mbps. Ask a finance team and the answer is a single line item on the invoice. The two answers rarely meet, because the dominant cost of a migration is neither the bytes nor the link: it is the <strong>direction</strong> the bytes travel, the length of the <strong>dual-write window</strong>, and whether the business can tolerate being <strong>offline</strong> while the last delta lands.</p>
+            <p>This calculator separates those three lines. Transfer is a function of the path you choose. Dual-write is a function of how long both systems run at once. Downtime is a function of your business, and it is usually the largest number in the model.</p>
+
+            <h3>Six paths, one dataset, four orders of magnitude of difference</h3>
+            <p>Take 100 TB with 1% daily change and a 14-day dual-write period. The dataset is identical in every row; only the route changes.</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Transfer path</th><th>Billing basis</th><th>100 TB + 14 TB delta</th></tr></thead>
+                <tbody>
+                    <tr><td>Same-region (cloud → cloud)</td><td>Free within a region for the services shown</td><td><strong>$0</strong></td></tr>
+                    <tr><td>Inbound (on-prem → cloud)</td><td>$0.00/GB ingress on every major provider</td><td><strong>$0</strong></td></tr>
+                    <tr><td>Cross-region (cloud → cloud)</td><td>$0.02/GB inter-region</td><td><strong>$2,280</strong></td></tr>
+                    <tr><td>Direct Connect</td><td>$0.02/GB + $0.30 per port-hour</td><td><strong>$2,520</strong></td></tr>
+                    <tr><td>Physical shipment (Snowball Edge)</td><td>$1,800 per job ≤100 TB + shipping + delta egress</td><td><strong>$3,331</strong></td></tr>
+                    <tr><td>Internet egress</td><td>Tiered $0.09 → $0.085 → $0.07 → $0.05 per GB</td><td><strong>$8,771</strong></td></tr>
+                </tbody>
+            </table>
+</div>
+            <p style="margin-top:12px;">The spread is not a rounding error. Moving the same 100 TB out of a cloud provider over the public internet costs <strong>3.5× more than a Direct Connect port</strong> and infinite times more than moving it in. That asymmetry is deliberate: ingress wins workloads, egress retains them.</p>
+
+            <h3>The tier is cumulative, so the label price is not your price</h3>
+            <p>Every AWS pricing page quotes egress at $0.09/GB, and almost nobody pays $0.09/GB on a migration. The tiers are <strong>cumulative across the whole account for the month</strong>, so a 100 TB transfer works through every band on its way up:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Cumulative monthly egress</th><th>Marginal rate</th><th>Total bill</th><th>Effective $/GB</th></tr></thead>
+                <tbody>
+                    <tr><td>1 TB</td><td>$0.09/GB</td><td>$81</td><td>$0.0810</td></tr>
+                    <tr><td>10 TB</td><td>$0.085/GB</td><td>$891</td><td>$0.0891</td></tr>
+                    <tr><td>50 TB</td><td>$0.085/GB</td><td>$4,291</td><td>$0.0858</td></tr>
+                    <tr><td>100 TB</td><td>$0.070/GB</td><td>$7,791</td><td>$0.0779</td></tr>
+                    <tr><td>150 TB</td><td>$0.070/GB</td><td>$11,291</td><td>$0.0753</td></tr>
+                    <tr><td>500 TB</td><td>$0.050/GB</td><td>$28,791</td><td>$0.0576</td></tr>
+                </tbody>
+            </table>
+</div>
+            <p style="margin-top:12px;">Two consequences follow. First, a migration that pushes total account egress past 150 TB drops the marginal rate to $0.05/GB — cheaper than a Direct Connect port's $0.02/GB only until you add the port. Second, and more importantly, <strong>the migration does not get its own bill</strong>: it is pooled with the account's ordinary egress, which means a busy month can quietly move your migration traffic into a cheaper band, and a quiet one can leave it stranded in the expensive tier.</p>
+
+            <h3>The dual-write period is a second bill nobody forecasts</h3>
+            <p>Very few migrations run as a single copy. The safe pattern keeps the old system authoritative while the new one catches up, which means both copies exist at once and every write has to be forwarded. That period has a cost that scales with its length:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Dual-write period</th><th>Delta transported</th><th>Transfer bill</th><th>Extra storage</th><th>Combined</th></tr></thead>
+                <tbody>
+                    <tr><td>0 days</td><td>0 GB</td><td>$7,791</td><td>$0</td><td>$7,791</td></tr>
+                    <tr><td>7 days</td><td>7,000 GB</td><td>$8,281</td><td>$537</td><td>$8,818</td></tr>
+                    <tr><td>14 days</td><td>14,000 GB</td><td>$8,771</td><td>$1,073</td><td>$9,844</td></tr>
+                    <tr><td>30 days</td><td>30,000 GB</td><td>$9,891</td><td>$2,300</td><td>$12,191</td></tr>
+                    <tr><td>60 days</td><td>60,000 GB</td><td>$11,791</td><td>$4,600</td><td>$16,391</td></tr>
+                </tbody>
+            </table>
+</div>
+            <p style="margin-top:12px;">Doubling the dual-write window from 30 to 60 days adds $4,200 to a migration whose transfer line is under $12,000. The line is easy to miss because it never appears as "dual-write" — it arrives as a slightly larger storage bill and a slightly larger egress bill, both of which look normal in isolation.</p>
+
+            <h3>Downtime is usually the largest line, and it is the one people round</h3>
+            <p>The transfer path can be chosen. The dual-write window can be tuned. Downtime is a property of the business, and on most migrations it dominates everything else:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Cutover outage</th><th>Business loss rate</th><th>Downtime cost</th><th>Share of the 100 TB TCO</th></tr></thead>
+                <tbody>
+                    <tr><td>4 hours</td><td>$500/hr</td><td>$2,000</td><td>16.9%</td></tr>
+                    <tr><td>8 hours</td><td>$500/hr</td><td>$4,000</td><td>28.9%</td></tr>
+                    <tr><td>8 hours</td><td>$2,000/hr</td><td>$16,000</td><td>61.9%</td></tr>
+                    <tr><td>8 hours</td><td>$5,000/hr</td><td>$40,000</td><td>80.2%</td></tr>
+                    <tr><td>24 hours</td><td>$5,000/hr</td><td>$120,000</td><td>92.4%</td></tr>
+                    <tr><td>8 hours</td><td>$50,000/hr</td><td>$400,000</td><td>97.6%</td></tr>
+                </tbody>
+            </table>
+</div>
+            <p style="margin-top:12px;">At $5,000 per hour, an eight-hour cutover is $40,000 — <strong>4.6× the entire transfer bill</strong> and 80.2% of a <strong>$49,844</strong> total cost of ownership. This is why the correct comparison is rarely "internet versus Direct Connect" and almost always "a longer dual-write period versus a longer outage". Buying two more weeks of dual-write to remove six hours of downtime is a trade that closes at almost any realistic loss rate — and it is a trade the transfer-path spreadsheet never surfaces, because it lives on a different slide.</p>
+
+            <h3>Physical shipment is not free, and it has a cliff</h3>
+            <p>Shipping a device is the classic answer to "the link is too slow", and it is genuinely cheap per byte at the top of the range. AWS prices the current Snowball Edge Storage Optimized device at a flat <strong>$1,800 per job for up to 100 TB of load</strong>, and <strong>$3,200 once the load passes 100 TB</strong> — a $1,400 step for one extra terabyte:</p>
+            <div class="table-scroll">
+<table>
+                <thead><tr><th>Load on device</th><th>Job fee</th><th>Effective $/GB</th></tr></thead>
+                <tbody>
+                    <tr><td>100 TB</td><td>$1,800</td><td>$0.018</td></tr>
+                    <tr><td>101 TB</td><td>$3,200</td><td>$0.032</td></tr>
+                    <tr><td>210 TB</td><td>$3,200</td><td>$0.015</td></tr>
+                </tbody>
+            </table>
+</div>
+            <p style="margin-top:12px;">Three caveats keep physical shipment from being an automatic win. The device is on site and in transit for weeks, which <strong>stretches the dual-write period</strong> and its two billing lines along with it. The job fee excludes round-trip shipping and excludes network egress for whatever changes while the device is in transit — the delta still has to be synced over a wire, and at 14 TB that is about $1,231 of egress on its own. And the ingest is free but the destination storage is not. On the numbers above, a Direct Connect port beats Snowball outright ($2,520 against $3,331) because the 1 Gbps transfer finishes inside the port's billing window while the device is still in a van.</p>
+            <p>A fifth path is worth stating plainly: if source and destination live in the <strong>same region</strong>, or if the direction is <strong>into</strong> a cloud provider, the transfer line is zero and the migration is priced entirely by dual-write and downtime. Before optimising a transfer path, confirm the transfer has a price at all.</p>
+
+            <h3>How to use this in a migration plan</h3>
+            <ol class="step-list">
+                <li><strong>Establish the direction first.</strong> Outbound is billed, inbound is not, same-region is free. Half of all migration cost models are solving a problem the architecture already removed.</li>
+                <li><strong>Price the path you actually have, not the one on the pricing page.</strong> The cumulative tier means the effective rate on 100 TB is $0.0779/GB, not $0.09/GB — and it depends on the rest of your account's egress that month.</li>
+                <li><strong>Choose the dual-write window as a cost decision.</strong> Every extra week adds delta traffic and a duplicate copy. Two weeks of dual-write buys a great deal of outage avoidance for roughly $1,000 on a 100 TB migration.</li>
+                <li><strong>Put a number on an hour of downtime.</strong> Even a rough figure changes the plan: at $5,000/hr the outage is 80% of the TCO, and the engineering effort belongs on shrinking the cutover, not the transfer.</li>
+                <li><strong>Re-price if the volume crosses 100 TB.</strong> The Snowball job fee steps up, and the egress tier moves down. Neither is linear, and both are easy to hit without noticing.</li>
+            </ol>
+            <p style="margin-top:16px;"><strong>Why this tool matters:</strong> cloud providers publish migration cost calculators for their own services, and they price one path — theirs. This calculator prices all six paths against the same dataset, and it keeps the two lines providers never quote together in one view: the length of the dual-write window and the cost of the outage.</p>
+        </section>
+
+        <!-- Related Tools -->
+        <!-- pricing-provenance v1 | 5 项口径：来源链接 / 区域 / 币种 / 更新日期 / 假设条件 -->
+        <section class="seo-section" id="pricing-basis">
+            <h2>Pricing Basis, Sources &amp; Assumptions</h2>
+            <p>Every rate on this page is a <strong>published vendor list price</strong> — no negotiated discounts, private pricing, or credit offsets. Totals are in <strong>USD</strong> and exclude tax. Rates were last checked against the sources below on <time datetime="2026-10-11">2026-10-11</time>.</p>
+            <table class="cost-table">
+                <thead><tr><th>Pricing input</th><th>Basis used on this page</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Region</strong></td><td>US East (N. Virginia) for AWS rates. The Direct Connect data-transfer-out rate is the US-mainland → US-mainland Direct Connect location figure; other regions publish different DTO rates and Snowball job fees vary by region.</td></tr>
+                    <tr><td><strong>Currency</strong></td><td>USD — on-demand list price, tax excluded</td></tr>
+                    <tr><td><strong>Last checked</strong></td><td><time datetime="2026-10-11">2026-10-11</time> — the AWS egress tier ladder, the Direct Connect DTO and port-hour rates, and the Snowball Edge per-job fees were re-checked on this date.</td></tr>
+                </tbody>
+            </table>
+            <h3>Modelling assumptions</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li>AWS internet egress is tiered and cumulative across services in one account: 100 GB per month free, then $0.09/GB to 10 TB, $0.085/GB to 50 TB, $0.07/GB to 150 TB, and $0.05/GB above that. The migration's traffic is pooled with the account's other egress.</li>
+                <li>Direct Connect: $0.02 per GB data transfer out to a US Direct Connect location, plus the port-hour rate for the capacity that matches the link entered — $0.30/hr at 1 Gbps, $2.25/hr at 10 Gbps, $22.50/hr at 100 Gbps. Port hours are billed for the transfer period; provisioning a physical port takes two to twelve weeks and ports are rarely torn down the day a migration ends.</li>
+                <li>Cross-region transfer between AWS regions is modelled at $0.02/GB. Same-region transfer between the services this model covers is $0.00, and inbound transfer to AWS is $0.00/GB at all locations.</li>
+                <li>Snowball Edge Storage Optimized (210 TB) is $1,800 per job for up to 100 TB of load and $3,200 per job for 101–210 TB, including 15 on-site days at $250 per additional day, plus round-trip shipping at carrier rates — modelled here at $300. Ingest into S3 is $0.00/GB, but storage and PUT charges apply.</li>
+                <li>The dual-write period holds both a source and a target copy. Extra storage is priced at S3 Standard $0.023/GB-month, prorated over a 30-day month. Delta sync traffic is priced on the same path as the primary transfer, except for physical shipment, where the delta necessarily runs over the network.</li>
+                <li>Volumes are decimal: 1 TB = 1,000 GB on this page.</li>
+            </ul>
+            <h3>What this model excludes</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li>Egress or transfer charges levied by a source provider other than AWS when migrating between clouds, which vary by provider and direction.</li>
+                <li>Request charges: S3 PUT/COPY at $0.005 per 1,000 operations, GET at $0.0004 per 1,000 — material for object counts in the tens of millions, immaterial below that.</li>
+                <li>DataSync, Storage Gateway, or Transfer Family service hours; engineering time; licensing; and the opportunity cost of staff attention during the window.</li>
+                <li>Early-deletion or minimum-duration charges on the source side, retrieval fees, and any egress allowance bundled into a support or commitment agreement.</li>
+                <li>Tax, credits, private pricing agreements, EDP discounts, and the EU Data Act migration waiver.</li>
+            </ul>
+            <h3>Sources</h3>
+            <ol style="font-size:0.85rem; line-height:1.9;" id="pricing-sources">
+                <li id="src-1"><strong>AWS (2026).</strong> "Amazon EC2 Data Transfer Pricing." Internet egress tiers and the monthly free allowance. <a href="https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="src-2"><strong>AWS (2026).</strong> "AWS Direct Connect Pricing." Dedicated and hosted port-hour rates, data transfer out rates per Direct Connect location, and free data transfer in. <a href="https://aws.amazon.com/directconnect/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="src-3"><strong>AWS (2026).</strong> "AWS Snowball Pricing." Service fee per job, included on-site days, per-day extension fee, and free data transfer in to S3. <a href="https://aws.amazon.com/snowball/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="src-4"><strong>AWS (2026).</strong> "Amazon S3 Pricing." Standard storage rate per GB-month used for the target copy. <a href="https://aws.amazon.com/s3/pricing/" target="_blank" rel="noopener">aws.amazon.com</a></li>
+                <li id="src-5"><strong>AWS (2026).</strong> "Data Transfer Between AWS Regions." Inter-region transfer rates. <a href="https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer" target="_blank" rel="noopener">aws.amazon.com</a></li>
+            </ol>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin-top:10px;">Vendor list prices change without notice — re-check the linked pages before committing spend. jslet takes no vendor sponsorship and carries no affiliate links; see <a href="/about">about</a>.</p>
+        </section>
+
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/storage-migration-tco-real">&#128240; The Egress Asymmetry: Why Your Migration Bill Depends on Direction (Full Briefing) &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time Estimator &rarr;</a>
+                <a href="/terabytes-egress-to-aws-cost">AWS Egress Cost Estimator &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/aws-cross-az-data-transfer-cost">Cross-AZ Data Transfer Cost &rarr;</a>
+                <a href="/backup-cost">Backup Strategy Cost &rarr;</a>
+            </div>
+        </div>
+
+                <footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 117 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/methodology">Methodology</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">RSS &amp; Updates</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    // ── Rate tables ──────────────────────────────────────────────────────
+    // AWS internet egress: cumulative per account per month.
+    var EGRESS_TIERS = [[100, 0], [10000, 0.09], [50000, 0.085], [150000, 0.07], [Infinity, 0.05]];
+    var DX_DTO_PER_GB = 0.02;                       // US mainland -> US DC location
+    var DX_PORT_TIERS = [[1000, 0.30], [10000, 2.25], [100000, 22.50]];
+    var CROSS_REGION_PER_GB = 0.02;
+    var SNOWBALL_TIER1 = 1800, SNOWBALL_TIER2 = 3200, SNOWBALL_SHIPPING = 300;
+
+    function egressCost(gb) {
+        var cost = 0, lower = 0;
+        for (var i = 0; i < EGRESS_TIERS.length; i++) {
+            if (gb <= lower) break;
+            cost += (Math.min(gb, EGRESS_TIERS[i][0]) - lower) * EGRESS_TIERS[i][1];
+            lower = EGRESS_TIERS[i][0];
+        }
+        return cost;
+    }
+
+    function dxPortRate(mbps) {
+        for (var i = 0; i < DX_PORT_TIERS.length; i++) {
+            if (mbps <= DX_PORT_TIERS[i][0]) return DX_PORT_TIERS[i];
+        }
+        return DX_PORT_TIERS[DX_PORT_TIERS.length - 1];
+    }
+
+    function money(x) {
+        return '$' + Math.round(x).toLocaleString('en-US');
+    }
+    function money2(x) {
+        return '$' + x.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // ── Core model ───────────────────────────────────────────────────────
+    // Three cost layers, all explicit parameters — no hidden globals:
+    //   ① transfer    = every byte moved, primary + dual-write delta
+    //   ② dualStorage = the second copy that exists during the dual-write period
+    //   ③ downtime    = business loss during the cutover outage
+    // Returns { transfer, dualStorage, deltaTransfer, sub }.
+    function pricePath(path, dataGB, deltaGB, dwDays, storageRate, transferDays, dataTB, bandwidth) {
+        var transfer = 0, deltaTransfer = 0;
+
+        if (path === 'internet') {
+            // Cumulative tier on the account's pooled egress for the month.
+            transfer = egressCost(dataGB + deltaGB);
+            deltaTransfer = egressCost(dataGB + deltaGB) - egressCost(dataGB);
+        } else if (path === 'dx') {
+            var pr = dxPortRate(bandwidth);
+            var portHours = Math.max(Math.ceil(transferDays * 24), 1);
+            transfer = (dataGB + deltaGB) * DX_DTO_PER_GB + portHours * pr[1];
+            deltaTransfer = deltaGB * DX_DTO_PER_GB;
+        } else if (path === 'cross-region') {
+            transfer = (dataGB + deltaGB) * CROSS_REGION_PER_GB;
+            deltaTransfer = deltaGB * CROSS_REGION_PER_GB;
+        } else if (path === 'same-region' || path === 'onprem-in') {
+            transfer = 0;                       // no transfer charge on this path
+            deltaTransfer = 0;
+        } else if (path === 'snowball') {
+            var job = (dataTB <= 100 ? SNOWBALL_TIER1 : SNOWBALL_TIER2);
+            // The device cannot carry changes that happen while it is in transit,
+            // so the delta still runs over a wire and is billed as egress.
+            deltaTransfer = egressCost(deltaGB);
+            transfer = job + SNOWBALL_SHIPPING + deltaTransfer;
+        }
+
+        var dualStorage = dataGB * (dwDays / 30) * storageRate;
+        return {
+            transfer: transfer,
+            dualStorage: dualStorage,
+            deltaTransfer: deltaTransfer,
+            sub: transfer + dualStorage
+        };
+    }
+
+    var PARAMS = {};
+
+    var PATH_LABELS = {
+        'internet': 'Internet egress',
+        'dx': 'Direct Connect',
+        'cross-region': 'Cross-region',
+        'same-region': 'Same-region',
+        'onprem-in': 'Inbound (on-prem →cloud)',
+        'snowball': 'Physical shipment'
+    };
+    var PATH_NOTES = {
+        'internet': 'Tiered $0.09 →$0.05 per GB, cumulative per account',
+        'dx': '$0.02/GB + port hours for the transfer period',
+        'cross-region': '$0.02/GB inter-region',
+        'same-region': 'No transfer charge between these services',
+        'onprem-in': '$0.00/GB ingress on every major provider',
+        'snowball': '$1,800/≤100 TB job + shipping + delta egress'
+    };
+
+    function computeTCO(path, dataTB, changePct, dwDays, storageRate, bandwidth, downtimeHours, downtimeRate) {
+        var dataGB = dataTB * 1000;
+        var deltaGB = dataGB * (changePct / 100) * dwDays;
+        var transferDays = (dataGB * 8) / (bandwidth * 24);
+        var r = pricePath(path, dataGB, deltaGB, dwDays, storageRate, transferDays, dataTB, bandwidth);
+        r.downtime = downtimeHours * downtimeRate;
+        r.total = r.sub + r.downtime;
+        r.dataGB = dataGB;
+        r.deltaGB = deltaGB;
+        r.transferDays = transferDays;
+        return r;
+    }
+
+    function compute() {
+        PARAMS = {
+            dataTB: parseFloat(document.getElementById('data-tb').value) || 0,
+            path: document.getElementById('path').value,
+            changePct: parseFloat(document.getElementById('daily-change-pct').value) || 0,
+            dwDays: parseFloat(document.getElementById('dual-write-days').value) || 0,
+            bandwidth: parseFloat(document.getElementById('bandwidth-mbps').value) || 1,
+            storageRate: parseFloat(document.getElementById('storage-rate').value) || 0,
+            downtimeHours: parseFloat(document.getElementById('downtime-hours').value) || 0,
+            downtimeRate: parseFloat(document.getElementById('downtime-rate').value) || 0
+        };
+        var P = PARAMS;
+        var r = computeTCO(P.path, P.dataTB, P.changePct, P.dwDays, P.storageRate,
+                           P.bandwidth, P.downtimeHours, P.downtimeRate);
+
+        // ── Summary tiles
+        document.getElementById('tco-summary').innerHTML =
+            '<div class="tco-tile"><div class="big">' + money(r.transfer) + '</div><div class="tag">Transfer</div></div>' +
+            '<div class="tco-tile"><div class="big">' + money(r.dualStorage) + '</div><div class="tag">Dual-write storage</div></div>' +
+            '<div class="tco-tile"><div class="big">' + money(r.downtime) + '</div><div class="tag">Downtime</div></div>' +
+            '<div class="tco-tile total"><div class="big">' + money(r.total) + '</div><div class="tag">Total TCO</div></div>';
+
+        // ── Stacked bar
+        var total = Math.max(r.total, 0.0001);
+        var segs = [
+            { w: r.transfer / total * 100, c: 'var(--accent)', n: 'Transfer' },
+            { w: r.dualStorage / total * 100, c: '#7c3aed', n: 'Dual-write storage' },
+            { w: r.downtime / total * 100, c: 'var(--gold)', n: 'Downtime' }
+        ];
+        document.getElementById('tco-stack').innerHTML = segs.map(function (s) {
+            return '<div class="stack-seg" style="width:' + s.w + '%;background:' + s.c + ';">' +
+                   (s.w > 9 ? s.w.toFixed(0) + '%' : '') + '</div>';
+        }).join('');
+        document.getElementById('tco-legend').innerHTML = segs.map(function (s) {
+            return '<span>' + s.n + ': <b>' + s.w.toFixed(1) + '%</b></span>';
+        }).join('') + '<span>Downtime ÷ transfer: <b>' +
+            (r.transfer > 0 ? (r.downtime / r.transfer).toFixed(1) + '×' : 'n/a') + '</b></span>';
+
+        document.getElementById('results-params').innerText =
+            P.dataTB + ' TB · ' + PATH_LABELS[P.path] + ' · ' + P.changePct + '%/day change · ' +
+            P.dwDays + '-day dual-write (' + Math.round(r.deltaGB).toLocaleString('en-US') + ' GB delta) · ' +
+            P.downtimeHours + 'h cutover @ ' + money(P.downtimeRate) + '/h';
+
+        // ── Path comparison
+        var order = ['internet', 'dx', 'cross-region', 'snowball', 'onprem-in', 'same-region'];
+        var rows = order.map(function (k) {
+            var rr = computeTCO(k, P.dataTB, P.changePct, P.dwDays, P.storageRate,
+                                P.bandwidth, P.downtimeHours, P.downtimeRate);
+            return { key: k, r: rr };
+        });
+        var best = Math.min.apply(null, rows.map(function (x) { return x.r.total; }));
+        var worst = Math.max.apply(null, rows.map(function (x) { return x.r.total; }));
+        var span = Math.max(worst - best, 0.0001);
+
+        var html = '<thead><tr><th>Path</th><th>Transfer (incl. delta)</th><th>Dual-write storage</th><th>Downtime</th><th>Total TCO</th><th>Basis</th></tr></thead><tbody>';
+        rows.forEach(function (x) {
+            var cls = '';
+            if (x.r.total === best && worst !== best) cls = ' class="best"';
+            if (x.r.total === worst && worst !== best) cls = ' class="worst"';
+            var pctOfWorst = (x.r.total - best) / span * 100;
+            html += '<tr' + cls + '>' +
+                '<td>' + (x.key === P.path ? '▶ ' : '') + PATH_LABELS[x.key] +
+                    '<div class="mini-track"><div class="mini-fill" style="width:' + Math.max(pctOfWorst, 1) + '%;"></div></div></td>' +
+                '<td>' + money(x.r.transfer) + '</td>' +
+                '<td>' + money(x.r.dualStorage) + '</td>' +
+                '<td>' + money(x.r.downtime) + '</td>' +
+                '<td><strong>' + money(x.r.total) + '</strong></td>' +
+                '<td style="font-size:0.74rem;color:var(--text-muted);">' + PATH_NOTES[x.key] + '</td>' +
+                '</tr>';
+        });
+        html += '</tbody>';
+        document.getElementById('path-table').innerHTML = html;
+
+        // ── Insight block
+        var insights = [];
+        if (r.transfer > 0 && r.downtime > r.transfer) {
+            insights.push('Downtime is <strong>' + (r.downtime / r.transfer).toFixed(1) +
+                '× the entire transfer bill</strong>. Shrinking the cutover window is worth more than any transfer-path optimisation.');
+        }
+        if (r.transfer === 0) {
+            insights.push('This path has <strong>no transfer charge at all</strong>. The migration is priced entirely by the dual-write period and the outage.');
+        }
+        if (P.path === 'snowball' && P.dataTB > 100) {
+            insights.push('At <strong>' + P.dataTB + ' TB</strong> the Snowball job fee is the <strong>$3,200</strong> tier. Loading 100 TB or less would cost $1,800 — a $1,400 step for the volume above the threshold.');
+        }
+        if (P.path === 'snowball' && r.deltaGB > 0) {
+            insights.push('The device is in transit for weeks, but the delta still moves over a wire: <strong>' + money(r.deltaTransfer) +
+                '</strong> of network egress on ' + Math.round(r.deltaGB).toLocaleString('en-US') + ' GB of change.');
+        }
+        if (P.path === 'dx') {
+            var pr = dxPortRate(P.bandwidth);
+            insights.push('Port cost is <strong>' + money(Math.ceil(Math.max(r.transferDays, 1) * 24) * pr[1]) +
+                '</strong> on ' + Math.ceil(Math.max(r.transferDays, 1) * 24) + ' hours at ' + pr[0] +
+                ' Mbps capacity ($' + pr[1].toFixed(2) + '/hr). Provisioning a physical port takes two to twelve weeks, so the port is usually held longer than the transfer.');
+        }
+        if (P.dwDays >= 30) {
+            insights.push('A <strong>' + P.dwDays + '-day</strong> dual-write period carries ' +
+                Math.round(r.deltaGB).toLocaleString('en-US') + ' GB of delta and ' + money(r.dualStorage) +
+                ' of duplicate storage. Every extra week adds both.');
+        }
+        if (r.transfer > 0 && P.path === 'internet' && r.dataGB >= 100000) {
+            var eff = egressCost(r.dataGB + r.deltaGB) / (r.dataGB + r.deltaGB);
+            insights.push('Effective egress rate on this volume is <strong>$' + eff.toFixed(4) +
+                '/GB</strong>, not the $0.09 headline — the cumulative tier does that. Pooling with the account\'s other egress shifts it further.');
+        }
+        if (insights.length) {
+            document.getElementById('insight-block').innerHTML = insights.map(function (t) {
+                return '<div class="callout">' + t + '</div>';
+            }).join('');
+        } else {
+            document.getElementById('insight-block').innerHTML = '';
+        }
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('results-card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        compute();
+    });
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

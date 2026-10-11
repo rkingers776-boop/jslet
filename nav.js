@@ -15,7 +15,7 @@
                         '<div class="jslet-hub-panel" id="jslet-hub-panel" role="menu" aria-label="Tool categories">' +
                             '<div class="jslet-hub-head">' +
                                 '<span class="jslet-hub-title">Tool Categories</span>' +
-                                '<span class="jslet-hub-count">14 Categories · 116 Tools</span>' +
+                                '<span class="jslet-hub-count">14 Categories · 117 Tools</span>' +
                             '</div>' +
                             '<div class="jslet-hub-grid">' +
                                 '<a href="/json-tools" class="jslet-hub-item" role="menuitem"><span class="jslet-hub-icon gic-json">{ }</span><span class="jslet-hub-info"><strong>JSON / CSV</strong><span>Format · Validate · Convert</span></span></a>' +
@@ -33,27 +33,19 @@
                                 '<a href="/security-sre" class="jslet-hub-item" role="menuitem"><span class="jslet-hub-icon gic-sec">🔒</span><span class="jslet-hub-info"><strong>Security / SRE</strong><span>SLA · Passwords · Auditing</span></span></a>' +
                                 '<a href="/devops-utilities" class="jslet-hub-item" role="menuitem"><span class="jslet-hub-icon gic-ops">🕐</span><span class="jslet-hub-info"><strong>DevOps</strong><span>Ops · Deploy · Time</span></span></a>' +
                             '</div>' +
-                            '<a href="/" class="jslet-hub-all">View all 116 tools <span aria-hidden="true">→</span></a>' +
+                            '<a href="/" class="jslet-hub-all">View all 117 tools <span aria-hidden="true">→</span></a>' +
                         '</div>' +
-                    '</div>' +
-                    '<div class="jslet-account-pill">' +
-                        '<div class="jslet-mini-avatar">J</div>' +
-                        '<span class="jslet-account-name">jslet.core</span>' +
-                        '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" class="jslet-pill-arrow"><path d="m8 9.59 4.3-4.3 1.4 1.42L8 12.4 2.3 6.7l1.4-1.42z"></path></svg>' +
                     '</div>' +
                 '</div>' +
                 '<div class="jslet-search-container">' +
                     '<div class="jslet-search-bar">' +
                         '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="jslet-search-icon"><path d="M17.33 18.74a10 10 0 1 1 1.41-1.41l4.47 4.47-1.41 1.41zM11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16"></path></svg>' +
-                        '<input type="text" placeholder="Search 116 dev tools, calculators &amp; briefings..." id="jslet-global-search" autocomplete="off">' +
+                        '<input type="text" placeholder="Search 117 dev tools, calculators &amp; briefings..." id="jslet-global-search" autocomplete="off">' +
                     '</div>' +
                 '</div>' +
                 '<div class="jslet-nav-right">' +
                     '<a href="/articles" class="jslet-icon-btn" title="Updates &amp; articles" aria-label="Updates &amp; articles">' +
                         '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M16 19h8v-2h-.34a3.15 3.15 0 0 1-3.12-2.76l-.8-6.41a7.8 7.8 0 0 0-15.48 0l-.8 6.41A3.15 3.15 0 0 1 .34 17H0v2h8v1h.02a3.4 3.4 0 0 0 3.38 3h1.2a3.4 3.4 0 0 0 3.38-3H16zm1.75-10.92.8 6.4c.12.95.5 1.81 1.04 2.52H4.4c.55-.7.92-1.57 1.04-2.51l.8-6.41a5.8 5.8 0 0 1 11.5 0M13.4 19c.33 0 .6.27.6.6 0 .77-.63 1.4-1.4 1.4h-1.2a1.4 1.4 0 0 1-1.4-1.4c0-.33.27-.6.6-.6z"></path></svg>' +
-                    '</a>' +
-                    '<a href="/rss.xml" class="jslet-icon-btn" title="RSS feed" aria-label="RSS feed">' +
-                        '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3m5 3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m5 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m-5 10c1.8 0 3.5-.41 5-1.15l3.69.65A2 2 0 0 0 23 20.7l-.65-3.7A11.5 11.5 0 1 0 12 23.5m8.55-7.36-.28.58.76 4.31-4.31-.76-.58.28q-1.89.93-4.14.95a9.5 9.5 0 1 1 8.55-5.36"></path></svg>' +
                     '</a>' +
                     '<a href="/about" class="jslet-profile-btn" title="Your profile &amp; about" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a>' +
                     '<button class="jslet-icon-btn jslet-theme-btn" id="btn-theme" title="Toggle dark/light mode" aria-label="Toggle dark mode">☽</button>' +
