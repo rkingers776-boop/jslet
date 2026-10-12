@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The Key Tax: Why Your Redis Memory Is Never Your Dataset Size</title>
+    <meta name="description" content="A million 100-byte keys cost about 1.7 GB, and almost none of it is your data. Redis charges a fixed toll per key — the encoding you pick decides how much.">
+    <meta property="og:title" content="The Key Tax — Why Redis Memory Is Never Your Dataset Size">
+    <meta property="og:description" content="Redis charges a fixed toll before your data is counted. Ten million small keys cost 68% more RAM than the same bytes in fewer, larger values.">
+    <meta property="og:url" content="https://www.jslet.com/redis-memory-overhead">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-10-12T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-10-12T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Key Tax: Why Your Redis Memory Is Never Your Dataset Size">
+    <meta name="twitter:description" content="Ten million 100-byte keys cost about 1.7 GB, and almost none of it is your data. The per-key toll is fixed — the value size only decides how visible it is.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/redis-memory-overhead">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Key Tax: Why Your Redis Memory Is Never Your Dataset Size",
+      "description": "Redis stores a data structure per key, not your data, and the structure carries a fixed cost that is charged before your bytes are counted. On a 64-bit Redis 7 build that floor is 48 bytes of bookkeeping per top-level string key, before the allocator rounds each allocation up to a jemalloc size class. The result is that two datasets of identical size can differ by several times in RAM depending only on how many keys they are split across, that the widely quoted inflation figures of 1.6x and 35% describe different value sizes rather than different systems, and that the encoding thresholds most teams carry in their heads are the wrong ones.",
+      "url": "https://www.jslet.com/redis-memory-overhead",
+      "datePublished": "2026-10-12T00:00:00+00:00",
+      "dateModified": "2026-10-12T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research", "url": "https://www.jslet.com/methodology" },
+      "publisher": { "@type": "Organization", "@id": "https://www.jslet.com/#organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why does a 100-byte value take more than 100 bytes in Redis?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because Redis allocates a structure around the value, not just the value. Every top-level key carries a dictionary entry (24 bytes on a 64-bit build), a redisObject header for the value (16 bytes), an SDS header plus terminator for the key and again for the value (4 bytes each at short lengths), and a share of the hash table's bucket array. That is 48 bytes of bookkeeping before the key name or the value is counted, and then the allocator rounds every one of those allocations up to a jemalloc size class, which adds another 10 to 15 percent. A 100-byte value with a 12-character key measures roughly 168 bytes, not 112."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How much memory does a million Redis keys use?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It depends almost entirely on the value size, because the per-key toll is fixed. One million keys with 100-byte values cost approximately 168 MB, of which about 48 MB is bookkeeping rather than data. One million keys with 1 KB values cost approximately 1.08 GB, and the same 48 MB of bookkeeping is now about 4% of the total. Ten million keys with 100-byte values cost roughly 1.7 GB for 1 GB of data — a 68% premium — while the same gigabyte stored as ten thousand 100 KB values costs almost exactly 1 GB. Key count is the multiplier; value size only decides how visible the multiplier is."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is hash-max-listpack-entries 128 or 512?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "512. Redis's own documentation lists hash-max-listpack-entries 512 and hash-max-listpack-value 64 for Redis 7.0 and later, and the same 512 for the Redis 6.2 and earlier ziplist spelling. The 128 that appears in a large share of tutorials and blog posts is the sorted-set default, zset-max-listpack-entries, which sits directly below the hash setting in the same configuration block. Getting this wrong matters in both directions: believing the limit is 128 makes a hash that converts to a hashtable at 129 fields look like a bug, and raising the setting to 512 believing you are doubling it can leave a much larger hash in a single listpack."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does Redis memory not drop after deleting keys?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because Redis does not return memory to the operating system the way a garbage-collected runtime might. When keys are removed, the allocator marks the pages free and reuses them for later writes, but the resident set size stays where it was, so a 5 GB instance that drops to 3 GB of live data usually still reports about 5 GB of RSS. This is why sizing has to be done against peak usage rather than steady-state, and why mem_fragmentation_ratio — defined as RSS divided by the memory Redis believes it has in use — becomes meaningless after any peak that was much larger than the current workload."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 117 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>The <span>Key Tax</span></h1>
+        <p>Redis charges a fixed toll on every key before your data is counted. Two datasets of the same size can differ by 70% in RAM depending only on how many keys they are split across</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-10-12 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 14 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ul style="line-height:2; padding-left:20px; margin:0; columns:2; column-gap:28px;">
+            <li><a href="#floor" style="color:var(--accent); text-decoration:none;">The Floor Under Every Key</a></li>
+            <li><a href="#count" style="color:var(--accent); text-decoration:none;">The Key Count Is the Bill</a></li>
+            <li><a href="#pack" style="color:var(--accent); text-decoration:none;">The Trick the Manual Teaches</a></li>
+            <li><a href="#cliff" style="color:var(--accent); text-decoration:none;">The Encoding Cliff</a></li>
+            <li><a href="#rounding" style="color:var(--accent); text-decoration:none;">The Allocator's Rounding</a></li>
+            <li><a href="#rss" style="color:var(--accent); text-decoration:none;">Why RSS Outlives Your Data</a></li>
+            <li><a href="#measure" style="color:var(--accent); text-decoration:none;">Measure, Then Multiply</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ul>
+    </div>
+
+    <section class="seo-section">
+        <p>Ask a team how much Redis they need and the answer is almost always a dataset size. "We have 40 GB of sessions." That number has very little to do with the RAM that gets bought, and the gap is not a fudge factor. Redis does not store your data. It stores a data structure, one per key, and the structure carries a price that is charged before your bytes are counted at all.</p>
+        <p>The price has two parts, and they are easy to conflate. The first is bookkeeping: the pointers and headers Redis walks on every lookup, which exist whether the value is one byte or one megabyte. The second is the memory allocator's rounding, which happens after Redis has decided how much to ask for. Neither part scales with your payload, which is what makes the total behave so strangely: <strong>the toll is fixed per key, so the cost of a dataset is driven by its key count, not its size.</strong></p>
+        <p>Ten million 100-byte values and ten thousand 100 KB values are both "one gigabyte of data". Redis will charge the first one about 1.7 GB and the second one almost exactly 1 GB, and nothing about the bytes themselves explains the difference. It is the same gigabyte, split into a thousand times as many keys, and each key pays the toll.</p>
+        <p>This is the written companion to the <a href="/redis-ram-to-raw-json-ratio">Redis In-Memory Key Inflation calculator</a>, which applies that toll to a dataset rather than to a single key. What follows is the part a one-line overhead percentage hides: where the 48 bytes actually go, why the key count and not the key size sets the bill, the packing trick Redis's own manual teaches and the encoding cliff that silently undoes it, why the allocator's rounding is not a rounding error at scale, and why a Redis instance that has shed half its data still reports the same resident set size.</p>
+    </section>
+
+    <section class="seo-section" id="floor">
+        <h2>The Floor Under Every Key</h2>
+        <p>A single <code>SET</code> does not create one object. On a 64-bit build of Redis 7 it creates a dictionary entry in the top-level keyspace, a string object to hold the key, and a wrapped object to hold the value — and the string representation used for both is Redis's own SDS, which carries its length and free space in a header rather than scanning for a terminator. None of that is incidental. The dictionary entry is what makes lookups O(1); the headers are what make length a constant-time operation and the strings binary-safe.</p>
+        <p>Itemised, the fixed part is smaller than most people assume and larger than most budgets allow:</p>
+        <table class="brief-table">
+            <thead><tr><th>Component</th><th>Why it exists</th><th class="num">Bytes</th></tr></thead>
+            <tbody>
+                <tr><td>Keyspace dictEntry</td><td>Key pointer, value pointer, collision chain link</td><td class="num">24</td></tr>
+                <tr><td>Value redisObject</td><td>Type, encoding, LRU/LFU clock, reference count, data pointer</td><td class="num">16</td></tr>
+                <tr><td>Key SDS header + terminator</td><td>Length and free-space fields, then a null byte</td><td class="num">4</td></tr>
+                <tr><td>Value SDS header + terminator</td><td>Same, for the value</td><td class="num">4</td></tr>
+                <tr class="hi"><td><strong>Fixed floor, before your data</strong></td><td>Charged per key, independent of payload</td><td class="num"><strong>48</strong></td></tr>
+                <tr><td>Hash table bucket</td><td>Amortised share of the bucket array, which is kept at roughly half to full occupancy</td><td class="num">~8</td></tr>
+            </tbody>
+        </table>
+        <p>Forty-eight bytes of structure, then your key name, then your value. For a 100-byte value behind a 12-character key that is 112 bytes of user data, and the entry measures around 168 bytes once the allocator has rounded it — which is where the inflation begins. For a 5-byte value behind the same key, the entry still measures about 88 bytes against 17 bytes of data. The structure did not change; the ratio did, because the same toll was divided by a much smaller payload.</p>
+        <p>This is the reconciliation that most Redis sizing advice skips. You will find the overhead quoted as 1.6&times; and you will find it quoted as 35%, and both figures are defensible because they describe different value sizes. Measure a 100-byte value and you get something near 1.6&times;. Measure a dataset of kilobyte-scale values and the same 48 bytes is a few percent, which is where the 35% rule of thumb comes from once the allocator and the small-value tail are mixed in. Neither figure is "the" overhead. The overhead is a fixed toll, and the ratio is that toll divided by whatever you happen to be storing.</p>
+        <div class="pull">The overhead percentage is not a property of Redis. It is a property of your average value size. Sizing with a borrowed percentage is sizing with someone else's workload.</div>
+    </section>
+
+    <section class="seo-section" id="count">
+        <h2>The Key Count Is the Bill</h2>
+        <p>Because the toll is per key, the cost of a dataset is a function of how many keys it is spread across. Take one gigabyte of application data and store it three ways — same bytes, different granularity — and the RAM Redis asks for changes by more than half:</p>
+        <table class="brief-table">
+            <thead><tr><th>Granularity</th><th class="num">Keys for 1 GB</th><th class="num">Per-key entry</th><th class="num">Redis RAM</th><th class="num">Premium</th></tr></thead>
+            <tbody>
+                <tr class="bad"><td>100-byte values</td><td class="num">10,000,000</td><td class="num">~168 B</td><td class="num">~1.68 GB</td><td class="num">+68%</td></tr>
+                <tr class="hi"><td>1 KB values</td><td class="num">1,000,000</td><td class="num">~1,080 B</td><td class="num">~1.08 GB</td><td class="num">+8%</td></tr>
+                <tr><td>100 KB values</td><td class="num">10,000</td><td class="num">~100,072 B</td><td class="num">~1.00 GB</td><td class="num">+0.1%</td></tr>
+            </tbody>
+        </table>
+        <p>The premium column is the toll as a share of the total, and it falls by three orders of magnitude across the table. Read it from the other direction and the same fact becomes a design instruction: <strong>the cheapest way to store a gigabyte is in as few keys as the access pattern allows.</strong> That is not a novel observation, but it is one that is routinely ignored, because application code is usually written per entity — one key per session, one key per product, one key per request — and the entity boundary becomes the key boundary without anyone choosing it.</p>
+        <p>Redis's own documentation contains a striking example of the extreme. A bitmap holding one bit per user — subscribed or not — for 100 million users occupies 12 MB. The same membership information stored as 100 million keys of one boolean each would carry 100 million tolls, several gigabytes of structure, to answer a question that a bit already answers. Bitmaps and bitfields are not always the right model, but the comparison is the point: the shape of the data structure chosen sets the key count, and the key count sets the bill.</p>
+        <p>There is a second-order effect worth naming. The toll is not only memory. Every top-level key is also an entry the server must scan during key eviction, replication, and expiry checks, and every one of them appears in the keyspace notifications stream if notifications are enabled. A dataset with ten million keys is more expensive to operate than the same bytes in ten thousand keys, in ways that show up as latency rather than as a line on a bill.</p>
+    </section>
+
+    <section class="seo-section" id="pack">
+        <h2>The Trick the Manual Teaches</h2>
+        <p>If the toll is per key, the obvious move is to use fewer keys — and Redis's own memory-optimisation documentation demonstrates exactly that, with numbers. It benchmarks 100,001 keys in the shape <code>object:102393</code>, each holding a short value, twice: once as flat string keys, and once packed so that a hundred of them share a single hash key.</p>
+        <table class="brief-table">
+            <thead><tr><th>Storage shape</th><th class="num">Keys</th><th class="num">Memory used</th><th class="num">Per cached object</th></tr></thead>
+            <tbody>
+                <tr class="bad"><td>One string key per object</td><td class="num">100,001</td><td class="num">11 MB</td><td class="num">~115 B</td></tr>
+                <tr class="hi"><td>Packed into 100-field hashes</td><td class="num">~1,001</td><td class="num">1.7 MB</td><td class="num">~18 B</td></tr>
+            </tbody>
+        </table>
+        <p>Two orders of magnitude fewer keys, one order of magnitude less memory, identical data. The mechanism is not compression. Redis uses a compact encoding — a listpack in Redis 7, a ziplist before it — for small hashes, in which fields and values are stored end to end in a single contiguous block with a couple of bytes of length framing per element instead of a dictionary entry, an object header and two SDS headers each. One hash key pays one toll; its hundred fields pay roughly two bytes apiece.</p>
+        <p>Redis's documentation is explicit about the payoff and the price. The payoff is "up to 10 times less memory, with 5 times less memory used being the average saving" for small aggregate types. The price is capability: because hash fields are not full objects, <strong>a hash field cannot have its own time to live</strong>, and hashes cannot nest. Packing therefore suits data with a shared lifetime — the fields of one user's session, the attributes of one product, one day's counters for one tenant — and it is the wrong tool the moment individual fields need to expire independently.</p>
+        <p>There is a third consideration that rarely gets stated: the packing and unpacking is in your application code, and it is where the bugs live. Splitting a key into a hash and a field means every read and write has to split it the same way, and a schema change to the split has to be migrated rather than simply deployed. The memory saving is real and large; so is the coupling.</p>
+    </section>
+
+    <section class="seo-section" id="cliff">
+        <h2>The Encoding Cliff</h2>
+        <p>Compact encodings are used only while the collection stays small, and the boundary is a configuration value. Cross it by one element and the entire collection converts to a full hash table or skiplist, retroactively, and the per-element cost jumps by roughly a factor of three.</p>
+        <p>Here is where the widely repeated numbers diverge from the actual defaults. Redis's documentation lists these for Redis 7.0 and later:</p>
+        <table class="brief-table">
+            <thead><tr><th>Type</th><th>Compact encoding</th><th>Directive</th><th class="num">Default</th></tr></thead>
+            <tbody>
+                <tr class="hi"><td>Hash</td><td>listpack</td><td>hash-max-listpack-entries</td><td class="num">512</td></tr>
+                <tr><td>Hash</td><td>listpack</td><td>hash-max-listpack-value</td><td class="num">64</td></tr>
+                <tr><td>Sorted set</td><td>listpack</td><td>zset-max-listpack-entries</td><td class="num">128</td></tr>
+                <tr><td>Sorted set</td><td>listpack</td><td>zset-max-listpack-value</td><td class="num">64</td></tr>
+                <tr><td>Set of integers</td><td>intset</td><td>set-max-intset-entries</td><td class="num">512</td></tr>
+                <tr><td>Set (Redis 7.2+)</td><td>listpack</td><td>set-max-listpack-entries</td><td class="num">128</td></tr>
+                <tr><td>List</td><td>listpack nodes</td><td>list-max-listpack-size</td><td class="num">-2 (~8 KB)</td></tr>
+            </tbody>
+        </table>
+        <p>Note the second row from the top and the third. The hash default is <strong>512</strong> fields. A large share of the tutorials, cheat sheets and Stack Overflow answers you will find state 128 — and 128 is the sorted-set default, which is listed directly below the hash setting in the same block of <code>redis.conf</code> and in the same table of the documentation. The two numbers sit one line apart and have been transposed for years.</p>
+        <p>The transposition matters in both directions. Believe the limit is 128 and a perfectly healthy hash that converts to a hashtable at 129 fields looks like a defect. Raise the setting to 512 in the belief that you are doubling it and you have actually made no change, leaving a much larger hash in a single listpack than you intended — and a listpack that large is reallocated on write, which is a CPU cost you did not budget for.</p>
+        <p>The cliff itself is worth putting a number on. Take a hash of 512 fields holding eight-character field names and twelve-character values. In listpack form each field costs the field, the value and about three bytes of framing — roughly 23 bytes. Convert the same hash to a hashtable and each field now needs a dictionary entry, an SDS for the field and an SDS for the value, plus its share of a bucket array, which lands near 64 to 80 bytes after allocation rounding. One extra field can multiply the memory of that key by three.</p>
+        <div class="pull">The encoding thresholds are tuned for memory and paid for in CPU. Every one you cross silently triples the per-element cost of that key, and nothing logs a warning when it happens.</div>
+        <p>Two operational notes follow. First, the conversion is one-way: a hash that has become a hashtable does not return to a listpack when fields are deleted, so a key that briefly exceeded the threshold keeps the expensive encoding until it is rewritten. Second, <code>OBJECT ENCODING key</code> reports the current encoding and is the only reliable way to see which side of the cliff a given key is on — the configuration tells you the threshold, not the outcome.</p>
+        <p>A version note closes the loop. Redis 7.0 renamed the ziplist directives to listpack and replaced the encoding underneath; Redis 7.2 removed the ziplist spellings entirely and added the set variants. A configuration file carried forward from Redis 6 without review will be parsed with unrecognised directives ignored or the defaults silently in force, which is the most common way to end up running thresholds nobody chose.</p>
+    </section>
+
+    <section class="seo-section" id="rounding">
+        <h2>The Allocator's Rounding</h2>
+        <p>Everything above describes what Redis asks the allocator for. What the process actually pays is what the allocator hands back, and Redis delegates that decision to jemalloc, which serves requests from a fixed ladder of size classes rather than in arbitrary sizes.</p>
+        <p>The small-object ladder runs in coarse steps below 128 bytes and finer ones above: 8, 16, 32, 48, 64, 80, 96, 112, 128, 160, 192, 224, 256 bytes, then 320, 384, 448, 512 and onward. A request is rounded up to the next class that fits it, so a 100-byte allocation is served from the 112-byte class and twelve bytes are stranded; a 200-byte allocation lands in the 224-byte class and twenty-four bytes are stranded. The internal fragmentation is about 12% at that scale and it never reaches zero, because the only request sizes that fit exactly are the class boundaries themselves.</p>
+        <p>Twelve percent sounds like the kind of thing that belongs in a footnote. It belongs in the budget instead, for the simple reason that the rounding applies to every allocation, and a Redis key with the layout described above is four to five separate allocations. A dataset whose raw bytes sum to 1.2 GB can land near 1.4 GB of resident memory before a single byte of genuine fragmentation has been accounted for, and that figure is stable rather than transient — it is not going to be reclaimed by a restart or a defragmentation pass, because nothing is wrong.</p>
+        <p>This is also why the overhead figures people measure are consistently higher than the sums of their components. A calculation that adds a dictionary entry and two object headers and stops will understate the bill, and the missing term is the allocator, not an error in the arithmetic.</p>
+    </section>
+
+    <section class="seo-section" id="rss">
+        <h2>Why RSS Outlives Your Data</h2>
+        <p>The number a Redis process reports to the operating system and the number Redis believes it has in use are two different quantities, and confusing them is the most common cause of a mis-sized instance.</p>
+        <p><code>used_memory</code> is what Redis thinks it has allocated. <code>used_memory_rss</code> is what the operating system has actually given the process. Their ratio is published as <code>mem_fragmentation_ratio</code>, and the RSS side does not come down the way the first does: when keys are deleted, the allocator marks pages free and reuses them for future writes, but it does not return them to the kernel. The documented consequence is blunt — fill an instance with 5 GB, delete 2 GB, and RSS typically stays near 5 GB while Redis reports roughly 3 GB in use.</p>
+        <p>Two practices follow, and both run against intuition. The first is that <strong>an instance must be sized for its peak, not its average</strong>. If the workload needs 10 GB at year-end and 5 GB the rest of the year, the correct instance holds 10 GB, because the process will have grown into the pages and will keep them. The second is that <code>mem_fragmentation_ratio</code> stops meaning what its name suggests after any peak. It is defined as RSS divided by current usage, so a period of high usage followed by deletion produces a ratio well above 1 without any fragmentation having occurred — the denominator fell, not the numerator.</p>
+        <p>Redis reports a more honest split under two less-quoted fields. <code>used_memory_overhead</code> is the memory consumed by the server's internal structures — the keyspace dictionaries, client buffers, replication buffers, the event loop — and <code>used_memory_dataset</code> is the remainder, with <code>used_memory_dataset_perc</code> giving the dataset's share of the whole. On a small instance that percentage is routinely in the twenties, which is the same toll described earlier seen from the inside: at low volumes, the bookkeeping is most of the process.</p>
+        <p>One more term belongs on the peak, and it is specific to persistence. Fork-based background saving relies on copy-on-write, and the worst case — every page touched while the child writes — can briefly double resident memory. An instance running at 90% of its host's RAM is therefore not a Redis instance with 10% headroom; it is an instance that can exhaust the host during an automatic save, which is a failure mode that appears in discovery precisely because it waits for the busiest hour.</p>
+    </section>
+
+    <section class="seo-section" id="measure">
+        <h2>Measure, Then Multiply</h2>
+        <p>Sizing Redis correctly does not require a spreadsheet of struct offsets. It requires four commands and a discipline about which number to believe.</p>
+        <ol>
+            <li><strong>Measure a real key.</strong> <code>MEMORY USAGE key</code> returns the bytes attributable to that key, including its value and headers, sampled. Run it across a representative set rather than one example, because the size distribution is what drives the total. For structures, <code>MEMORY USAGE key SAMPLES 0</code> forces a full traversal instead of a sample.</li>
+            <li><strong>Confirm the encoding.</strong> <code>OBJECT ENCODING key</code> answers the question the configuration cannot: is this collection still compact, or has it already crossed a threshold? A hash reporting <code>hashtable</code> where you expected <code>listpack</code> is a key that is costing several times what it should.</li>
+            <li><strong>Read the split, not the total.</strong> <code>INFO memory</code> gives <code>used_memory</code>, <code>used_memory_overhead</code>, <code>used_memory_dataset</code> and the RSS fields. The total tells you what you are paying; the split tells you whether you are paying for your data or for the structure around it.</li>
+            <li><strong>Find the outliers before the average reaches you.</strong> A sampling scan of the keyspace surfaces the keys that dominate memory, which are usually few and usually the result of an encoding that flipped. A single large hash that converted to a hashtable can be a larger line item than a million small ones.</li>
+        </ol>
+        <p>Then multiply. Take the peak key count, the measured entry size, and the safety margin the workload earns — more for bursty writes and replicas, less for a steady read-mostly cache — and set <code>maxmemory</code> below the instance size, because the alternative to a configured limit is an eviction storm or an out-of-memory write failure at the worst possible moment. The <a href="/redis-ram-to-raw-json-ratio">calculator paired with this briefing</a> applies the toll to a dataset and returns the required RAM, the pure overhead, and a recommended <code>maxmemory</code> with headroom.</p>
+        <p>The point of the whole exercise is that the answer is not the dataset size plus a percentage pulled from an article. It is the dataset size plus a per-key toll multiplied by the number of keys you chose, rounded by an allocator that does not care what the data means. Every one of those terms is measurable, and the largest of them is usually the one nobody counts.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>Frequently Asked Questions</h2>
+        <h3>Why does a 100-byte value take more than 100 bytes in Redis?</h3>
+        <p>Because Redis allocates a structure around the value. Every top-level key carries a dictionary entry (24 bytes), a redisObject header for the value (16 bytes), an SDS header plus terminator for the key and again for the value (4 bytes each at short lengths), and a share of the bucket array. That is 48 bytes of bookkeeping before the key name or the value is counted, and the allocator then rounds each of those allocations up to a size class. A 100-byte value with a 12-character key measures roughly 168 bytes, not 112.</p>
+        <h3>How much memory does a million Redis keys use?</h3>
+        <p>It depends almost entirely on the value size, because the per-key toll is fixed. A million keys with 100-byte values cost approximately 168 MB, of which about 48 MB is bookkeeping. A million keys with 1 KB values cost approximately 1.08 GB, and the same 48 MB is now about 4% of the total. Ten million keys with 100-byte values cost roughly 1.7 GB for 1 GB of data; the same gigabyte as ten thousand 100 KB values costs almost exactly 1 GB. Key count is the multiplier.</p>
+        <h3>Is hash-max-listpack-entries 128 or 512?</h3>
+        <p>512. Redis's documentation lists <code>hash-max-listpack-entries 512</code> and <code>hash-max-listpack-value 64</code> for Redis 7.0 and later, and the same 512 for the Redis 6.2 and earlier ziplist spelling. The 128 that appears in a large share of tutorials is the sorted-set default, <code>zset-max-listpack-entries</code>, which sits directly below the hash setting in the same configuration block. Believing 128 makes a hash that converts at 129 fields look like a bug; setting 512 to "double" it changes nothing at all.</p>
+        <h3>Why does Redis memory not drop after deleting keys?</h3>
+        <p>Because the allocator does not return memory to the operating system. When keys are removed the pages are marked free and reused for later writes, but RSS stays where it was — a 5 GB instance that drops to 3 GB of live data usually still reports about 5 GB resident. This is why instances are sized for peak usage rather than steady state, and why <code>mem_fragmentation_ratio</code> becomes meaningless after any peak much larger than the current workload: it is RSS divided by current usage, and it is the denominator that fell.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;" id="method">
+        <h2>Methodology &amp; Disclosure</h2>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">The per-key cost model in this briefing is stated against a 64-bit build of Redis 7 with 64-bit pointers, and its components are the documented structure sizes rather than measurements of any particular deployment: a keyspace <code>dictEntry</code> of 24 bytes (three pointers — key, value, chain link), a <code>redisObject</code> header of 16 bytes on the value, and an SDS header of 3 bytes plus a one-byte terminator for any string shorter than 256 bytes (the <code>sdshdr8</code> layout introduced in Redis 3.2; earlier versions used an 8-byte header, which is the origin of the 9-byte header figure still quoted widely). String values at or below 44 bytes are stored with the object header and the string in one allocation under the <code>embstr</code> encoding and above it under <code>raw</code>; integers use the <code>int</code> encoding and skip the value string entirely. The hash-table bucket term is amortised at roughly 8 bytes per key, reflecting the bucket array's occupancy band rather than an exact load factor.</p>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">Allocator rounding follows jemalloc's small-object size-class ladder (8, 16, 32, 48, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448, 512 bytes and upward at progressively coarser steps); every allocation is rounded up to the next class, so a 100-byte request consumes 112 bytes and a 200-byte request consumes 224. Per-entry figures in the tables are model outputs from those components, rounded, and are intended to be re-derived rather than quoted. Published comparisons — the 11 MB versus 1.7 MB packing benchmark, the 12 MB bitmap for 100 million users, the "up to 10 times less memory, 5 times on average" range for compact encodings, and the encoding defaults by version — are taken from Redis's own documentation and configuration reference. No figure here is a measurement of a specific production instance, and measured values differ from the model by a few percent in either direction depending on Redis version, allocator build, key-length distribution and value-size distribution. This site takes no sponsorship, no affiliate commission and no vendor payment of any kind; the projects named here have no relationship with jslet and did not review this briefing.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;">
+        <h2>References &amp; Further Reading</h2>
+        <ol style="font-size:0.85rem; line-height:1.9; color:var(--text-body);" id="references">
+            <li>Redis. <em>Memory optimization</em> — the compact-encoding defaults by version (hash-max-listpack-entries 512, zset-max-listpack-entries 128, set-max-intset-entries 512, and the Redis 7.2 set listpack directives), the "up to 10 times less memory, 5 times on average" range, the 100-million-user bitmap example, and the 100,001-key packing benchmark (11 MB as string keys versus 1.7 MB packed into 100-field hashes). <em>redis.io</em></li>
+            <li>Redis. <em>Key eviction</em> — <code>maxmemory</code> configuration, eviction policies, and the behaviour of the instance as it approaches the configured limit. <em>redis.io</em></li>
+            <li>Redis. <em>MEMORY USAGE</em> — per-key memory attribution, the <code>SAMPLES</code> option, and what the returned byte count includes. <em>redis.io</em></li>
+            <li>Redis. <em>INFO</em> — the <code>memory</code> section: <code>used_memory</code>, <code>used_memory_rss</code>, <code>mem_fragmentation_ratio</code>, <code>used_memory_overhead</code>, <code>used_memory_dataset</code> and <code>used_memory_dataset_perc</code>. <em>redis.io</em></li>
+            <li>Redis. <em>OBJECT ENCODING</em> — reported encodings per type (<code>listpack</code>, <code>hashtable</code>, <code>intset</code>, <code>skiplist</code>, <code>embstr</code>, <code>raw</code>, <code>int</code>) and the one-way nature of encoding conversion. <em>redis.io</em></li>
+            <li>Redis source. <code>src/server.h</code>, <code>src/dict.h</code>, <code>src/sds.h</code> — the structure definitions behind the byte figures: <code>redisObject</code>, <code>dictEntry</code>, and the <code>sdshdr5</code> through <code>sdshdr64</code> header layouts. <em>github.com/redis/redis</em></li>
+            <li>Jemalloc. <em>Size classes</em> — the small-object allocation ladder that governs internal fragmentation for every Redis allocation. <em>jemalloc.net</em></li>
+            <li>Related: <a href="/redis-ram-to-raw-json-ratio">Redis In-Memory Key Inflation Calculator</a> &#183; <a href="/db-instance-sizing">DB Instance Sizing</a> &#183; <a href="/database-rows-to-storage-est">Database Rows to Storage</a> &#183; <a href="/token-size-to-storage">Token Size to Storage</a> &#183; <a href="/context-window-vram-inflation-real">The Attention Gap</a> &#183; <a href="/container-resource-limit">Container Resource Limits</a> &#183; <a href="/data-magnitude">All Data &amp; Storage Tools</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Fredis-memory-overhead&amp;text=Redis%20charges%20a%20fixed%20toll%20on%20every%20key%20before%20your%20data%20is%20counted" target="_blank" rel="noopener" aria-label="Share on X">&#120143;</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Fredis-memory-overhead" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/redis-ram-to-raw-json-ratio">&#129518; Redis In-Memory Key Inflation Calculator &rarr;</a>
+            <a href="/db-instance-sizing">&#129518; DB Instance Sizing &rarr;</a>
+            <a href="/database-rows-to-storage-est">&#129518; Database Rows to Storage &rarr;</a>
+            <a href="/token-size-to-storage">&#129518; Token Size to Storage &rarr;</a>
+            <a href="/container-resource-limit">&#129518; Container Resource Limits &rarr;</a>
+            <a href="/cloud-storage-cost">&#129518; Cloud Storage Cost &rarr;</a>
+            <a href="/context-window-vram-inflation-real">&#128240; The Attention Gap: Why Your KV Cache Estimate Is 8&times; Too Big &rarr;</a>
+            <a href="/data-magnitude">&#128202; All Data &amp; Storage Tools &rarr;</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Cost-Model Disclaimer:</strong> Figures are model outputs derived from documented Redis structure sizes and published defaults, not measurements of any specific deployment. Real memory usage varies with Redis version, allocator build, pointer width, key-length and value-size distribution, encoding transitions, replica and persistence buffers, and the operating system's page management. Validate against <code>INFO memory</code> and <code>MEMORY USAGE</code> on the workload itself before committing capacity.</p>
+        </div>
+    </section>
+
+
+<footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/data-magnitude">Data &amp; Storage</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>
