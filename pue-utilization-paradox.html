@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The PUE Paradox: Why an Empty Datacenter Scores Worse Than a Full One</title>
+    <meta name="description" content="PUE is a ratio, and the denominator moves. The same building reads 1.50 at full load and 1.74 at a fifth of it, while burning 77% less power.">
+    <meta property="og:title" content="The PUE Paradox — Why an Empty Datacenter Scores Worse">
+    <meta property="og:description" content="A ratio whose denominator is the load you are trying to cut. Same hardware reads 1.50 full and 1.74 at a fifth of design load.">
+    <meta property="og:url" content="https://www.jslet.com/pue-utilization-paradox">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-10-13T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-10-13T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The PUE Paradox: Why an Empty Datacenter Scores Worse Than a Full One">
+    <meta name="twitter:description" content="PUE divides facility energy by IT energy. Cut the IT half and the ratio gets worse while the bill falls 77%. The measurement boundary moves it by 0.14.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/pue-utilization-paradox">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The PUE Paradox: Why an Empty Datacenter Scores Worse Than a Full One",
+      "description": "Power Usage Effectiveness is total facility energy divided by IT equipment energy, which means the metric's denominator is the load an operator spends the year trying to reduce. A facility designed to 1.50 at full load reads 1.59 at 40% occupancy and 1.74 at 20%, because transformers, UPS units, chillers, pumps, lighting and controls carry a fixed floor that does not fall with the IT load. The industry's weighted average annual PUE has sat between 1.54 and 1.59 for six years even as the best operators reached 1.09, the standardised measurement boundary can move a single building's reading by 0.14, and since 2023 annual PUE has been a reported legal figure in the European Union.",
+      "url": "https://www.jslet.com/pue-utilization-paradox",
+      "datePublished": "2026-10-13T00:00:00+00:00",
+      "dateModified": "2026-10-13T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research", "url": "https://www.jslet.com/methodology" },
+      "publisher": { "@type": "Organization", "@id": "https://www.jslet.com/#organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why does PUE get worse when IT load drops?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because IT energy is the denominator. Cooling, power conversion and lighting all carry a fixed floor that does not shrink in proportion to load: transformer core loss appears at no load, a double-conversion UPS performs worst at light load, chillers and pumps have minimum operating points, and the building management system draws the same either way. A facility designed to PUE 1.50 at full load models at 1.59 at 40% occupancy and 1.74 at 20%, because a 300 kW fixed floor is spread across 2,000 kW instead of 5,000 kW of IT. Absolute energy falls 77% over that range while the ratio rises 16%."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is a lower PUE always better?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Because IT energy sits in the denominator, adding IT load lowers the ratio even when the added load does no useful work. PUE measures the overhead the building charges for delivering energy, not how much computing that energy produces, so a facility can improve its PUE by filling the hall with hardware that computes nothing. A reading of 1.20 from a facility that is 30% utilised and a reading of 1.20 from one that is full describe different buildings, and only the second one is efficient."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is a good PUE value?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The Uptime Institute's 2025 survey put the weighted average annual PUE of respondents' data centres at 1.54, essentially unchanged for six years, while Google reported a 2025 fleet-wide average of 1.09. Legacy enterprise rooms still run above 2.0. The number is only meaningful next to the load factor it was measured at, the climate it was measured in, the measurement category it was collected under, and the boundary it was collected at — a raw PUE from two sites is comparable only when all four match."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does PUE measure carbon or water?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. PUE measures energy overhead only. A facility at PUE 1.1 on a fossil-heavy grid can emit more per unit of computing than one at PUE 1.6 on a clean grid, and water use appears nowhere in the ratio at all. The companion metrics are WUE for water, ERF for reused heat and REF for renewable share, and they can move in opposite directions: evaporative cooling lowers energy overhead while raising water consumption. The European reporting scheme requires PUE, WUE, ERF and REF together for that reason."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is PUE legally required?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "In the European Union it is a reporting obligation rather than a cap. Under Article 12 of the Energy Efficiency Directive 2023/1791 and Delegated Regulation (EU) 2024/1364, data centres with an installed IT power demand of 500 kW or more report annually to a European database by 15 May, covering the previous calendar year, and PUE is one of four mandatory indicators. The directive sets no PUE threshold; the 1.2 figure widely quoted as an EU rule is German national law, which applies to new facilities from July 2026."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 117 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>The <span>PUE Paradox</span></h1>
+        <p>PUE divides facility energy by IT energy — so the half of the fraction you spend the year trying to shrink is also the half that flatters the score. The same building reads 1.50 at full load and 1.74 at a fifth of it</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-10-13 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 18 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ul style="line-height:2; padding-left:20px; margin:0; columns:2; column-gap:28px;">
+            <li><a href="#floor" style="color:var(--accent); text-decoration:none;">A Floor You Cannot Reach</a></li>
+            <li><a href="#split" style="color:var(--accent); text-decoration:none;">Where the Overhead Goes</a></li>
+            <li><a href="#plateau" style="color:var(--accent); text-decoration:none;">1.54, and Six Years of Nothing</a></li>
+            <li><a href="#denominator" style="color:var(--accent); text-decoration:none;">The Denominator Effect</a></li>
+            <li><a href="#bill" style="color:var(--accent); text-decoration:none;">What the Ratio Actually Costs</a></li>
+            <li><a href="#boundary" style="color:var(--accent); text-decoration:none;">The Number Is a Choice</a></li>
+            <li><a href="#blind" style="color:var(--accent); text-decoration:none;">What PUE Cannot See</a></li>
+            <li><a href="#law" style="color:var(--accent); text-decoration:none;">Now a Reported Legal Figure</a></li>
+            <li><a href="#measure" style="color:var(--accent); text-decoration:none;">Measuring Without Fooling Yourself</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ul>
+    </div>
+
+    <section class="seo-section">
+        <p>Power Usage Effectiveness is the least mysterious metric in infrastructure. Total facility energy divided by IT equipment energy. It was introduced by The Green Grid in 2007, standardised as ISO/IEC 30134-2, measured in almost every data hall on earth, and quoted to two decimal places in board decks. Nobody argues about the formula.</p>
+        <p>The trouble is that the formula has a moving part, and it is the part an operator spends the entire year trying to reduce. PUE is a fraction whose denominator is IT load. Cut the denominator &mdash; consolidate onto fewer hosts, retire a cluster, ride out a slow quarter with the hall half populated &mdash; and the ratio goes up. Not because anything got less efficient, but because the overheads that keep the building alive do not shrink when the servers leave.</p>
+        <p>A facility designed to 1.50 at full load reads 1.59 at 40% occupancy and 1.74 at 20%. Over that range its power draw falls by 77%. Both statements are true at the same time, and only one of them appears in the sustainability report.</p>
+        <p>This is the written companion to the <a href="/datacenter-pue-cost">Datacenter PUE to Power Cost calculator</a>, which turns a PUE, an IT load and an electricity rate into a monthly invoice. What follows is the part a single ratio hides: where the overhead physically goes, why the industry average has not moved in six years, the fixed-loss floor that makes consolidation look like failure, how much of the number is decided by where you put the meter, and why an annual PUE is now a legal figure in Europe that can penalise an empty hall.</p>
+    </section>
+
+    <section class="seo-section" id="floor">
+        <h2>A Floor You Cannot Reach</h2>
+        <p>The definition is worth writing out in full, because the arithmetic that follows from it is what most teams never do. PUE equals total facility energy divided by IT equipment energy, which is identical to one plus the ratio of non-IT energy to IT energy. Both terms are measured in the same unit over the same window, and the standard's preferred reporting period is a full year &mdash; a fact that matters more than it sounds, and one we return to.</p>
+        <p>A PUE of 1.0 would mean every kilowatt-hour entering the building reaches a processor. That is unreachable, and the reason is not laziness. Power distribution alone loses energy: a transformer has core loss that appears the moment it is energised, a double-conversion uninterruptible power supply converts alternating current to direct current and back through two conversion stages, and the cabling and busways between the switchgear and the rack dissipate a few percent more. Cooling has to move every watt of heat the hall produces, and the machines that do the moving consume power of their own. A building with no cooling and a perfect power chain would still not read 1.00.</p>
+        <p>The useful form of the ratio is the one nobody writes down. Overhead cost per dollar of IT energy is simply PUE minus one, and overhead as a share of the total bill is one minus the reciprocal of PUE:</p>
+        <table class="brief-table">
+            <thead><tr><th>PUE</th><th class="num">Overhead per $1 of IT energy</th><th class="num">Overhead share of the power bill</th><th>What that reading usually is</th></tr></thead>
+            <tbody>
+                <tr><td>1.10</td><td class="num">$0.10</td><td class="num">9.1%</td><td>Best-in-class liquid cooling, free-air, fresh build</td></tr>
+                <tr><td>1.25</td><td class="num">$0.25</td><td class="num">20.0%</td><td>Modern contained air cooling in a temperate climate</td></tr>
+                <tr class="hi"><td>1.54</td><td class="num">$0.54</td><td class="num">35.1%</td><td>The industry weighted average, 2025</td></tr>
+                <tr><td>1.80</td><td class="num">$0.80</td><td class="num">44.4%</td><td>Legacy air cooling, weak containment</td></tr>
+                <tr><td>2.00</td><td class="num">$1.00</td><td class="num">50.0%</td><td>Pre-2005 rooms, oversized power chain, no containment</td></tr>
+            </tbody>
+        </table>
+        <p>Read the bottom two rows again. At a PUE of 2.00 half of every dollar on the power bill buys nothing that computes. At 1.54 &mdash; the industry average, not a warning case &mdash; it is 35.1 cents.</p>
+        <p>The reciprocal has a name of its own, Data Centre Infrastructure Efficiency, and it is just the same number stated as a percentage: DCiE equals one divided by PUE. At 1.54, 65% of the energy you buy reaches the racks and 35% does not. The two forms are interchangeable, which is why a modest-looking move from 1.60 to 1.50 is worth ten points of DCiE and not two.</p>
+    </section>
+
+    <section class="seo-section" id="split">
+        <h2>Where the Overhead Goes</h2>
+        <p>Overhead is not one thing, and the split matters because the components behave differently under load. The canonical decomposition of a conventional facility at roughly PUE 1.5, expressed as a percentage of IT load rather than of total energy, looks like this:</p>
+        <table class="brief-table">
+            <thead><tr><th>Component</th><th class="num">% of IT load</th><th>What is actually drawing it</th></tr></thead>
+            <tbody>
+                <tr><td>Cooling plant</td><td class="num">26%</td><td>Chillers or compressors, cooling towers, condenser-water pumps</td></tr>
+                <tr><td>Fan coils</td><td class="num">6%</td><td>CRAC and CRAH fan power, air handling, supply and return</td></tr>
+                <tr><td>Electrical losses</td><td class="num">14%</td><td>Transformer core and copper loss, UPS conversion, PDU step-down, cabling</td></tr>
+                <tr><td>Other overhead</td><td class="num">3%</td><td>Lighting, building management, security, fire suppression</td></tr>
+                <tr class="hi"><td><strong>Total overhead</strong></td><td class="num"><strong>49%</strong></td><td><strong>PUE 1.49</strong></td></tr>
+            </tbody>
+        </table>
+        <p>Two counterfactuals turn that table into a priority order. Strip the cooling plant and the fan coils entirely and PUE falls from 1.49 to 1.18. Strip every watt of electrical loss instead and PUE falls only to 1.35. Cooling is roughly three times the prize that the power chain is, which is why liquid cooling and containment come before higher-efficiency switchgear in every credible roadmap. It also explains why the two numbers move together in practice: you cannot fix the electrical term by buying a better UPS if the chillers are still rejecting heat into a hall that leaks air.</p>
+        <p>An independent decomposition reaches the same place. The drafting notes published alongside China's GB 40879 data-centre energy-efficiency standard work through a 3,600-rack hall and land at cooling close to 35% of IT load, transformer loss 1.9%, UPS loss 7.5%, cabling 1%, and miscellaneous auxiliary loads 4.4% &mdash; 49.8% of IT load in total, for a PUE of 1.498. Different continent, different vintage, same order of magnitude and the same dominant term.</p>
+        <p>The detail that the table hides is that most of those entries are closer to a rate than a consumption. They describe what a piece of infrastructure draws while it is energised, not what it draws in proportion to the work being done. That distinction is the whole of the next section.</p>
+    </section>
+
+    <section class="seo-section" id="plateau">
+        <h2>1.54, and Six Years of Nothing</h2>
+        <p>The Uptime Institute has collected average annual PUE from a large sample of operators every year since 2007, which gives the field an unusually long and consistent series. The headline figures, weighted averages for the largest facility each respondent owns or operates:</p>
+        <table class="brief-table">
+            <thead><tr><th>Year</th><th class="num">Weighted average annual PUE</th><th>What changed</th></tr></thead>
+            <tbody>
+                <tr><td>2007</td><td class="num">2.50</td><td>The year the metric was defined</td></tr>
+                <tr><td>2011</td><td class="num">1.98</td><td>Airflow management begins in earnest</td></tr>
+                <tr><td>2014</td><td class="num">1.65</td><td>The cheap measures are in</td></tr>
+                <tr><td>2018</td><td class="num">1.58</td><td>Diminishing returns set in</td></tr>
+                <tr><td>2020</td><td class="num">1.59</td><td>Plateau begins</td></tr>
+                <tr><td>2021</td><td class="num">1.57</td><td>&mdash;</td></tr>
+                <tr><td>2022</td><td class="num">1.55</td><td>&mdash;</td></tr>
+                <tr><td>2023</td><td class="num">1.58</td><td>&mdash;</td></tr>
+                <tr><td>2024</td><td class="num">1.56</td><td>Sixth year without real movement</td></tr>
+                <tr class="hi"><td>2025</td><td class="num">1.54</td><td>n = 681 respondents</td></tr>
+            </tbody>
+        </table>
+        <p>The shape of that series is the interesting part. Between 2007 and 2014 the average fell 0.85, in seven years. Between 2014 and 2025 it fell 0.11, in eleven. Uptime's own reading of the plateau is that the practical measures went in first &mdash; airflow management, better controls on ageing electrical systems, optimised cooling setpoints &mdash; and that what remains is capital-intensive: chiller replacement, full containment retrofits, conversion to liquid. The average is also anchored by a long tail of older rooms that will never be retrofitted at all, which is why the headline barely moves even while new builds get dramatically better.</p>
+        <p>At the leading edge the numbers are far below the average. Google reported a 2025 fleet-wide annual PUE of 1.09, measured as a trailing twelve-month figure across all of its large-scale data centres and inclusive of all overhead. The company's own arithmetic on that figure is instructive: overhead energy of 0.09 against an industry average of 0.54 works out to 83% less overhead energy for the same unit of IT load.</p>
+        <p>Google's published campus table shows the same operator spanning a 0.18 range in a single quarter: 1.04 at its Lancaster, Ohio campus at the low end and 1.22 at Mesa, Arizona at the high end, with the Nordic and Irish sites clustering near 1.07 to 1.09 and the tropical sites above 1.12. One company, one design language, one reporting standard. If a single operator's fleet spreads 0.18, a cross-company league table with a decimal place is a category error.</p>
+    </section>
+
+    <section class="seo-section" id="denominator">
+        <h2>The Denominator Effect</h2>
+        <p>Every component in the decomposition above contains a term that does not scale down. A transformer's core loss appears when it is energised and is largely independent of what is drawn from it. A double-conversion UPS is at its worst efficiency at light load &mdash; the conversion stages run regardless, so the loss fraction rises as throughput falls. Chillers have minimum operating points below which they either cycle or must be run anyway. Pumps and fans have minimum speeds. Lighting, building management and security draw what they draw. The building is a fixed floor plus a term that tracks load.</p>
+        <p>That is not a new observation. A Schneider Electric white paper on virtualisation and the data centre made the point plainly: the fixed losses inherent in power and cooling capacity do not vary with load, so when consolidation reduces IT load, the fixed losses become a larger share of total consumption and PUE gets worse. The paper noted that the larger the provisioned power and cooling capacity, the more fixed loss there is to be stranded. More recent modelling of European facilities found that utilisation can influence measured PUE by more than the difference between climates &mdash; that the same building can read materially differently depending only on how full it is.</p>
+        <p>Put numbers on it. Take a hall provisioned for 5,000 kW of IT load, with a fixed floor of 300 kW and overhead that otherwise tracks load at a coefficient of 0.44. Both constants are illustrative, and the method below lets you substitute your own:</p>
+        <table class="brief-table">
+            <thead><tr><th>IT load</th><th class="num">Load factor</th><th class="num">Fixed kW</th><th class="num">Load-tracking kW</th><th class="num">Total facility kW</th><th class="num">PUE</th></tr></thead>
+            <tbody>
+                <tr><td>5,000 kW</td><td class="num">100%</td><td class="num">300</td><td class="num">2,200</td><td class="num">7,500</td><td class="num">1.50</td></tr>
+                <tr><td>2,000 kW</td><td class="num">40%</td><td class="num">300</td><td class="num">880</td><td class="num">3,180</td><td class="num">1.59</td></tr>
+                <tr class="bad"><td>1,000 kW</td><td class="num">20%</td><td class="num">300</td><td class="num">440</td><td class="num">1,740</td><td class="num">1.74</td></tr>
+            </tbody>
+        </table>
+        <p>Nothing about the building changed between those rows. The chillers are the same, the UPS the same, the containment the same. Consumption fell from 7,500 kW to 1,740 kW &mdash; a 77% reduction that any facilities manager would call a triumph &mdash; and the reported efficiency score got 16% worse. At 40% occupancy the reading of 1.59 is above the 2025 industry average of 1.54, so a facility engineered better than most of the installed base reports as worse than average, purely because it is not full.</p>
+        <div class="pull">The ratio and the bill move in opposite directions, and only one of them is an invoice. Consolidating a hall is the single most effective way to cut the power bill and simultaneously the most reliable way to make the efficiency score look like a failure.</div>
+        <h3>Marginal PUE is the number to spend against</h3>
+        <p>The model has a second reading that almost nobody uses. The average PUE at a fifth of design load is 1.74, but the marginal PUE &mdash; the extra facility energy required for one more kilowatt of IT load &mdash; is 1.44, because only the load-tracking term responds. The gap is 0.30.</p>
+        <p>That gap decides which number to use for which question. Reporting an annual figure uses the average. Deciding whether to fill a rack, accept a new workload, or price a tenant uses the marginal. Priced at 1.74 instead of 1.44, the incremental energy of a new workload is overstated by about 21%, which is enough to fail a business case that would have passed. Conversely, capacity planning that budgets for the average overstates the power headroom a partially filled hall actually has.</p>
+        <h3>The perverse corollary</h3>
+        <p>Because IT energy is the denominator, a facility can improve its PUE by adding load that does no useful work. Fill a hall with hardware that spends its time idle and the ratio improves while nothing about the building gets better. This is the reason PUE can never be a target on its own, and the reason a procurement incentive written purely on PUE can be satisfied by buying servers rather than by fixing cooling.</p>
+    </section>
+
+    <section class="seo-section" id="bill">
+        <h2>What the Ratio Actually Costs</h2>
+        <p>The same three rows, priced. The rate is the U.S. industrial average retail electricity price of 8.62 cents per kilowatt-hour for 2025, published by the Energy Information Administration in its Electric Power Monthly series; the month is the 730 hours a modelling year implies at (365 &times; 24) &divide; 12, the convention every cloud pricing calculator uses and the subject of its own briefing, <a href="/cloud-billing-hours-per-month">The 730-Hour Month</a>.</p>
+        <table class="brief-table">
+            <thead><tr><th>Load factor</th><th class="num">Facility kW</th><th class="num">kWh / month</th><th class="num">Cost / month</th><th class="num">Cost / year</th></tr></thead>
+            <tbody>
+                <tr><td>100%</td><td class="num">7,500</td><td class="num">5,475,000</td><td class="num">$471,945</td><td class="num">$5,663,340</td></tr>
+                <tr><td>40%</td><td class="num">3,180</td><td class="num">2,321,400</td><td class="num">$200,105</td><td class="num">$2,401,260</td></tr>
+                <tr><td>20%</td><td class="num">1,740</td><td class="num">1,270,200</td><td class="num">$109,491</td><td class="num">$1,313,892</td></tr>
+            </tbody>
+        </table>
+        <p>Read the first and third rows together. The efficiency score went from 1.50 to 1.74 &mdash; a 16% deterioration &mdash; while the annual bill fell by more than four million dollars. Any review that ranks facilities by PUE and rewards the top of the list is ranking them by occupancy, and paying a premium for it.</p>
+        <p>The fixed floor has its own line item, and it is the one that surprises people because it exists before anything computes. 300 kW drawing continuously for 730 hours is 219,000 kWh, which at 8.62 cents is $18,878 a month and $226,534 a year. That is the standing cost of being ready: transformers energised, UPS on line, cooling setpoints maintained, hall lit and monitored. A facility that has been emptied by a migration still pays it, and pays it against a denominator that has gone away.</p>
+        <p>Three qualifications belong on those figures. First, the rate is a national industrial average, not a data-centre contract price; hyperscale sites routinely negotiate below published tariffs, and any specific site should be modelled on its own blended rate. Second, the figures are energy-only and exclude demand charges, which on many commercial tariffs add 30% to 50% on top and are set by peak draw rather than consumption. Third, and most importantly for this briefing, the 730-hour month is a modelling convention rather than a billing rule: a February invoice covers 672 hours and a 31-day month covers 744, which is why the same workload priced in a calculator and reconciled against a bill will not agree to the cent.</p>
+    </section>
+
+    <section class="seo-section" id="boundary">
+        <h2>The Number Is a Choice</h2>
+        <p>Everything so far has assumed that the numerator and the denominator are facts. They are conventions. PUE is defined across a boundary, and the boundary has to be drawn somewhere &mdash; which means the same building, with the same hardware and the same load, can be reported at more than one figure by moving the meter.</p>
+        <p>The largest single lever is where IT energy is measured. Meter at the uninterruptible power supply output and the IT term includes the PDU, busway and cable losses downstream of it, which inflates the denominator and lowers the ratio. Meter at the rack and those losses fall outside the IT term, where they count as facility overhead, and the ratio rises. The electrical-loss band in the decomposition above is 14% of IT load. Move all of it from one side of the fraction to the other and the same building reads 1.49 or 1.35.</p>
+        <p>That 0.14 spread is worth comparing against the industry's actual progress. The weighted average fell from 1.65 in 2014 to 1.54 in 2025 &mdash; 0.11, in eleven years, across every retrofit and every new build on earth. The choice of where to put one meter is larger than that.</p>
+        <div class="pull">A measurement convention can move a facility's PUE by more than the entire industry managed to improve over the last decade. Any comparison that does not state the boundary is comparing conventions, not buildings.</div>
+        <p>The standard answers this by requiring the boundary and the measurement approach to be declared, and by defining categories that describe how the figure was collected rather than how good the facility is. Category 0 is an estimate with no continuous metering. Category 1 uses basic energy totals, commonly monthly. Category 2 uses finer, commonly daily, totals. Category 3 uses continuous measurement, typically at fifteen-minute resolution.</p>
+        <p>The categories are routinely misread. They are a statement about rigour, not performance: a Category 3 reading of 1.60 is a more credible figure than a Category 0 estimate of 1.30, and a facility that reports a Category 0 number next to a competitor's Category 3 number has not made a comparison at all. The period has the same problem. A power snapshot in kilowatts is not an annual energy figure in kilowatt-hours, and a winter month with free cooling running is not a year. The standard's preferred reporting period is a full year for exactly this reason.</p>
+        <p>The most recent revision of the standard, the 2026 second edition of ISO/IEC 30134-2, tightened two of the remaining loopholes by adding guidance on mixed-use buildings, on-site generation, and unaccounted energy. The last of those is the quiet one: leaving real but unmetered loads out of the facility total understates the numerator and depresses the ratio, which means a facility can improve its reported number by getting worse at accounting for it.</p>
+    </section>
+
+    <section class="seo-section" id="blind">
+        <h2>What PUE Cannot See</h2>
+        <p>PUE measures the building, not the work. It says nothing about how much computing a kilowatt-hour produces, and two facilities with identical PUE can differ several-fold in useful output per unit of energy. Google's own estimate is that its data centres delivered more than three times the compute performance per unit of energy in 2025 than five years earlier, driven largely by accelerator efficiency. None of that appears anywhere in the PUE figure, because a more efficient processor changes the numerator and the denominator in the same direction and cancels out.</p>
+        <p>It also says nothing about carbon, and this is where a low PUE is most often oversold. A facility at 1.10 drawing from a coal-heavy grid can emit more per unit of computing than one at 1.60 drawing from a hydro-heavy one. The overhead multiplier applies to the energy; the grid decides what that energy costs the atmosphere. Carbon has its own metric, CUE, and the emission factors behind it live in the grid, not in the building.</p>
+        <p>Water is the same story with a sharper trade. Water Usage Effectiveness measures litres consumed per kilowatt-hour of IT energy, and evaporative cooling is popular precisely because it is an excellent way to lower PUE. It does that by consuming water. An operator optimising PUE alone is being pushed, by the metric, toward a cooling architecture that raises WUE &mdash; which is why the two have to be read together and why the choice is a siting decision as much as an engineering one.</p>
+        <p>The companion metrics complete the set. ERF, the Energy Reuse Factor, captures heat that is exported rather than rejected, and it is the rare indicator that can be pushed in the right direction while PUE is ignored. REF, the Renewable Energy Factor, captures the renewable share of the supply. DCiE is simply one divided by PUE restated as a percentage. No single one of them carries energy overhead, water, renewables and heat reuse at once, which is the reason regulators ask for four of them rather than one.</p>
+    </section>
+
+    <section class="seo-section" id="law">
+        <h2>Now a Reported Legal Figure</h2>
+        <p>Since 2023, annual PUE has stopped being a purely voluntary disclosure. Article 12 of the recast Energy Efficiency Directive, Directive (EU) 2023/1791, requires data centres to publish information on their energy performance, and Delegated Regulation (EU) 2024/1364 sets out the harmonised reporting elements and the first phase of a common European rating scheme.</p>
+        <p>The obligation is concrete. Operators of data centres with an installed IT power demand of at least 500 kW report annually to a European database, covering the previous calendar year, with a submission due by 15 May. The information set produces four core indicators, and PUE is one of them alongside WUE, ERF and REF. Member states may set a lower threshold than the European baseline, so the practical population of buildings in scope is larger than the 500 kW line suggests.</p>
+        <p>What the directive does not do is cap PUE. There is no European threshold, and the widely repeated claim that Brussels mandates a PUE of 1.2 is a misreading of the scheme. The 1.2 figure comes from national law: Germany's Energieeffizienzgesetz requires newly commissioned facilities to reach a PUE of 1.2, and phases existing sites toward 1.5 and then 1.3 on a published schedule. The distinction matters because it changes what an operator has to do &mdash; report, or comply.</p>
+        <p>The scale behind the regulation explains the attention. The European Commission put EU data centres at close to 3% of European electricity demand, rising from 76.8 TWh in 2018 to a projected 98.5 TWh by 2030, a 28% increase in absolute terms even as the share of demand climbs from 2.7% to 3.21%.</p>
+        <p>Here is where the regulation meets the paradox. A threshold written on annual PUE is a performance requirement, but the measurement it is written on moves with occupancy. A facility still filling capacity can sit on the wrong side of a compliance line without any engineering having changed, because the fixed floor is being divided by a smaller denominator. Occupancy is driven by leasing cycles, market conditions and migration schedules &mdash; not by the quality of the cooling design. An annual PUE target that ignores load factor is therefore, in part, a target on how quickly a building fills.</p>
+    </section>
+
+    <section class="seo-section" id="measure">
+        <h2>Measuring Without Fooling Yourself</h2>
+        <p>Getting a PUE that survives scrutiny is not a metering project. It is four decisions, taken deliberately and written down.</p>
+        <ol>
+            <li><strong>Declare the boundary before you read a number.</strong> Write down whether IT energy is measured at the UPS output, the PDU or the rack, and which loads sit inside the facility total. Two figures from the same building are not comparable without it, and a figure carried into a comparison with a third party is meaningless without it. If the boundary has to change, restart the series rather than splicing the two periods together.</li>
+            <li><strong>Use energy over a full year, not power at an instant.</strong> A kilowatt snapshot taken on a mild afternoon is not a PUE; it is a PUE at one load and one weather condition. Annual totals capture the seasonal cooling swing and the load cycle. If a snapshot is all you have, label it as one and pin the load factor next to it, because a snapshot's value without its load factor cannot be interpreted at all.</li>
+            <li><strong>Report PUE next to utilisation.</strong> This single practice dissolves most of the paradox. A PUE of 1.74 at 20% occupancy and a PUE of 1.50 at 100% are consistent readings of the same facility, and publishing both makes the fixed floor visible instead of mysterious. A PUE without its load factor is not a weaker statistic; it is an uninterpretable one.</li>
+            <li><strong>Model marginal PUE for decisions and average PUE for reporting.</strong> The average answers the question a regulator, a customer or a board asks. The marginal &mdash; one plus the load-tracking coefficient of the overhead split &mdash; answers the question of whether to add a rack, accept a tenant or commit to a new hall. Using the average for the second question is how a viable expansion gets rejected on overstated energy.</li>
+        </ol>
+        <p>Then multiply it out. Facility draw is IT load multiplied by PUE; monthly energy is facility draw multiplied by 730 hours; the bill is that energy multiplied by the rate. The <a href="/datacenter-pue-cost">calculator paired with this briefing</a> does exactly that and returns the monthly and annual figures, the overhead attributable to cooling and distribution, and the payback on a PUE improvement. The <a href="/methodology">methodology page</a> documents how the rates and benchmarks behind it were reviewed, and <a href="/data/numbers.json">the numbers file</a> exposes every figure used here in machine-readable form with its conditions attached.</p>
+        <p>The one habit worth keeping from all of it is scepticism about a lone ratio. PUE answers a precise question &mdash; how much energy does the building consume per unit delivered to the racks &mdash; and it answers it well. Ask it anything else, including whether the facility is efficient, and it will answer confidently and wrongly.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>Frequently Asked Questions</h2>
+        <h3>Why does PUE get worse when IT load drops?</h3>
+        <p>Because IT energy is the denominator. Cooling, power conversion and lighting carry a fixed floor that does not shrink in proportion to load: transformer core loss appears at no load, a double-conversion UPS performs worst at light load, chillers and pumps have minimum operating points, and the building management system draws the same either way. A facility designed to PUE 1.50 at full load models at 1.59 at 40% occupancy and 1.74 at 20%, because a 300 kW fixed floor is spread across 2,000 kW instead of 5,000 kW of IT. Absolute energy falls 77% across that range while the ratio rises 16%.</p>
+        <h3>Is a lower PUE always better?</h3>
+        <p>No. Because IT energy sits in the denominator, adding load lowers the ratio even when the added load does no useful work, so a facility can improve its PUE by filling the hall with hardware that computes nothing. PUE measures the overhead the building charges for delivering energy, not the computing that energy produces. A reading of 1.20 from a hall that is 30% occupied and a reading of 1.20 from one that is full describe different buildings, and only the second is efficient.</p>
+        <h3>What is a good PUE value?</h3>
+        <p>Uptime Institute's 2025 survey put the weighted average annual PUE of respondents' data centres at 1.54, essentially unchanged for six years, while Google reported a 2025 fleet-wide average of 1.09. Legacy enterprise rooms still run above 2.0. The figure is only meaningful next to the load factor it was measured at, the climate it was measured in, the measurement category it was collected under, and the boundary it was collected at &mdash; a raw PUE from two sites is comparable only when all four match.</p>
+        <h3>Does PUE measure carbon or water?</h3>
+        <p>No. PUE measures energy overhead only. A facility at PUE 1.10 on a fossil-heavy grid can emit more per unit of computing than one at PUE 1.60 on a clean grid, and water use appears nowhere in the ratio. The companion metrics are WUE for water, ERF for reused heat and REF for renewable share, and they can move in opposite directions: evaporative cooling lowers energy overhead while raising water consumption. The European reporting scheme requires all four together for that reason.</p>
+        <h3>Is PUE legally required?</h3>
+        <p>In the European Union it is a reporting obligation rather than a cap. Under Article 12 of the Energy Efficiency Directive 2023/1791 and Delegated Regulation (EU) 2024/1364, data centres with an installed IT power demand of 500 kW or more report annually to a European database by 15 May, covering the previous calendar year, and PUE is one of four mandatory indicators. The directive sets no threshold; the 1.2 figure widely quoted as an EU rule is German national law, which applies to newly commissioned facilities.</p>
+        <h3>How do I turn a PUE into a monthly power bill?</h3>
+        <p>Multiply IT load in kilowatts by PUE to get facility draw, multiply that by the hours in the month to get kilowatt-hours, then multiply by the electricity rate. A 2 MW IT load at PUE 1.50 draws 3,000 kW; over a 730-hour modelling month that is 2,190,000 kWh, which at the 2025 U.S. industrial average of 8.62 cents per kWh is roughly $188,778. Demand charges, taxes and any time-of-use structure sit outside that figure, and the 730-hour month is a convention rather than a billing rule, so reconcile against the actual invoice before committing budget.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;" id="method">
+        <h2>Methodology &amp; Disclosure</h2>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">The load-and-PUE model in this briefing is illustrative and its two constants are stated rather than hidden: a fixed overhead floor of 300 kW and a load-tracking overhead coefficient of 0.44, applied to a hall provisioned for 5,000 kW of IT load. Both are chosen to illustrate the arithmetic, not to describe a specific facility, and both are easy to replace with measured values &mdash; the fixed term comes from a no-load walk of the power chain plus the always-on auxiliary loads, and the tracking coefficient comes from regressing facility draw against IT draw over a year of interval data. Consumption figures are model outputs rounded to the kilowatt, and the annual totals are the monthly figure multiplied by twelve, which is 8,760 hours.</p>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">The cost rows use the U.S. industrial average retail electricity price of 8.62 cents per kilowatt-hour for calendar year 2025, from the U.S. Energy Information Administration's Electric Power Monthly (Table 5.3, average price of electricity to ultimate customers by end-use sector). Region: United States, national industrial average. Currency: U.S. dollars, nominal, energy component only. Assumptions: no demand charges, no capacity charges, no time-of-use structure, no taxes or levies, no renewable certificate cost, and a 730-hour modelling month defined as (365 days &times; 24 hours) &divide; 12 &mdash; a convention rather than a billing rule, since actual months run 672 to 744 hours. The PUE figures quoted as benchmarks are the reported values of the organisations named and are not normalised onto a common boundary, climate or measurement category, because no such normalisation exists.</p>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">This site takes no sponsorship, no affiliate commission and no vendor payment of any kind. The operators and standards bodies named here have no relationship with jslet and did not review this briefing. Where a figure is a vendor's own disclosure it is attributed to that vendor and is not treated as an independent measurement.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;">
+        <h2>References &amp; Further Reading</h2>
+        <ol style="font-size:0.85rem; line-height:1.9; color:var(--text-body);" id="references">
+            <li>Uptime Institute. <em>Global Data Center Survey 2025</em> and <em>Global Data Center Survey 2024</em> — the weighted average annual PUE series from 2007 to 2025, the 1.54 figure for 2025 on a sample of 681 respondents, the six-year plateau, and the institute's own account of why the cheap efficiency measures are exhausted. <em>uptimeinstitute.com</em></li>
+            <li>Google. <em>Power usage effectiveness</em> — data centre efficiency disclosures: the 2025 fleet-wide annual PUE of 1.09 measured as a trailing twelve-month figure across large-scale sites, the 83% overhead comparison against an industry average of 0.54, and the per-campus quarterly PUE table spanning 1.04 to 1.22. <em>datacenters.google/efficiency</em></li>
+            <li>ISO/IEC 30134-2, <em>Information technology — Data centres key performance indicators — Part 2: Power usage effectiveness</em> — the formal standard for PUE, its measurement boundaries, and the Category 0 to Category 3 reporting tiers; the 2026 second edition replaces the 2016 first edition and adds guidance on mixed-use buildings, on-site generation and unaccounted energy. The metric was introduced by The Green Grid in 2007. <em>iso.org</em></li>
+            <li>U.S. Energy Information Administration. <em>Electric Power Monthly</em>, Table 5.3 — average price of electricity to ultimate customers by end-use sector, used for the 2025 U.S. industrial average of 8.62 cents per kilowatt-hour and the commercial and residential comparators. <em>eia.gov</em></li>
+            <li>Schneider Electric / APC. <em>Virtualization &amp; Cloud Computing: Optimized Power, Cooling, and Management Maximizes Benefits</em>, White Paper 118 — the fixed-loss argument: power and cooling capacity carry losses that do not vary with load, so consolidation raises PUE even as it lowers consumption. <em>se.com</em></li>
+            <li>RED Engineering. <em>PUE 1.15: Is Spain setting the right benchmark for the AI era</em> — modelling of European facilities showing that utilisation can influence measured PUE by more than the variation between climates, and that an operational PUE threshold can reflect occupancy as much as engineering. <em>red-eng.com</em></li>
+            <li>Springer, <em>Energy and Sustainability</em>, chapter 9 — the energy-loss decomposition of a conventional facility at PUE 1.5 (cooling plant 26%, fan coils 6%, electrical losses 14%, other 3% of IT load) and the two counterfactuals, that eliminating all cooling losses implies PUE 1.18 and eliminating all UPS losses implies 1.35. <em>link.springer.com</em></li>
+            <li>GB 40879, <em>Minimum allowable values of energy efficiency and energy efficiency grades for data centres</em> — the drafting notes describe a 3,600-rack reference hall and an independent loss decomposition of cooling, transformer, UPS, cabling and auxiliary loads summing to 49.8% of IT load. <em>cqn.com.cn</em></li>
+            <li>European Commission. Energy Efficiency Directive (EU) 2023/1791, Article 12, and Commission Delegated Regulation (EU) 2024/1364 — the European database on data centres, the 500 kW reporting threshold, the annual 15 May deadline, the PUE / WUE / ERF / REF indicator set, and the Commission's figures for data centre electricity demand in the EU. <em>energy.ec.europa.eu</em></li>
+            <li>Bird &amp; Bird. <em>Impact of the Energy Efficiency Directive and the Energy Efficiency Act on companies, especially data centre operators</em> — the reporting deadlines and the German Energieeffizienzgesetz PUE requirement for newly constructed data centres. <em>twobirds.com</em></li>
+            <li>Related: <a href="/datacenter-pue-cost">Datacenter PUE to Power Cost Calculator</a> &#183; <a href="/cloud-billing-hours-per-month">The 730-Hour Month</a> &#183; <a href="/gpu-training-cost-real">GPU Training Costs</a> &#183; <a href="/error-budget-real">The Error Budget</a> &#183; <a href="/decision-matrix">All Decision Matrix Tools</a> &#183; <a href="/methodology">Methodology</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Fpue-utilization-paradox&amp;text=PUE%20divides%20facility%20energy%20by%20IT%20energy%20%E2%80%94%20so%20cutting%20the%20IT%20half%20makes%20the%20ratio%20worse" target="_blank" rel="noopener" aria-label="Share on X">&#120143;</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Fpue-utilization-paradox" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/datacenter-pue-cost">&#128202; Datacenter PUE to Power Cost Calculator &rarr;</a>
+            <a href="/cloud-billing-hours-per-month">&#128240; The 730-Hour Month: Why Your Cloud Invoice Is Never 730 Hours &rarr;</a>
+            <a href="/gpu-training-cost">&#129518; GPU Training Cost Estimator &rarr;</a>
+            <a href="/cloud-storage-cost">&#129518; Cloud Storage Cost Comparison &rarr;</a>
+            <a href="/data-migration-time">&#129518; Data Migration Time Planner &rarr;</a>
+            <a href="/decision-matrix">&#128202; All Decision Matrix Tools &rarr;</a>
+            <a href="/methodology">&#128220; Methodology &amp; Sources &rarr;</a>
+            <a href="/articles">&#128240; All Briefings &rarr;</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Cost-Model Disclaimer:</strong> Figures are model outputs derived from published benchmarks, published economics and the stated constants, not measurements of any specific facility. Real PUE, real consumption and real tariffs vary with climate, cooling architecture, load profile, utility contract and time of year. Meter the building before committing to capacity or capital.</p>
+        </div>
+    </section>
+
+
+<footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/decision-matrix">Decision Matrix</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>
