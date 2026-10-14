@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Unix Time Is Not a Clock — The 86,400-Second Day</title>
+    <meta name="description" content="Unix time is a count of 86,400-second days, not a clock. The 27 leap seconds it never counted, ten different epochs, and four counters running out.">
+    <meta property="og:title" content="Unix Time Is Not a Clock — The 86,400-Second Day">
+    <meta property="og:description" content="POSIX defines a day as exactly 86,400 seconds. The cost is 27 uncounted seconds and a timestamp that cannot express 23:59:60.">
+    <meta property="og:url" content="https://www.jslet.com/unix-time-not-a-clock">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-10-15T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-10-15T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Unix Time Is Not a Clock — The 86,400-Second Day">
+    <meta name="twitter:description" content="Unix time does not count leap seconds: it runs 27 seconds short, 23:59:60 has no timestamp, and ten different systems each picked a different epoch.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/unix-time-not-a-clock">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "Unix Time Is Not a Clock — The 86,400-Second Day",
+      "description": "A Unix timestamp is not a measurement of time. It is a count of seconds on a day that POSIX defines as exactly 86,400 seconds long, taken from a zero point chosen at 1970-01-01, held in a field of finite width. Four assumptions follow from that sentence, and each one has produced a family of production failures. Twenty-seven leap seconds have been inserted since 1972 and Unix time contains none of them, which makes 23:59:60 unrepresentable and a time_t subtraction an unreliable duration. Ten systems in ordinary production use ten different epochs, from 1601 for Windows FILETIME to 1980 for GPS. Four counters expire at dates five years apart, at 2036 for NTP, 2038 for 32-bit time_t, 2040 for HFS+. Google and AWS smear the last leap second away while Cloudflare and NIST step through it, so two clouds can disagree by half a second around the event. CGPM Resolution 4 raises the UT1-UTC ceiling in or before 2035 and the next correction may be the first negative one ever attempted.",
+      "url": "https://www.jslet.com/unix-time-not-a-clock",
+      "datePublished": "2026-10-15T00:00:00+00:00",
+      "dateModified": "2026-10-15T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research", "url": "https://www.jslet.com/methodology" },
+      "publisher": { "@type": "Organization", "@id": "https://www.jslet.com/#organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Does Unix time count leap seconds?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. POSIX defines seconds since the Epoch and then states that each and every day shall be accounted for by exactly 86400 seconds, which is a definition that excludes leap seconds by construction. Twenty-seven leap seconds have been inserted into UTC since 1972 and the Unix counter contains none of them, so at any instant Unix time is 27 seconds below a strict count of the SI seconds that have elapsed since the 1972 offset was fixed at 10 seconds. The consequence is that 23:59:60 has no Unix value of its own, and that subtracting two timestamps does not return the elapsed duration when the interval contains a leap second."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Unix time in seconds or milliseconds?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Both, and that is the problem. Unix time is defined with one-second resolution, and the common 64-bit extension stores milliseconds instead. A ten-digit integer is almost always seconds and a thirteen-digit integer is almost always milliseconds, because a millisecond timestamp only exceeded ten digits in 2001. JavaScript's Date.now and Java's System.currentTimeMillis return milliseconds while Python's time.time and C's time return seconds, so a mixture of runtimes in one pipeline produces timestamps that are wrong by a factor of 1000 with no error raised. Test the magnitude, or carry the unit in the field name."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What breaks in 2038?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Any timestamp stored in a signed 32-bit integer. The largest value is 2,147,483,647, which corresponds to 2038-01-19 03:14:07 UTC, and the next second wraps to 1901-12-13 20:45:52 UTC. 64-bit systems are unaffected, but 32-bit columns linger in databases, binary file formats, embedded firmware and long-lived configuration. The nearer date is 2036-02-07 06:28:16 UTC, when the 32-bit seconds counter in NTP rolls from era 0 to era 1 forty-four hours earlier than the Unix rollover, and it is the one usually left off the audit."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why is another system's Unix timestamp 18 seconds ahead of mine?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because it is probably not Unix time. GPS time counts leap seconds and Unix time does not, and the GPS epoch is 1980-01-06, so GPS readings sit 18 seconds ahead of UTC as of 2026 while TAI sits 37 seconds ahead. An offset of exactly 18 or 37 seconds against UTC almost always means a GPS or TAI scale has been stored in a field labelled as Unix seconds, and a 2,208,988,800-second offset usually means an NTP timestamp has been written without subtracting the 1900 epoch."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I convert an Excel date to a Unix timestamp?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "For the 1900 date system, subtract 25569 and multiply by 86400. Excel stores dates as serial day numbers, the count of days from a nominal 1899-12-30 zero point, and serial 25569 is 1970-01-01. For the 1904 date system used by older Macintosh workbooks, add 1462 first, because the two systems are exactly 1462 days apart. Use the library path where one exists: a naive days-since-1900-01-01 formula returns dates one day early, because Excel deliberately preserves a 1900 leap-year bug inherited from Lotus 1-2-3, in which serial 60 is the non-existent date 1900-02-29."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 117 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>Unix Time Is <span>Not a Clock</span></h1>
+        <p>It is a serial number in a convention: 86,400 seconds to the day, one epoch, one width. Change any of the four and you get a famous bug &mdash; starting with the 27 seconds nobody counted</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-10-15 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 22 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ul style="line-height:2; padding-left:20px; margin:0; columns:2; column-gap:28px;">
+            <li><a href="#four" style="color:var(--accent); text-decoration:none;">Four Assumptions in One Integer</a></li>
+            <li><a href="#day" style="color:var(--accent); text-decoration:none;">Every Day Is 86,400 Seconds</a></li>
+            <li><a href="#divide" style="color:var(--accent); text-decoration:none;">The Number Is Not a Duration</a></li>
+            <li><a href="#epochs" style="color:var(--accent); text-decoration:none;">There Is No Single Epoch</a></li>
+            <li><a href="#width" style="color:var(--accent); text-decoration:none;">Every Width Runs Out</a></li>
+            <li><a href="#clock" style="color:var(--accent); text-decoration:none;">It Runs Backwards</a></li>
+            <li><a href="#smear" style="color:var(--accent); text-decoration:none;">Six Operators, Four Answers</a></li>
+            <li><a href="#excel" style="color:var(--accent); text-decoration:none;">The Phantom Day</a></li>
+            <li><a href="#abolish" style="color:var(--accent); text-decoration:none;">The Last Leap Second</a></li>
+            <li><a href="#rules" style="color:var(--accent); text-decoration:none;">Six Rules That Survive</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ul>
+    </div>
+
+    <section class="seo-section">
+        <p>Unix time is the most widely deployed representation of time on earth, and it does not measure time. It is a count of seconds on a day that the standard defines as being exactly 86,400 seconds long, counted from a zero point somebody picked in 1970, stored in a field whose width somebody else picked. Four decisions. Every one of them is a place where the number and the world stop agreeing.</p>
+        <p>The specification does not hide this. POSIX defines seconds since the Epoch as <em>a value that approximates</em> the seconds elapsed, which is an unusually candid word for a standard, and then it settles the question of leap seconds with one sentence: as represented in seconds since the Epoch, each and every day shall be accounted for by exactly 86400 seconds. That is a definition, not a measurement. The earth does not cooperate with it, and the gap has a size.</p>
+        <p>This is the written companion to the <a href="/unix-timestamp-to-days">Unix Timestamp to Epoch Days calculator</a>, which turns a bare integer into an ISO 8601 string, a day count and an elapsed-year figure. The conversion is a one-liner, which is exactly why it gets copied out of a REPL and into production without anybody asking what the number is a count of. What follows is the answer: the 61-second minute, why a timestamp subtraction is not a duration, the ten epochs actually running in production, the four counters with an expiry date inside the next five years, and why the next leap second may be the first one that runs backwards.</p>
+    </section>
+
+    <section class="seo-section" id="four">
+        <h2>Four Assumptions in One Integer</h2>
+        <p>It helps to write the convention down, because the sentence people carry around &mdash; seconds since 1 January 1970 &mdash; is doing four different jobs at once and only the fourth of them is a unit.</p>
+        <table class="brief-table">
+            <thead><tr><th>The assumption</th><th>Where it is written</th><th>What happens when it is wrong</th></tr></thead>
+            <tbody>
+                <tr><td><strong>A day is 86,400 seconds</strong></td><td>POSIX seconds since the Epoch</td><td>27 seconds of real time are missing from the count, and 23:59:60 has no value</td></tr>
+                <tr><td><strong>The epoch is 1970-01-01</strong></td><td>Every <code>time_t</code> in existence</td><td>FILETIME reads 116,444,736,000,000,000 for the same instant; GPS reads 315,964,800</td></tr>
+                <tr><td><strong>The field is wide enough</strong></td><td>Whatever the column was declared as</td><td>Signed 32-bit wraps on 2038-01-19 03:14:07 UTC; NTP wraps on 2036-02-07</td></tr>
+                <tr class="bad"><td><strong>It is a clock</strong></td><td>Nobody writes this one down</td><td>It repeats a second, it can be stepped backwards, and two clouds disagree by half a second</td></tr>
+            </tbody>
+        </table>
+        <p>The first three are documented and the fourth is folklore, which is the reverse of their relative danger. A programmer who has never read POSIX §4.16 still believes, in the way people believe things, that a Unix timestamp is the number of seconds that have elapsed since the epoch. It is not, in the same way a page number is not a distance. The number is a serial number in a calendar the standard agreed on, and it is only approximately a measure of anything physical.</p>
+        <p>Everything in this briefing is one of those four rows meeting a system that made a different choice. That is the entire genre of date bug.</p>
+    </section>
+
+    <section class="seo-section" id="day">
+        <h2>Every Day Is 86,400 Seconds</h2>
+        <p>Coordinated Universal Time is produced by atomic clocks and kept within 0.9 seconds of UT1, the time scale defined by the earth's actual rotation. When the two drift far enough apart the International Earth Rotation and Reference Systems Service inserts a second, and it announces the decision in a Bulletin C published in January and July, roughly six months before the event. The insertion always lands at the end of 31 December or 30 June, on the last second of the UTC day, and the second it inserts is labelled sixty.</p>
+        <p>Read the last sentence again, because it is the one that breaks things. A UTC minute on a leap-second day has sixty-one seconds in it, and the extra one is called 23:59:60. That is not a metaphor or a rounding artefact. It is a legal UTC label, announced in advance, that Unix time cannot represent. The conversion table looks like this:</p>
+        <table class="brief-table">
+            <thead><tr><th>UTC label</th><th>Unix value</th><th>What is actually happening</th></tr></thead>
+            <tbody>
+                <tr><td>2016-12-31 23:59:59</td><td class="num">1483228799</td><td>the last ordinary second of the year</td></tr>
+                <tr class="bad"><td>2016-12-31 23:59:60</td><td class="num">&mdash;</td><td>a real second; no distinct Unix value exists</td></tr>
+                <tr><td>2017-01-01 00:00:00</td><td class="num">1483228800</td><td>the next ordinary second</td></tr>
+            </tbody>
+        </table>
+        <p>The distance between the first and third rows is one unit of Unix time and two seconds of real time. Across a leap second, the counter advances by one while the clock ticks twice, because there is nowhere in the counter to put the extra second. The standard's own arithmetic then requires that the next day be treated as though it started at the same instant, which is how Unix time stays correct as a calendar and stops being correct as a duration.</p>
+        <p>There have been 27 such seconds since the system was regularised, all of them positive, the most recent at the end of 2016. The atomic offset that was fixed at ten seconds on 1972-01-01 now stands at 37 seconds, and the difference between those two numbers is the count of insertions. None of the 27 appears in any Unix timestamp. Measured from the 1972 alignment, the two scales have diverged by exactly the leap seconds inserted since, and the divergence never gets removed:</p>
+        <table class="brief-table">
+            <thead><tr><th>Time scale</th><th>Offset from UTC, 2026</th><th>Counts leap seconds?</th></tr></thead>
+            <tbody>
+                <tr><td>UTC</td><td class="num">0</td><td>it is the scale that gets the leap second</td></tr>
+                <tr><td>TAI (atomic)</td><td class="num">+37 s</td><td>yes; continuous, never corrected</td></tr>
+                <tr><td>GPS</td><td class="num">+18 s</td><td>yes; TAI minus a fixed 19 seconds</td></tr>
+                <tr><td>NTP</td><td class="num">leap-corrected</td><td>yes; the reference implementation stutters or skips</td></tr>
+                <tr class="hi"><td>Unix / POSIX <code>time_t</code></td><td class="num">0 as a label, &minus;27 s as a count</td><td><strong>no</strong></td></tr>
+            </tbody>
+        </table>
+        <p>Four of the five scales on that table count the leap seconds and one does not, and the one that does not is the one storing nearly every log line, metric and database row written today. That is not a scandal; it is a deliberate trade made in favour of arithmetic that never needs a lookup table. But it means an offset of exactly 18 or exactly 37 seconds between two systems is not drift, not a bug in NTP and not a misconfigured timezone. It is a GPS or TAI reading that has been written into a field labelled as Unix seconds.</p>
+    </section>
+
+    <section class="seo-section" id="divide">
+        <h2>The Number Is Not a Duration</h2>
+        <p>Here is the practical consequence, and it is smaller than the internet suggests in one direction and larger than almost anyone expects in the other.</p>
+        <p>The small direction first. Dividing a Unix timestamp by 86,400 gives the correct UTC date, and it will keep doing so. That works precisely because POSIX bent the definition to make it work: the counter is calibrated to UTC labels, so its day boundaries land on UTC midnights, leap seconds included. Floor-dividing for a date is fine. Floor-dividing for a date is also the only thing it is fine for.</p>
+        <p>The large direction is that the same bending makes the number useless as a duration. Suppose something is written at 2016-12-31T23:59:59Z and something else at 2017-01-01T00:00:00Z. Subtract the timestamps and you get 1. One second. The wall clock between those two events was two seconds long. Any figure derived from that subtraction &mdash; a throughput denominator, an uptime percentage, a timeout budget, a rate of change, a latency percentile computed from start and end timestamps &mdash; is short by the leap seconds contained in the interval.</p>
+        <div class="pull">Ask a Unix timestamp how long something took and it answers in seconds that are not seconds. The bridge from 23:59:59 on 31 December 2016 to midnight was one unit wide and two seconds long.</div>
+        <p>Twenty-seven seconds across 54 years is nothing on a dashboard and a category error in a contract. It is why financial venues specify clock accuracy in microseconds against UTC rather than in Unix seconds, why the regulated trading rules care about synchronisation to a reference clock instead of to a stored integer, and why the entire leap-smearing industry of the next section exists. If Unix seconds were a duration, none of that infrastructure would be necessary.</p>
+        <h3>Where the pure-division habit actually bites</h3>
+        <p>Three failure modes matter more than the arithmetic drift.</p>
+        <p>The first is the unrepresentable label. A log aggregator that receives an external event stamped 2016-12-31T23:59:60Z and converts it to Unix time produces 1483228800, the same value it produces for the midnight that follows. The event is either dropped as a duplicate, reordered behind an event it preceded, or counted twice. Nothing raises an error, because nothing is wrong with the arithmetic.</p>
+        <p>The second is the seconds-into-the-day shortcut. Taking a timestamp modulo 86,400 to find the time of day is correct on 99.99% of days and quietly wrong on the 27 that had 86,401 seconds. The same expression is used for retention windows, cache expiry buckets and log rotation, which is why leap-second incidents surface as duplicated scheduled jobs and expired credentials rather than as clock errors.</p>
+        <p>The third is the mixed pipeline. If one service converts with a leap-second-aware library and another divides by 86,400, they disagree by a second around an event, and the disagreement is unresolvable without knowing which service did which. A conversion that needs a table is doing the honest thing. A conversion that is pure multiplication is not wrong so much as it is answering a different question from the one being asked.</p>
+    </section>
+
+    <section class="seo-section" id="epochs">
+        <h2>There Is No Single Epoch</h2>
+        <p>The second assumption is that everyone counts from 1970. Almost nobody does. The epoch is the least portable part of a timestamp, because it is a pure convention and every platform chose its own, often for a reason that made sense to its designers and is now invisible to everybody else.</p>
+        <table class="brief-table">
+            <thead><tr><th>System</th><th>Zero point</th><th>Unit</th><th class="num">Value at the Unix epoch</th></tr></thead>
+            <tbody>
+                <tr><td>Unix / POSIX <code>time_t</code></td><td>1970-01-01 00:00:00 UTC</td><td>second</td><td class="num">0</td></tr>
+                <tr><td>Windows FILETIME, NTFS</td><td>1601-01-01 00:00:00 UTC</td><td>100 ns</td><td class="num">116,444,736,000,000,000</td></tr>
+                <tr><td>.NET <code>DateTime.Ticks</code></td><td>0001-01-01 00:00:00</td><td>100 ns</td><td class="num">621,355,968,000,000,000</td></tr>
+                <tr><td>NTP</td><td>1900-01-01 00:00:00</td><td>second (32-bit) + fraction</td><td class="num">&minus;2,208,988,800</td></tr>
+                <tr><td>HFS+ (classic Mac)</td><td>1904-01-01 00:00:00</td><td>second, unsigned 32-bit</td><td class="num">&minus;2,082,844,800</td></tr>
+                <tr><td>GPS</td><td>1980-01-06 00:00:00</td><td>week + second-in-week</td><td class="num">315,964,800</td></tr>
+                <tr><td>Cocoa / <code>NSDate</code></td><td>2001-01-01 00:00:00 UTC</td><td>second, double</td><td class="num">&minus;978,307,200</td></tr>
+                <tr><td>Excel (1900 system)</td><td>1899-12-30 nominal</td><td>day</td><td class="num">25,569</td></tr>
+                <tr><td>Excel (1904 system)</td><td>1904-01-01</td><td>day</td><td class="num">24,107</td></tr>
+                <tr><td>Julian Day Number</td><td>4713 BC-01-01 12:00</td><td>day, fractional</td><td class="num">2,440,588</td></tr>
+            </tbody>
+        </table>
+        <p>Two of those choices are worth explaining because both look arbitrary and both are not. Windows counts from 1601, which is the first year of the four-hundred-year cycle of the Gregorian calendar that was active when Windows NT was being designed, chosen so that any date in the current cycle can be represented without special-casing the ends; the story is documented by the engineer who was in the thread. GPS counts from 1980-01-06, a Sunday, and encodes time as a week number plus a second within the week rather than as a single second count, which is a format decision with consequences that arrive in the next section.</p>
+        <p>The offsets convert cleanly as long as you write them down. A FILETIME becomes a Unix timestamp by subtracting 116,444,736,000,000,000 and dividing by ten million. A Cocoa date becomes one by adding 978,307,200. An Excel serial becomes one by subtracting 25,569 and multiplying by 86,400, with an extra 1,462 in the sum if the workbook is using the 1904 system. Every one of those constants is a convention that some other system chose, and none of them is discoverable from the value itself. A bare integer in a JSON payload does not tell you which convention produced it, which is why the field name matters more than the type.</p>
+        <p>The Julian Day deserves its place on the list as the reminder that the Gregorian calendar is not the only frame. Its epoch is 4713 BC, it starts at noon rather than midnight, and astronomers still use it precisely because it is a continuous day count with no month, no year and no reform of the calendar anywhere in the middle of it. It is also the only entry on the table whose natural unit is fractional, which is a different design philosophy applied to the same problem.</p>
+    </section>
+
+    <section class="seo-section" id="width">
+        <h2>Every Width Runs Out</h2>
+        <p>The third assumption is that the field is big enough, and it is the one with dates attached. Every counter has a last value, and the systems that matter roll over within five years of each other.</p>
+        <table class="brief-table">
+            <thead><tr><th>Counter</th><th>Width and epoch</th><th>Runs out</th><th>What happens next</th></tr></thead>
+            <tbody>
+                <tr class="bad"><td>NTP seconds</td><td>32-bit unsigned, from 1900</td><td class="num">2036-02-07 06:28:16</td><td>era 0 becomes era 1; the field is reused</td></tr>
+                <tr class="bad"><td>Unix <code>time_t</code>, signed 32-bit</td><td>31 bits plus sign, from 1970</td><td class="num">2038-01-19 03:14:07</td><td>wraps to 1901-12-13 20:45:52</td></tr>
+                <tr><td>HFS+ timestamp</td><td>32-bit unsigned, from 1904</td><td class="num">February 2040</td><td>wraps to the era start</td></tr>
+                <tr><td>GPS week number</td><td>10 bits, from 1980-01-06</td><td class="num">1999-08-22 and 2019-04-07</td><td>both already happened; week 1023 becomes 0</td></tr>
+                <tr><td>FAT32 date field</td><td>7 bits of year, from 1980</td><td class="num">2107-12-31</td><td>no higher year can be encoded</td></tr>
+                <tr><td>Windows FILETIME</td><td>64-bit unsigned, 100 ns</td><td class="num">year 60,056</td><td>not a practical concern</td></tr>
+                <tr class="hi"><td>Unix <code>time_t</code>, signed 64-bit</td><td>63 bits plus sign, from 1970</td><td class="num">year 292,277,026,596</td><td>not a practical concern</td></tr>
+            </tbody>
+        </table>
+        <p>Two rows carry the weight. The one everybody has heard of is 2038, because 2,147,483,647 is the largest signed 32-bit integer and it maps to a specific second at 03:14:07 UTC on 19 January 2038. What is less widely repeated is that 64-bit machines do not make the problem go away by being 64-bit. A 32-bit column in a schema is a 2038 event regardless of what the application server runs, and those columns survive longer than anyone expects: in binary file formats, in exported data, in firmware, in the tables of systems that were never meant to last this long.</p>
+        <p>The row that gets forgotten is the first one. NTP's seconds field is a 32-bit unsigned count from 1900, which fills on 2036-02-07 at 06:28:16 UTC &mdash; forty-four hours short of two years before the Unix rollover, and in a protocol that everything else depends on. The mitigation is not a rewrite but a convention: NTPv4 defines an era number alongside the seconds so that the ambiguity can be resolved by context, and the reference implementation is expected to work in the current era. The catch is that the era number is not transmitted in the standard packet format, so two peers near the rollover have to infer it. It is the same shape of problem as the two-digit year, in a protocol that most people assume is solved.</p>
+        <p>GPS is the cautionary tale because it has already fired twice. The week counter in the original navigation message is ten bits wide, which gives 1,024 weeks, or a shade over nineteen and a half years, and it restarted on 1999-08-22 and again on 2019-04-07. The second one is the interesting one, because 2019 is recent enough that receivers manufactured in the preceding decade were still in service, and devices that had not implemented the rollover logic reported time nineteen and a half years in the past &mdash; and because raw GPS time is leap-second-preserving, the corresponding UTC instant was 2019-04-06T23:59:42Z, eighteen seconds behind, which is its own diagnostic. Later GPS satellites transmit an extended thirteen-bit week count, which buys 8,192 weeks and something over 157 years, but a receiver that only reads the legacy message still has the old period.</p>
+        <p>The advice that comes out of the rollover literature is the right kind of unglamorous: audit now, while the dates are still far enough away to be boring, and check every place a timestamp is stored rather than every place it is displayed. February 2036, January 2038 and February 2040 are not far apart. Handled early they are a schema migration. Handled late they are an incident.</p>
+    </section>
+
+    <section class="seo-section" id="clock">
+        <h2>It Runs Backwards</h2>
+        <p>The fourth assumption is the one nobody writes down: that a number which increments must be a clock. Even setting aside the epoch, the width and the leap seconds, Unix time fails at being a clock, and it fails in a way that produces code that works for years and then does not.</p>
+        <p>The failure is mechanical. There are two different questions you can ask an operating system about time, and they are answered by two different clocks. One of them is the wall clock, which is adjusted to agree with UTC and which is what produces a Unix timestamp. The other is a monotonic counter that starts at boot and only ever goes up. The first can be moved backwards; the second cannot. Programming languages expose the distinction but rarely make it visible. A timestamp is a wall-clock reading. An interval must be measured with a clock that cannot go backwards.</p>
+        <p>A wall clock moves backwards for three reasons, and all three are routine. A time daemon that corrects a large error steps the clock rather than slewing it, so the reading jumps to a new value that may be earlier than the last one. The operating system's leap-second handling on most kernels repeats the final second rather than inserting a sixty-first, so two consecutive log entries carry identical timestamps and a strict ordering assumption breaks. And any manual correction &mdash; a container starting with a skewed host clock, an operator setting the date, a virtual machine resuming from a saved state &mdash; does the same thing. The 2012 and 2015 leap seconds produced matching incident reports across a striking range of large operators, and none of them was caused by the extra second existing. They were caused by code that assumed a counter which never repeats.</p>
+        <div class="pull">A Unix timestamp is a label for an instant, not a stopwatch. Code that subtracts two of them to measure elapsed time is asking a calendar how long a meeting took.</div>
+        <p>Resolution is the second half of the same problem. Unix time is defined in whole seconds, which is not enough for most modern work, so implementations extended it: milliseconds, microseconds, nanoseconds, or a floating-point number of seconds. The extensions are conventions rather than a standard, and they are indistinguishable in a payload. A ten-digit integer is almost certainly seconds and a thirteen-digit integer is almost certainly milliseconds, but the boundary between them arrived in 2001 and the ambiguity was never resolved, which is why the field name matters more than the value. A float has its own ceiling: a 53-bit mantissa resolves roughly a tenth of a microsecond at the current magnitude of Unix time, which is fine for application timing and not fine for anything that claims nanoseconds.</p>
+        <p>There is one more property worth being explicit about, because it inverts an intuition. Unix time is often described as a monotonically increasing counter. It is monotonic in the sense of not decreasing across ordinary operation, and non-decreasing is a much weaker guarantee than increasing. It is not strictly increasing, it is not guaranteed to be monotonic at all, and it is not designed to be used as a timer. The distinction costs nothing to respect and is expensive to retrofit.</p>
+    </section>
+
+    <section class="seo-section" id="smear">
+        <h2>Six Operators, Four Answers</h2>
+        <p>Because a repeated second breaks software, several large operators decided not to have one. Instead of inserting the leap second at midnight, they stretch it across a window by running their clocks slightly slow, a technique called smearing, so that the additional second is absorbed gradually and no two instants share a timestamp. The result is that on the day of a leap second, the same physical instant has different Unix timestamps depending on which time service you asked.</p>
+        <table class="brief-table">
+            <thead><tr><th>Time service</th><th>Method</th><th>Window</th><th>Worst deviation from UTC</th></tr></thead>
+            <tbody>
+                <tr><td>Google</td><td>linear smear</td><td>20 hours centred; now recommends noon-to-noon</td><td class="num">&plusmn;0.5 s</td></tr>
+                <tr><td>AWS</td><td>linear smear</td><td>24 hours, noon to noon</td><td class="num">&plusmn;0.5 s</td></tr>
+                <tr><td>Meta</td><td>quadratic smear</td><td>17 hours from 00:00 UTC, after the event</td><td class="num">starts 1 s off</td></tr>
+                <tr class="hi"><td>Cloudflare</td><td>step</td><td>none</td><td class="num">0 s</td></tr>
+                <tr class="hi"><td>NIST</td><td>step</td><td>none</td><td class="num">0 s</td></tr>
+                <tr class="hi"><td>Windows (2019+)</td><td>step</td><td>none</td><td class="num">0 s</td></tr>
+                <tr class="bad"><td>NTP Pool</td><td>step; smearing servers are dropped</td><td>none</td><td class="num">0 s</td></tr>
+            </tbody>
+        </table>
+        <p>The arithmetic of a linear smear is simple enough to check. One second spread across 86,400 seconds is a rate change of about 11.6 microseconds per second, or 11.6 parts per million: each second lasts 1.0000116 seconds instead of 1. A twenty-hour window is 72,000 seconds, so the same second costs about 13.9 microseconds of stretch and the clock is at most half a second away from UTC at the midpoint of the window. That half second is the entire point. It is the price of never having a repeated timestamp, and it is small enough to ignore for almost every application &mdash; except the ones that specified a clock against UTC.</p>
+        <p>The incompatibility is worse than the deviation. Cloudflare states plainly that it does not implement leap smearing. NIST steps through the leap second by repeating the previous second. Windows from the 2019 releases applies the leap second in a UTC-compliant way and does not smear. Google and AWS smear, on different windows. Meta smears after the event rather than across it. So a fleet with instances in two clouds, or an on-premises collector beside a cloud one, can hold two timestamps for one event that differ by up to a second, and there is no protocol-level way to find out which is which: the NTP packet carries a leap indicator, but a smearing server does not announce the leap second and permanently reports that none is pending. That absence of a signal is written into the guidance itself, which notes that a client has no standardised way to detect that a server is smearing.</p>
+        <p>AWS adds a second trap in the same document. Its smeared time is served over the NTP path, and its PTP hardware clock does not smear, so a host configured to read both can take its civil time from one scale and its precise time from the other. The vendor's own guidance is not to mix the two paths on one client around a leap event. It is a good illustration of the general rule: the leap second is a global event, but the decision about how to represent it is local, and the two are not reconciled anywhere.</p>
+    </section>
+
+    <section class="seo-section" id="excel">
+        <h2>The Phantom Day</h2>
+        <p>The cleanest demonstration that a timestamp is a convention rather than a fact is a bug that has been deliberately preserved for forty years by a company that is perfectly capable of fixing it.</p>
+        <p>1900 was not a leap year. The rule is that a year divisible by 100 is not a leap year unless it is also divisible by 400, so 1600 and 2000 were leap years and 1700, 1800 and 1900 were not. February 1900 had 28 days. 1900-02-29 did not happen.</p>
+        <p>Excel says it did. Lotus 1-2-3, which dominated spreadsheets in the early 1980s, assumed that 1900 was a leap year because it simplified its leap-year handling and caused no trouble for the date math of the era. When Microsoft built Multiplan and then Excel, it adopted the same serial date system so that worksheets could move between the two products with their date columns intact, which meant adopting the assumption along with it. Excel has stored dates as day serials ever since, and serial 60 is the non-existent 29th of February 1900. Every serial at or above 61 is therefore one higher than a correct calendar would produce:</p>
+        <table class="brief-table">
+            <thead><tr><th class="num">Serial</th><th>Excel displays</th><th>The calendar says</th></tr></thead>
+            <tbody>
+                <tr><td class="num">1</td><td>1900-01-01</td><td>1900-01-01</td></tr>
+                <tr><td class="num">59</td><td>1900-02-28</td><td>1900-02-28</td></tr>
+                <tr class="bad"><td class="num">60</td><td>1900-02-29</td><td>no such date</td></tr>
+                <tr><td class="num">61</td><td>1900-03-01</td><td>1900-03-01, but with a serial one too high</td></tr>
+                <tr class="hi"><td class="num">25,569</td><td>1970-01-01</td><td>1970-01-01</td></tr>
+            </tbody>
+        </table>
+        <p>The exposure is narrower than the reputation of the bug suggests, and it is stated openly in Microsoft's own documentation: the weekday function returns incorrect values for dates before 1 March 1900, and every later date is handled correctly because the phantom day is consistently present in the serial numbering. The reason it survives is the reason given for not fixing it. Correcting the serial system would shift almost every date in every existing workbook by one day, change the output of functions that depend on weekday, and break compatibility with other programs that use the same convention. A forty-year accumulation of files is a stronger argument than correctness, and the same trade is being made, at a smaller scale, by every team that chooses not to migrate a timestamp column.</p>
+        <p>Two conversions matter when the data leaves the spreadsheet. A 1900-system serial becomes a Unix timestamp by subtracting 25,569 and multiplying by 86,400, because serial 25,569 is 1970-01-01. A 1904-system serial &mdash; the alternative Excel shipped on Macintosh and still offers as an option, with no phantom day and therefore no off-by-one &mdash; needs 1,462 added first, because the two systems are exactly that many days apart, which is why a workbook using the wrong one appears to be off by four years and a day. Libraries that read spreadsheets handle this. Hand-written parsers that assume days since 1900-01-01 return dates one day early, and a one-day error that only manifests in a date column is the kind of thing that survives a test suite and reaches an invoice.</p>
+    </section>
+
+    <section class="seo-section" id="abolish">
+        <h2>The Last Leap Second</h2>
+        <p>The mechanism that has patched UTC 27 times is being retired, and the decision was taken for reasons that read like a list of everything in this briefing.</p>
+        <p>In 2022 the General Conference on Weights and Measures adopted Resolution 4, which notes that introducing a leap second creates a discontinuity and that discontinuities risk serious malfunction in critical digital infrastructure including satellite navigation, telecommunications and energy transmission. It observes that operators of digital networks and satellite systems have developed different methods of introducing the leap second, that these methods follow no agreed standard, and that uncoordinated implementations threaten the synchronisation that underpins national infrastructure. The resolution decides that the maximum permitted difference between UT1 and UTC will be increased in, or before, 2035, and asks the relevant bodies to propose a new ceiling that will hold for at least a century.</p>
+        <p>There is one sentence in that resolution worth extracting on its own. Recent observations of the earth's rotation rate indicate the possible need for the first negative leap second, whose insertion has never been foreseen or tested.</p>
+        <div class="pull">The leap second that has never been tested is the one that removes a second rather than adding one. Every system that assumes a monotonic counter would be asked to skip forward, and none of them has been exercised against it.</div>
+        <p>The earth has been rotating slightly faster in recent years, which is why the possibility of a negative correction is on the table at all. In the 23:59:60 protocol a deletion would run 23:59:57, 23:59:58, then midnight &mdash; a minute with 59 seconds in it, and a clock that jumps forward. Software that handles an inserted second by repeating or stuttering has no corresponding branch for a skipped one, and the entire leap-smearing apparatus is built around distributing an addition. As of the July 2026 Bulletin C there is no leap second scheduled for the end of 2026, and the atomic offset has stood unchanged at 37 seconds since January 2017, so the honest position is that a negative leap second is possible rather than expected. It has simply never been rehearsed.</p>
+        <p>Two operational notes follow from abolition, and both cut against the intuition that the problem is about to go away. The first is that the 27 seconds already accumulated do not disappear. They are baked into the relationship between the counter and elapsed time, and they persist after the mechanism that created them stops. The second is that the leap-second table is itself a perishable artefact. Its entries are distributed through the timezone database, and the file carries an expiry date alongside a hash, so the copy that accompanied the current Bulletin C expires in mid-2027. An operating system with stale time data and no way to update it will not merely be missing a future leap second; it will be reading a table it knows has expired, which is a different and more interesting kind of wrong.</p>
+    </section>
+
+    <section class="seo-section" id="rules">
+        <h2>Six Rules That Survive</h2>
+        <p>Nothing here requires a rewrite. It requires that the assumptions be written down where they are made. Six practices, in rough order of how much they cost to adopt.</p>
+        <ol>
+            <li><strong>Put the scale and the unit in the field name.</strong> <code>created_at_utc_s</code> is worth more than <code>created_at</code>, and the difference is that one of them can still be interpreted by someone else in five years. A bare integer is not self-describing, and no type system will save you from a value that is correct in a scale nobody recorded.</li>
+            <li><strong>Never convert by arithmetic you wrote yourself.</strong> Use a library that carries a leap-second table and a timezone database. Hand-rolled division is correct for the date case and silently wrong for every other case, which is the worst possible combination, because it passes the test you wrote and fails the one you did not. The distinction is easy to check: a conversion that needs a lookup table is doing real work; a conversion that is one multiplication is a convenience that happens to be right today.</li>
+            <li><strong>Measure intervals with a monotonic clock.</strong> Use the elapsed-time clock for timeouts, latency, rate limits and durations, and the wall clock only for stamping events. A wall clock can step backwards, repeat a second, or jump when the host is restored, and any of the three will corrupt a measurement that was taken with it.</li>
+            <li><strong>Know the epoch and the width at every boundary.</strong> Write the offset next to the conversion, not in a wiki. FILETIME subtracts 116,444,736,000,000,000; NTP subtracts 2,208,988,800; Excel subtracts 25,569 days and adds 1,462 if the workbook is on the 1904 system. Every one of those constants exists because a different group of engineers made a reasonable decision in isolation.</li>
+            <li><strong>Audit 2036, 2038 and 2040 before the dates are urgent.</strong> Search for timestamp columns declared as 32-bit integers, for binary formats that embed them, and for embedded devices that cannot be patched. Note that NTP rolls over first, in February 2036, and that GPS has already rolled over twice without most organisations noticing.</li>
+            <li><strong>Keep time data current, and treat it as a dependency.</strong> The timezone database contains the leap-second table and the table has an expiry date. A container image with a frozen copy is a device with a frozen copy, and the failure is not a crash but a quiet disagreement with everything else on the network.</li>
+        </ol>
+        <p>Then do the arithmetic on whatever integer you are holding. The <a href="/unix-timestamp-to-days">Unix timestamp calculator paired with this briefing</a> converts a raw value into an ISO 8601 string, a count of days since the epoch and the elapsed year figure, and it shows the intermediate values rather than only the answer. For bulk work, the <a href="/unix-timestamp-converter">Unix timestamp converter</a> handles both seconds and milliseconds and converts log files in the browser. The <a href="/methodology">methodology page</a> documents how the reference figures in this briefing were selected, and <a href="/data/numbers.json">the numbers file</a> exposes every constant used here in machine-readable form with its conditions attached, so that the offsets and rollover dates can be checked rather than trusted.</p>
+        <p>The habit worth keeping is a single question asked of any stored time value: what is this a count of, from where, in what unit and in how many bits? A Unix timestamp answers all four questions with a convention that is usually right and occasionally very wrong, and the difference between the two cases is never visible in the number.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>Frequently Asked Questions</h2>
+        <h3>Does Unix time count leap seconds?</h3>
+        <p>No. POSIX defines seconds since the Epoch and then states that each and every day shall be accounted for by exactly 86,400 seconds, which excludes leap seconds by construction. Twenty-seven leap seconds have been inserted into UTC since 1972 and the Unix counter contains none of them, so at any instant Unix time sits 27 seconds below a strict count of the SI seconds that have elapsed since the atomic offset was fixed at ten seconds in January 1972. The practical consequences are that 23:59:60 has no Unix value of its own, and that subtracting two timestamps does not return the elapsed duration when the interval contains a leap second.</p>
+        <h3>Is Unix time in seconds or milliseconds?</h3>
+        <p>Both, and that is the problem. Unix time is defined at one-second resolution and the common 64-bit extension stores milliseconds instead. A ten-digit integer is almost always seconds and a thirteen-digit integer is almost always milliseconds, because a millisecond timestamp did not exceed ten digits until 2001. JavaScript's <code>Date.now()</code> and Java's <code>System.currentTimeMillis()</code> return milliseconds while Python's <code>time.time()</code> and C's <code>time()</code> return seconds, so mixing runtimes in one pipeline produces timestamps wrong by a factor of 1,000 with nothing raised. Test the magnitude, or put the unit in the field name and stop relying on the test.</p>
+        <h3>What breaks in 2038?</h3>
+        <p>Anything storing a timestamp in a signed 32-bit integer. The maximum is 2,147,483,647, which is 2038-01-19 03:14:07 UTC, and the following second wraps to 1901-12-13 20:45:52 UTC. Sixty-four-bit systems are unaffected, but 32-bit columns persist in database schemas, binary file formats, exported data and embedded firmware long after the servers around them have been replaced. The nearer date is 2036-02-07 06:28:16 UTC, when the 32-bit seconds field in NTP rolls from era 0 to era 1 &mdash; forty-four hours short of two years earlier than the Unix rollover, and routinely left off the audit.</p>
+        <h3>Why is another system's Unix timestamp 18 seconds ahead of mine?</h3>
+        <p>Because it is probably not Unix time. GPS time counts leap seconds and Unix time does not, and the GPS epoch is 1980-01-06, so GPS readings sit 18 seconds ahead of UTC as of 2026 while TAI sits 37 seconds ahead. An offset of exactly 18 or exactly 37 seconds almost always means a GPS or TAI value has been written into a field labelled as Unix seconds. An offset near 2,208,988,800 seconds usually means an NTP timestamp was stored without subtracting the 1900 epoch, and an offset of exactly 1,462 days means an Excel workbook is on the 1904 date system.</p>
+        <h3>How do I convert an Excel date to a Unix timestamp?</h3>
+        <p>For the 1900 date system, subtract 25,569 and multiply by 86,400. Excel stores dates as day serials from a nominal 1899-12-30 zero point, and serial 25,569 is 1970-01-01. For the 1904 date system used by older Macintosh workbooks, add 1,462 first, because the two systems are exactly that far apart. Prefer a library where one exists: a naive days-since-1900-01-01 formula returns dates one day early, because Excel deliberately preserves a 1900 leap-year assumption inherited from Lotus 1-2-3, in which serial 60 is the non-existent 1900-02-29.</p>
+        <h3>Will leap seconds ever stop?</h3>
+        <p>Yes, on a published schedule. CGPM Resolution 4 of 2022 provides that the maximum permitted difference between UT1 and UTC will be increased in, or before, 2035, after which the two scales will be allowed to drift and corrections will be far rarer &mdash; a leap minute rather than a leap second. The 27 seconds already accumulated do not go away, and the leap-second table distributed through the timezone database carries an expiry date, so stale time data remains a failure mode even after the mechanism is retired. The next correction, if one is needed, may also be the first negative one ever attempted, which no shipping software has been tested against.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;" id="method">
+        <h2>Methodology &amp; Disclosure</h2>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">The four-assumption framing is ours: it exists to make the standard's own wording legible, not to attribute an intent to its authors. Every constant quoted here is either a definition, a documented platform convention, or a value derived in this paragraph. The Unix values in the epoch table on this page were computed by converting each epoch's UTC start to its Unix equivalent; the cross-check is that the same offsets are published by the platforms themselves. The 116,444,736,000,000,000 FILETIME offset is the count of 100-nanosecond intervals between 1601-01-01 and 1970-01-01. The 25,569-day Excel offset is the day count from 1899-12-30 to 1970-01-01, and the 1,462-day gap between the two Excel date systems is the day count from 1900-01-01 to 1904-01-01 plus the phantom 1900-02-29. Rollover instants are computed as the epoch plus the counter's maximum value: 2^32 seconds after 1900-01-01 for NTP, 2^31 &minus; 1 seconds after 1970-01-01 for signed 32-bit Unix time, 2^63 &minus; 1 seconds after 1970-01-01 for the 64-bit case, and 2^32 seconds after 1904-01-01 for HFS+.</p>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">Leap-second arithmetic uses the published state as of the IERS Bulletin C 72 of 6 July 2026: no leap second at the end of December 2026, and UTC minus TAI equal to &minus;37 seconds from 1970 January 1 <em>until further notice</em>, unchanged since 2017-01-01. The count of 27 insertions is the difference between the initial ten-second offset fixed on 1972-01-01 and the present 37 seconds; all 27 were positive, and none occurred after 2016. Time-scale offsets for GPS and TAI are stated as at 2026 and change only when a leap second is introduced. The smearing rates in the operator table are the operators' own published descriptions, and the &plusmn;0.5-second figure for a centred linear smear is arithmetic: one second spread over a window, halved.</p>
+        <p style="font-size:0.9rem; color: var(--text-secondary);">Time zone: this briefing states offsets against UTC and does not address civil offsets, which are a separate convention and are not uniform &mdash; several zones use thirty or forty-five minute offsets, and historical offsets include values that are not whole minutes. This site takes no sponsorship, no affiliate commission and no vendor payment of any kind. The standards bodies, platform vendors and time service operators named here have no relationship with jslet and did not review this briefing. Where a figure is an operator's own disclosure about its own service it is attributed to that operator and is not treated as an independent measurement.</p>
+    </section>
+
+    <section class="seo-section" style="border-top:1px solid var(--border); padding-top:20px;">
+        <h2>References &amp; Further Reading</h2>
+        <ol style="font-size:0.85rem; line-height:1.9; color:var(--text-body);" id="references">
+            <li>The Open Group. <em>POSIX.1-2017 Base Definitions</em>, §4.16 <em>Seconds Since the Epoch</em> — the definition of the value that approximates elapsed seconds, the statement that the relationship between the actual time of day and the value is unspecified, and the sentence that fixes each day at exactly 86400 seconds. <em>pubs.opengroup.org</em></li>
+            <li>IERS. <em>Bulletin C 72</em>, 6 July 2026, Earth Orientation Center, Observatoire de Paris — the current announcement that no leap second will be introduced at the end of December 2026, and the standing offset UTC &minus; TAI = &minus;37 s from 2017-01-01. Bulletin C is published every six months and either announces a step or confirms none. <em>datacenter.iers.org</em></li>
+            <li>NIST. <em>Leap Seconds FAQs</em>, Time and Frequency Division — the 0.9-second ceiling on UTC against UT1, the ten-second correction applied when the system began in 1972, the 23:59:60 designation for an inserted second and 23:59:57 to midnight for a deleted one, and the statement that only positive leap seconds have occurred while provision exists for negative ones. <em>nist.gov</em></li>
+            <li>BIPM. <em>Resolution 4 of the 27th CGPM (2022), On the use and future development of UTC</em> — the decision to raise the maximum permitted UT1 &minus; UTC difference in or before 2035, the account of uncoordinated leap-second handling as a risk to critical digital infrastructure, and the observation that recent changes in the earth's rotation rate indicate the possible need for the first negative leap second. <em>bipm.org</em></li>
+            <li>NTPsec. <em>Rollover issues in time sources</em> — the 32-bit NTP seconds field with a 1900 epoch and its era 1 rollover on 2036-02-07, the statement that NTP time is leap-second corrected and may stutter or skip, the GPS epoch of 1980-01-06 with a ten-bit week counter and its 1999 and 2019 rollovers, and the leap-smearing technique. <em>ntpsec.gitlab.io</em></li>
+            <li>APNIC. <em>The last time</em> — the consolidated rollover table for Unix 32-bit and 64-bit, Windows, NTP, HFS+, FAT32, NFSv4 and ZFS, the HFS+ epoch of 1904-01-01 and its 2040 expiry, and the observation that the 2036, 2038 and 2040 events are five years apart and uneventful if audited early. <em>blog.apnic.net</em></li>
+            <li>Microsoft. <em>Excel incorrectly assumes that the year 1900 is a leap year</em>, support article 214326 — the Lotus 1-2-3 origin of the phantom 1900-02-29, the affected weekday behaviour for dates before 1 March 1900, and the stated reason the behaviour is preserved rather than corrected. <em>support.microsoft.com</em></li>
+            <li>Microsoft. <em>Why is the Win32 epoch January 1, 1601?</em>, The Old New Thing — the Gregorian calendar's 400-year cycle as the reason the FILETIME epoch was chosen, in the account of the engineer who selected it. <em>devblogs.microsoft.com</em></li>
+            <li>Amazon Web Services. <em>Amazon Time Sync Service</em> and <em>Look Before You Leap</em> — the 24-hour noon-to-noon linear smear, the &plusmn;0.5-second maximum deviation from civil time, the fact that the PTP hardware clock path is not smeared, and the guidance not to mix smeared and unsmeared sources on one client around a leap event. <em>docs.aws.amazon.com</em></li>
+            <li>Cloudflare, Meta and NIST time service documentation — Cloudflare's statement that it does not implement leap smearing, Meta's quadratic smear beginning at 00:00 UTC after the event, and NIST's practice of repeating the preceding second. Gathered to establish that the four answers in the operator table are the operators' own. <em>developers.cloudflare.com</em></li>
+            <li>RFC 8633, <em>Network Time Security for the Network Time Protocol</em> — the statement that there is no standardised way for a client to detect that a server is using leap smearing, which is the reason mixed fleets cannot be reconciled at the protocol level. <em>rfc-editor.org</em></li>
+            <li>Related: <a href="/unix-timestamp-to-days">Unix Timestamp to Epoch Days Calculator</a> &#183; <a href="/unix-timestamp-converter">Unix Timestamp Converter</a> &#183; <a href="/cloud-billing-hours-per-month">The 730-Hour Month</a> &#183; <a href="/pue-utilization-paradox">The PUE Paradox</a> &#183; <a href="/devops-utilities">All DevOps Utilities</a> &#183; <a href="/methodology">Methodology</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Funix-time-not-a-clock&amp;text=Unix%20time%20does%20not%20count%20leap%20seconds%20%E2%80%94%20it%20is%2027%20seconds%20short%2C%20and%2023%3A59%3A60%20has%20no%20timestamp" target="_blank" rel="noopener" aria-label="Share on X">&#120143;</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Funix-time-not-a-clock" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/unix-timestamp-to-days">&#128202; Unix Timestamp to Epoch Days Calculator &rarr;</a>
+            <a href="/unix-timestamp-converter">&#128202; Unix Timestamp Converter &rarr;</a>
+            <a href="/cloud-billing-hours-per-month">&#128240; The 730-Hour Month: Why Your Cloud Invoice Is Never 730 Hours &rarr;</a>
+            <a href="/pue-utilization-paradox">&#128240; The PUE Paradox: Why an Empty Datacenter Scores Worse &rarr;</a>
+            <a href="/timezone-converter">&#129518; Timezone Converter &rarr;</a>
+            <a href="/devops-utilities">&#128202; All DevOps Utilities &rarr;</a>
+            <a href="/methodology">&#128220; Methodology &amp; Sources &rarr;</a>
+            <a href="/articles">&#128240; All Briefings &rarr;</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Accuracy Disclaimer:</strong> Time-scale offsets, rollover instants and leap-second counts are stated as of the dates given and change when a leap second is introduced. Platform conventions are described as published by their vendors and are not independently audited. Verify the behaviour of your own runtime, filesystem and database before relying on any conversion described here.</p>
+        </div>
+    </section>
+
+
+<footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/devops-utilities">DevOps Utilities</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>
