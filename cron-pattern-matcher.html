@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Cron Is a Pattern Matcher: Why 0 0 13 * 5 Fires 61 Times a Year</title>
+    <meta name="description" content="A cron line is a predicate over wall-clock minutes, not a schedule. So */59 fires like */30, and 0 0 13 * 5 fires 61 times a year when you wanted 3.">
+    <meta property="og:title" content="Cron Is a Pattern Matcher — 61 Fires, Not 3">
+    <meta property="og:description" content="Five fields, one predicate per minute. Residue classes instead of intervals, OR instead of AND, and a month that is not a unit.">
+    <meta property="og:url" content="https://www.jslet.com/cron-pattern-matcher">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-10-17T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-10-17T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Cron Is a Pattern Matcher: Why 0 0 13 * 5 Fires 61 Times a Year">
+    <meta name="twitter:description" content="*/N is a residue class, the two day fields are OR, and a month is not a unit. Enumerate the minutes instead of trusting the interval.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/cron-pattern-matcher">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "Cron Is a Pattern Matcher: Why 0 0 13 * 5 Fires 61 Times a Year",
+      "description": "A cron expression is not a schedule. It is a predicate evaluated once per minute against the local wall clock, and every surprise in it follows from that one fact. Steps like */N select a residue class inside the field rather than an interval, so */59 fires twice an hour, the same as */30, and thirty different values of N collapse to the same load. The day-of-month and day-of-week fields combine with OR rather than AND, so 0 0 13 * 5 fires 61 times in 2026 when the intent was three Friday the thirteenths. A month is not a unit: an every-minute job fires 43,800 times in the annual-average month and 525,600 times a year, not 43,200 and not 518,400, and 0 0 31 * * silently skips five months. Nothing remembers a missed minute, and three documented implementations disagree about what happens when the clocks change.",
+      "url": "https://www.jslet.com/cron-pattern-matcher",
+      "datePublished": "2026-10-17T00:00:00+00:00",
+      "dateModified": "2026-10-17T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research", "url": "https://www.jslet.com/methodology" },
+      "publisher": { "@type": "Organization", "@id": "https://www.jslet.com/#organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How many times does */5 * * * * run per month?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "8,760 times, if a month means the annual-average month of 43,800 minutes. Twelve fires an hour times 24 hours is 288 a day, and 288 times 365 divided by 12 is exactly 8,760. The 8,640 figure that circulates is the same sum over a flat 30-day month, which is 43,200 minutes rather than 43,800: a 1.4% difference, the same 1.4% that separates a 720-hour month from a 730-hour one. The annual figure, 105,120, does not depend on the choice."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why did my cron job run on the wrong days?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because the day-of-month and day-of-week fields combine with OR, not AND, once both are restricted. POSIX specifies that any day matching either the month-and-day-of-month pair or the day of week shall be matched, and the Vixie manual says the same thing in a note. So 0 0 13 * 5 does not mean the Friday that falls on the thirteenth; it means every thirteenth and every Friday. In 2026 that is 12 thirteenths plus 52 Fridays minus the three dates that are both, which is 61 executions where three were intended."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does */7 * * * * run every seven minutes?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. A step value selects the minutes whose number is zero modulo the step, inside the field's own range, so */7 selects 0, 7, 14, 21, 28, 35, 42, 49 and 56 and then the hour wraps to zero again. That is nine executions an hour, 216 a day and 78,840 a year, against the 8.57 per hour an actual seven-minute interval would produce. The distortion grows as the step approaches the field width: */59 fires at minute 0 and minute 59, twice an hour, which is exactly what */30 does."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can cron schedule the last day of the month?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Not in the five-field Vixie syntax, which has no last-day token and no year field. Writing 0 0 31 * * runs the job only in the seven months that have a thirty-first day, so a job intended to be monthly fires seven times a year. Writing 0 0 30 * * fires eleven times. A twenty-ninth-of-February job fires zero times in 2026 and seven times across the twenty-eight years from 2025 to 2052. The usual workaround is a daily job that tests the date, or a scheduler with an explicit last-day construct."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does a cron job run twice when the clocks go back?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Not on any implementation whose documentation states the behaviour. Debian's cron and OpenBSD's cron run jobs skipped by a forward jump soon after the change and explicitly do not re-run jobs that fall in a repeated hour. FreeBSD and macOS cron with the -s option execute such jobs exactly once, neither skipped nor duplicated. Amazon EventBridge Scheduler skips the spring invocation and runs the autumn one only once. The widely repeated claim that the repeated hour produces two executions is the behaviour of a predicate applied naively to wall-clock minutes, not the documented behaviour of the schedulers people actually run."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Will cron run a job that was missed while the machine was down?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Cron holds no record of what should have happened, so a minute that passes while the daemon is stopped or the machine is off is gone. This is the gap anacron exists to fill, and its manual opens by saying that unlike cron it does not assume the machine is running continuously. Kubernetes CronJob has the same gap with a cap: if more than 100 schedules were missed it refuses to start the job and logs an error. systemd timers close it only when Persistent=true is set, which is not the default."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 117 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>Cron Is a <span>Pattern Matcher</span></h1>
+        <p>Five fields, one comparison per minute, and no memory of the minute before. Almost every cron incident is a number you calculated from the expression rather than from the calendar the expression runs against</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-10-17 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 17 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ul style="line-height:2; padding-left:20px; margin:0; columns:2; column-gap:28px;">
+            <li><a href="#predicate" style="color:var(--accent); text-decoration:none;">Five Fields, One Predicate</a></li>
+            <li><a href="#modulo" style="color:var(--accent); text-decoration:none;">*/N Is a Residue Class</a></li>
+            <li><a href="#or" style="color:var(--accent); text-decoration:none;">The Two Day Fields Are OR</a></li>
+            <li><a href="#month" style="color:var(--accent); text-decoration:none;">The Month Is Not a Unit</a></li>
+            <li><a href="#burst" style="color:var(--accent); text-decoration:none;">Frequency Is Not Load</a></li>
+            <li><a href="#state" style="color:var(--accent); text-decoration:none;">Nothing Remembers</a></li>
+            <li><a href="#dst" style="color:var(--accent); text-decoration:none;">The Clock Is an Input</a></li>
+            <li><a href="#names" style="color:var(--accent); text-decoration:none;">Four Things Called Cron</a></li>
+            <li><a href="#measure" style="color:var(--accent); text-decoration:none;">Count the Set</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ul>
+    </div>
+
+    <section class="seo-section">
+        <p>Every operator has a cron story, and the stories cluster. A job that was supposed to run monthly ran seven times a year. A job that was supposed to run once a week ran sixty-one times. A five-minute job was supposed to fire 288 times a day and the process table showed two copies of it, then four. In each case the expression was typed correctly and the arithmetic done afterwards was wrong, because the arithmetic assumed cron was something it is not.</p>
+        <p>Cron is not a scheduler. It is a pattern matcher. Once a minute, the daemon wakes, reads every stored crontab, and asks one question per line: does the current wall-clock minute match this pattern. If yes, fork a shell and move on. Debian's manual describes the loop in a single sentence that is worth memorising, because it is the whole architecture: <em>cron then wakes up every minute, examining all stored crontabs, checking each command to see if it should be run in the current minute</em>.</p>
+        <p>There is no queue. There is no notion of an interval, no record of whether the last run finished, no list of runs that were supposed to happen. There is a predicate, a clock, and a fork. Everything that surprises people about cron follows from that sentence, and the surprises arrive in four flavours: a step is not an interval, two day fields are combined with OR, a month is not a unit, and nothing is remembered.</p>
+        <p>This is the written companion to the <a href="/cron-execution-frequency-per-month">Cron Trigger Frequency Matrix</a> and the <a href="/cron-expression-tester">Cron Expression Tester</a>. What follows is the arithmetic those tools exist to save you from: what a step value actually selects, what the day fields actually combine, which month you are dividing by, and what happens to the count when the clock jumps.</p>
+    </section>
+
+    <section class="seo-section" id="predicate">
+        <h2>Five Fields, One Predicate</h2>
+        <p>The POSIX specification of crontab is more austere than most people expect. It defines six fields per line in the user crontab &mdash; five time patterns followed by the command &mdash; and it defines the patterns narrowly: <em>each of these patterns can be either an asterisk (meaning all valid values), an element, or a list of elements separated by comma characters. An element shall be either a number or two numbers separated by a hyphen-minus (meaning an inclusive range)</em>. That is the entire grammar. An asterisk, a number, a range, a list. Nothing else.</p>
+        <p>Notice what is missing: the slash. Step values such as <code>*/5</code> are not in the POSIX grammar at all. They are a Vixie cron extension that every Linux distribution ships and almost every developer believes is part of the standard. It is a small point with a practical consequence, which is that the semantics of <code>*/N</code> are defined by an implementation manual rather than by a standard, and they are not the semantics most people assume.</p>
+        <p>The unit of the predicate is one minute. A day has 1,440 of them. A 365-day year has 525,600. The annual-average month, the one twelve of which make a year, has 43,800 &mdash; the same 730 hours that every cloud invoice divides by, multiplied by sixty. These three numbers are the entire substrate. Every count in this article is a count of minutes that satisfy a predicate over one of those windows, and the first source of error is picking the wrong window.</p>
+        <p>Here is the smallest possible demonstration. Take the three most common expressions and count them three ways: per day, per month on the annual-average basis, and per year.</p>
+        <table class="brief-table">
+            <thead><tr><th>Expression</th><th class="num">Per day</th><th class="num">Per month<br>(43,800 min)</th><th class="num">Per year<br>(525,600 min)</th><th class="num">Per month<br>(30-day)</th></tr></thead>
+            <tbody>
+                <tr><td><code>* * * * *</code></td><td class="num">1,440</td><td class="num">43,800</td><td class="num">525,600</td><td class="num">43,200</td></tr>
+                <tr class="hi"><td><code>*/5 * * * *</code></td><td class="num">288</td><td class="num">8,760</td><td class="num">105,120</td><td class="num">8,640</td></tr>
+                <tr><td><code>0 * * * *</code></td><td class="num">24</td><td class="num">730</td><td class="num">8,760</td><td class="num">720</td></tr>
+                <tr><td><code>0 0 * * *</code></td><td class="num">1</td><td class="num">30.42</td><td class="num">365</td><td class="num">30</td></tr>
+            </tbody>
+        </table>
+        <p>The hourly job is the cleanest illustration of the whole problem. On the annual-average month it fires exactly 730 times, because a month is 730 hours. On a thirty-day month it fires 720 times. Twelve months of 720 is 8,640; twelve months of 730 is 8,760; and the annual count, 8,760, agrees with the second and not the first. The 8,760 figure looks like a coincidence with the number of hours in a year. It is not a coincidence. It is that number, because an hourly predicate fires once per hour.</p>
+        <p>None of this is exotic. It is the same denominator problem that makes a monthly cloud bill disagree with a usage report, arriving through a different door. The expression is a predicate. The predicate has no idea what a month is.</p>
+    </section>
+
+    <section class="seo-section" id="modulo">
+        <h2>*/N Is a Residue Class</h2>
+        <p>The Vixie manual is unusually explicit about what a step does, and the explanation is buried in a note that most readers skip. After describing ranges and steps it warns: <em>skip values only operate within the time period they are attached to. For example, specifying */35 for the minute field of a crontab entry won't cause that entry to be executed every 35 minutes; instead, it will be executed twice every hour, at 0 and 35 minutes past</em>. The manual then offers a shell workaround involving modulo arithmetic against the epoch, which is a fair signal that the feature does not do what people want.</p>
+        <p>The mechanism is simple once stated. A step applied to an asterisk means "first value to last value, skipping by N", and the field's last value is 59 for minutes and 23 for hours. So <code>*/N</code> in the minute field selects every minute whose number is a multiple of N between 0 and 59 inclusive. When N divides 60 exactly, the last selected minute is 60 minus N, and the pattern tiles the hour evenly. When N does not divide 60, the tile does not close: the gap between the last fire of one hour and the first fire of the next is shorter than N, so the schedule fires more often than the nominal interval.</p>
+        <p>The count per hour is <code>floor(59 / N) + 1</code>. That single expression explains every row in the table below, and the right-hand column is what actually lands on your quota.</p>
+        <table class="brief-table">
+            <thead><tr><th>Expression</th><th>Minutes selected in each hour</th><th class="num">Fires/hour</th><th class="num">Nominal 60/N</th><th class="num">Error</th><th class="num">Fires/year</th></tr></thead>
+            <tbody>
+                <tr><td><code>*/2</code></td><td>0, 2, ... 58</td><td class="num">30</td><td class="num">30.00</td><td class="num">0%</td><td class="num">262,800</td></tr>
+                <tr><td><code>*/5</code></td><td>0, 5, ... 55</td><td class="num">12</td><td class="num">12.00</td><td class="num">0%</td><td class="num">105,120</td></tr>
+                <tr class="bad"><td><code>*/7</code></td><td>0, 7, 14, 21, 28, 35, 42, 49, 56</td><td class="num">9</td><td class="num">8.57</td><td class="num">+5.0%</td><td class="num">78,840</td></tr>
+                <tr><td><code>*/11</code></td><td>0, 11, 22, 33, 44, 55</td><td class="num">6</td><td class="num">5.45</td><td class="num">+10.0%</td><td class="num">52,560</td></tr>
+                <tr><td><code>*/13</code></td><td>0, 13, 26, 39, 52</td><td class="num">5</td><td class="num">4.62</td><td class="num">+8.3%</td><td class="num">43,800</td></tr>
+                <tr class="bad"><td><code>*/25</code></td><td>0, 25, 50</td><td class="num">3</td><td class="num">2.40</td><td class="num">+25.0%</td><td class="num">26,280</td></tr>
+                <tr><td><code>*/40</code></td><td>0, 40</td><td class="num">2</td><td class="num">1.50</td><td class="num">+33.3%</td><td class="num">17,520</td></tr>
+                <tr class="bad"><td><code>*/59</code></td><td>0, 59</td><td class="num">2</td><td class="num">1.02</td><td class="num">+96.7%</td><td class="num">17,520</td></tr>
+            </tbody>
+        </table>
+        <p>The last row is the punchline. <code>*/59</code> reads like a job that runs roughly once an hour. It runs twice an hour, at minute zero and minute fifty-nine, nine seconds of wall clock apart in real time and then fifty-nine minutes of silence. And <code>*/59</code> produces exactly the same number of executions as <code>*/30</code>, because both select two minutes out of sixty. The count is identical, the timing is not, and any capacity model that treats the expression as an interval gets the answer wrong by a factor of two.</p>
+        <p>The collapse is broader than one pair. Every value of N from 30 through 59 yields exactly two fires an hour, because none of them fits twice into fifty-nine. Thirty different spellings, one behaviour. Values 20 through 29 all yield three. Values 15 through 19 yield four. The map from N to load is a step function with a coarse staircase, so a change from <code>*/31</code> to <code>*/59</code> &mdash; a step that reads like a big relaxation &mdash; changes nothing at all, while a change from <code>*/15</code> to <code>*/17</code> changes nothing either, and a change from <code>*/14</code> to <code>*/15</code> cuts the load by a fifth.</p>
+        <p>There is one more layer, and the manual states it plainly: <em>step values are evaluated just within the field they are applied to</em>. So <code>*/23</code> in the hour field means hour 0 and hour 23 of each calendar day, not every twenty-three hours. The two fires are twenty-three hours apart once and one hour apart once, every day. Any schedule that genuinely wants a period longer than one field unit needs a different mechanism, which is why the manual's own workaround reaches for the epoch counter.</p>
+    </section>
+
+    <section class="seo-section" id="or">
+        <h2>The Two Day Fields Are OR</h2>
+        <p>This is the single most expensive misunderstanding in the syntax, and both standards state the rule in almost the same words. POSIX: <em>if either the month or day of month is specified as an element or list, and the day of week is also specified as an element or list, then any day matching either the month and day of month, or the day of week, shall be matched</em>. The Vixie manual puts it in a note: <em>if both fields are restricted, that is, do not contain the asterisk character, the command will be run when either field matches the current time</em>, and then gives its own example, <code>30 4 1,15 * 5</code>, which runs at 4:30 on the first and fifteenth of each month <em>plus every Friday</em>.</p>
+        <p>Read that example slowly. A person writing <code>1,15</code> and <code>5</code> is almost always trying to say "the Fridays that land on the first or the fifteenth". What they have said is "the first, the fifteenth, and every Friday". The fields are not a conjunction. They are two independent membership tests whose results are ORed.</p>
+        <p>Now price the mistake at its worst. Suppose the intent is a job that runs on Friday the thirteenth &mdash; a bad-luck deploy freeze, a compliance check, a batch job that wants an unlucky date. The natural expression is <code>0 0 13 * 5</code>. In 2026 the calendar contains 52 Fridays and 12 thirteenths, and three dates are both, so the union is 52 plus 12 minus 3, which is 61. Sixty-one executions where three were intended: a factor of twenty.</p>
+        <table class="brief-table">
+            <thead><tr><th>Expression</th><th>What it reads like</th><th class="num">Intended</th><th class="num">Actual 2026</th><th class="num">Ratio</th></tr></thead>
+            <tbody>
+                <tr class="bad"><td><code>0 0 13 * 5</code></td><td>Friday the thirteenth</td><td class="num">3</td><td class="num">61</td><td class="num">20.3&times;</td></tr>
+                <tr><td><code>0 0 1 * 1</code></td><td>The first that is a Monday</td><td class="num">1</td><td class="num">63</td><td class="num">63&times;</td></tr>
+                <tr><td><code>0 0 31 * *</code></td><td>Monthly, on the last day</td><td class="num">12</td><td class="num">7</td><td class="num">0.58&times;</td></tr>
+                <tr><td><code>0 0 30 * *</code></td><td>Monthly, on the last day</td><td class="num">12</td><td class="num">11</td><td class="num">0.92&times;</td></tr>
+                <tr><td><code>0 0 29 2 *</code></td><td>Leap day</td><td class="num">1 per 4 years</td><td class="num">7 per 28 years</td><td class="num">0.88&times;</td></tr>
+            </tbody>
+        </table>
+        <p>The second row is the same defect with a different mask: <code>1</code> and <code>1</code> is the first of the month OR Monday, and in 2026 that is twelve firsts plus fifty-two Mondays minus one overlap, sixty-three runs. Both rows over-run. The third and fourth rows under-run, which is the quieter failure: nobody notices a monthly report that fires seven times instead of twelve until an auditor asks for February.</p>
+        <p>The repair is mechanical and worth internalising as a habit. If you need a conjunction of the two day dimensions, restrict one field and put the other test inside the command. If you need the last day of the month, you cannot express it in five fields at all &mdash; <code>31</code> is not "last", it is "the thirty-first", and five months do not have one. Both of those are symptoms of the same thing: the day fields are a membership test on a date, and a date is not a rule.</p>
+        <p>There is a cheap way to see whether a line has this defect without parsing anything. If both day fields are restricted and the result is not obviously a union you want, the expression means something broader than it reads. That test catches most of the incidents, because the failure mode is always the same direction: OR is more permissive than AND, so the job runs more often, and more often is what gets noticed.</p>
+    </section>
+
+    <section class="seo-section" id="month">
+        <h2>The Month Is Not a Unit</h2>
+        <p>There are three defensible answers to "how many minutes in a month", and they differ by up to 6% depending on which month you pick. Calendar months run 28, 29, 30 or 31 days. The billing month that cloud providers use is 730 hours, which is the average month across a year: 365 days times 24 hours divided by 12. The thirty-day month is a finance convention, and it is the one most frequency tables quietly use, because it makes the arithmetic tidy.</p>
+        <p>Those choices give 43,800 minutes, 43,200 minutes, or anywhere from 40,320 to 44,640 if you name a specific month. For an every-minute job the annual count is 525,600 and the annual-average month is 43,800. If a table tells you 43,200, it is not wrong in the way that a typo is wrong &mdash; it is answering a different question, and the difference is 600 executions a month, 7,200 a year, or 1.4%.</p>
+        <p>That 1.4% is the same 1.4% that separates a 720-hour month from a 730-hour one, and it accumulates in exactly the same place: the annual reconciliation. A capacity model built on 43,200 overstates available headroom by 600 executions a month, and the first month it gets audited is the month the quota alarm fires at 99% rather than 97%.</p>
+        <p>The worse version of this problem is structural rather than numerical. Cron has no month concept at all, so a job that is supposed to happen once a month has to be expressed as a date match, and dates are not uniformly distributed:</p>
+        <table class="brief-table">
+            <thead><tr><th>Expression</th><th class="num">Fires/year</th><th>What is actually happening</th></tr></thead>
+            <tbody>
+                <tr><td><code>0 0 1 * *</code></td><td class="num">12</td><td>The only day number that exists in every month</td></tr>
+                <tr><td><code>0 0 15 * *</code></td><td class="num">12</td><td>Also universal, and the usual compromise</td></tr>
+                <tr class="bad"><td><code>0 0 30 * *</code></td><td class="num">11</td><td>February has no thirtieth; silently skipped</td></tr>
+                <tr class="bad"><td><code>0 0 31 * *</code></td><td class="num">7</td><td>Only January, March, May, July, August, October, December</td></tr>
+                <tr class="bad"><td><code>0 0 29 2 *</code></td><td class="num">0 in 2026</td><td>Seven firings across the twenty-eight years to 2052</td></tr>
+                <tr><td><code>0 0 * * 0</code></td><td class="num">52</td><td>Weekly, and 2026 happens to start on a Thursday</td></tr>
+            </tbody>
+        </table>
+        <p>Vixie cron offers no last-day token, no weekday-of-month construct, and no year field. The five-field grammar cannot say "the last Friday" or "the first business day" or "not in December". Every one of those needs the date test moved into the command, where it becomes a line of shell that can fail quietly if the timezone is wrong.</p>
+        <p>This is also the point where the frequency matrix stops being a convenience and becomes a correctness tool. The number you want is not derivable from the expression by inspection, because the expression does not contain the calendar. It has to be counted against a calendar, which is a different operation, and it is the operation the <a href="/cron-execution-frequency-per-month">frequency calculator</a> exists to do.</p>
+        <p>One useful sanity rule falls out of the table. A daily job's monthly average is 30.42, not 30. A weekly job's monthly average is 4.35, not 4. A monthly job is 12 a year, not 12 in every month. As soon as a capacity or quota document rounds those to 30, 4 and 12, it is already 1.4% optimistic before anyone has typed a step value.</p>
+    </section>
+
+    <section class="seo-section" id="burst">
+        <h2>Frequency Is Not Load</h2>
+        <p>Every count so far has treated executions as independent events spread evenly through time. They are not. Cron has minute resolution, which means every job matching the same pattern fires in the same second, and the second is the first second of the matching minute. Two hundred services running <code>*/5 * * * *</code> do not produce two hundred executions distributed across five minutes. They produce two hundred simultaneous executions, 288 times a day.</p>
+        <p>The arithmetic of that is worth writing down because it is where the capacity model usually breaks. Two hundred services times 288 fires a day is 57,600 executions a day, which is 1.75 million a month. Spread evenly, that is about 0.67 executions a second. Concentrated at the minute boundary, it is a burst of 200 concurrent invocations, 288 times a day, with near-zero traffic in between. The average and the peak differ by a factor of three hundred, and the thing that falls over is the peak.</p>
+        <p>FreeBSD's cron grew an option specifically for this. The manual for <code>-j jitter</code> says the daemon will <em>sleep a random number of seconds in the range from 0 to jitter</em> before executing, and that the option <em>can help to smooth down system load spikes during moments when a lot of jobs are likely to start at once, e.g., at the beginning of the first minute of each hour</em>. That sentence is a description of the default behaviour of every cron on Linux, which has no jitter at all.</p>
+        <p>The second half of the load problem is overlap, and it is worse than the burst because it compounds. Cron forks a shell and does not track the child. If the job takes longer than the interval, the next fire starts a second copy while the first is still running, and the third fire starts a third. The process count grows until the job's duration stops growing, which it does only when the job starts contending for its own resources.</p>
+        <table class="brief-table">
+            <thead><tr><th>Schedule</th><th class="num">Job runtime</th><th class="num">Steady-state copies</th><th>What the operator sees</th></tr></thead>
+            <tbody>
+                <tr><td><code>*/5 * * * *</code></td><td class="num">3 min</td><td class="num">1</td><td>Nothing unusual</td></tr>
+                <tr class="hi"><td><code>*/5 * * * *</code></td><td class="num">7 min</td><td class="num">2</td><td>Double the memory, half the throughput per copy</td></tr>
+                <tr class="bad"><td><code>*/5 * * * *</code></td><td class="num">20 min</td><td class="num">4</td><td>Lock contention, then timeouts, then more retries</td></tr>
+                <tr class="bad"><td><code>* * * * *</code></td><td class="num">3 min</td><td class="num">3</td><td>A queue that was never designed as a queue</td></tr>
+            </tbody>
+        </table>
+        <p>The steady-state copy count is the ceiling of runtime divided by interval, and it is stable rather than runaway only because a slower job means fewer completed runs, not more starts. The starts keep coming at the scheduled rate regardless. That is the definition of an open-loop controller, and it is why a job that degrades under load degrades superlinearly: contention makes it slower, slower means more concurrent copies, and more copies means more contention.</p>
+        <p>The fix is not in the expression, because the expression cannot express it. It is a lock. <code>flock -n</code> around the command turns a second concurrent start into an immediate exit, which converts an unbounded pile-up into a skip. <code>timeout</code> bounds the runtime so the pile-up cannot start. Neither is a cron feature; both are conventions that every operator eventually reinvents, and anacron is the one scheduler in the family that documents locking as a property: its manual notes that active jobs are quoted as locked so that other copies cannot run them at the same time.</p>
+        <p>There is an important inversion here that most capacity documents miss. For the same monthly volume, a rarer schedule is worse. 730 fires a month at 200 concurrent is 730 bursts of 200. 43,800 fires a month at one concurrent is a steady trickle. The hourly job is the one that takes the database down, and it is the one whose monthly count looks harmless.</p>
+    </section>
+
+    <section class="seo-section" id="state">
+        <h2>Nothing Remembers</h2>
+        <p>The predicate has no memory, and the consequence is that a minute which passes while the daemon cannot run the job is gone. Not deferred, not coalesced, not retried. The daemon was not running, so the question was never asked, so the run never existed. There is no record that it should have.</p>
+        <p>This is the gap anacron was written to fill, and its manual states the contrast in its second sentence: <em>unlike cron, it does not assume that the machine is running continuously</em>. Anacron stores a timestamp per job and checks whether the job has run in the last n days, which turns "run at 03:00" into "run once per day, whenever the machine is up". That is a different contract, and it is the one most laptops and most home labs actually need.</p>
+        <p>The same gap exists in the systems that replaced cron, and the modern ones handle it by adding the state cron never had &mdash; each with a different rule about how much catch-up is acceptable.</p>
+        <table class="brief-table">
+            <thead><tr><th>Runtime</th><th>Behaviour after downtime</th><th class="num">Catch-up?</th></tr></thead>
+            <tbody>
+                <tr><td>Vixie cron / cronie</td><td>The missed minute is gone; the daemon only evaluates the present</td><td class="num">No</td></tr>
+                <tr><td>anacron</td><td>Runs the job if it has not run in n days, with a configured delay</td><td class="num">Yes, by day</td></tr>
+                <tr class="hi"><td>systemd timer</td><td><code>Persistent=true</code> stores the last trigger and fires immediately on activation; default is false</td><td class="num">Only if set</td></tr>
+                <tr><td>Kubernetes CronJob</td><td>Catches up, but refuses if more than 100 schedules were missed</td><td class="num">Capped</td></tr>
+            </tbody>
+        </table>
+        <p>Kubernetes is the most instructive because it exposes the cap as a number you can reason about. The documentation says the controller <em>checks how many schedules it missed in the duration from its last scheduled time until now. If there are more than 100 missed schedules, then it does not start the Job and logs the error</em>, and the error names the remedy: set or decrease <code>startingDeadlineSeconds</code> or check clock skew. A per-minute CronJob whose controller is down for two hours has missed 120 schedules and will not fire at all when it comes back; the same job with a deadline of 200 seconds only counts the last three and starts normally.</p>
+        <p>That threshold is a design decision about which failure is worse. Unbounded catch-up on a per-minute job means 10,080 queued executions after a week of downtime, which is a denial of service against your own dependency. Refusing to start means the job quietly does not run, which is a monitoring problem. Kubernetes picked the second and made the number configurable, and the documentation is honest about the residual: the controller creates a Job <em>approximately once per execution time</em> of its schedule, <em>because there are certain circumstances where two Jobs might be created, or no Job might be created</em>, so the work should be idempotent.</p>
+        <p>systemd's version of the same trade is a single boolean, and its documentation is precise about what it buys: with <code>Persistent=true</code>, the last trigger time is stored on disk, and when the timer is activated <em>the service unit is triggered immediately if it would have been triggered at least once during the time when the timer was inactive</em>. Note the phrasing &mdash; at least once, regardless of how many firings were missed. A week of downtime produces one catch-up run, not a week of them. The related behaviour for suspend is documented separately and closes the loop: a calendar timer that elapses during sleep is processed on resume, and if it elapsed more than once, <em>the timer will only result in a single service activation</em>.</p>
+        <p>The pattern across all four is the same: cron alone cannot be at-least-once, because at-least-once requires knowing what should have happened. Every system that offers the guarantee is storing a timestamp, a counter, or a deadline that cron does not have.</p>
+    </section>
+
+    <section class="seo-section" id="dst">
+        <h2>The Clock Is an Input</h2>
+        <p>The predicate is evaluated against local wall-clock time, which means the predicate's input is not a monotonic count of minutes. Twice a year in most of the northern hemisphere the clock is deliberately discontinuous. In 2026 the United States springs forward on Sunday 8 March and falls back on Sunday 1 November. On the first date, local times from 02:00 to 02:59 never occur. On the second, 01:00 to 01:59 occurs twice.</p>
+        <p>The folklore says the autumn repetition makes a job run twice. That is what a naive wall-clock predicate would do, and it is not what any of the three implementations whose documentation states the behaviour actually does. They disagree with each other in three different ways, and none of them doubles.</p>
+        <table class="brief-table">
+            <thead><tr><th>Implementation</th><th>Spring forward (02:30 vanishes)</th><th>Fall back (01:30 repeats)</th></tr></thead>
+            <tbody>
+                <tr class="hi"><td>Debian cron / OpenBSD cron</td><td>Runs it soon after the change</td><td>Does not re-run it</td></tr>
+                <tr><td>FreeBSD / macOS cron with <code>-s</code></td><td>Executes exactly once</td><td>Executes exactly once</td></tr>
+                <tr><td>Amazon EventBridge Scheduler</td><td>Skipped entirely</td><td>Runs once, not repeated</td></tr>
+            </tbody>
+        </table>
+        <p>Debian's manual is the most specific, and the qualifiers in it matter as much as the rule itself. <em>If the time has moved forwards, those jobs which would have run in the time that was skipped will be run soon after the change. Conversely, if the time has moved backwards by less than 3 hours, those jobs that fall into the repeated time will not be re-run.</em> It then adds the restriction that turns this from a curiosity into a trap: <em>only jobs that run at a particular time, not specified as @hourly, nor with an asterisk in the hour or minute specifier, are affected. Jobs which are specified with wildcards are run based on the new time immediately.</em></p>
+        <p>So a wildcard job and a pinned job behave differently on the same day. <code>30 2 * * *</code> gets the special handling. <code>*/30 * * * *</code> does not, and simply follows the new clock, which is correct because a wildcard has no specific wall-clock instant to preserve. And any clock change over three hours is treated as a correction rather than a seasonal shift: <em>clock changes of more than 3 hours are considered to be corrections to the clock, and the new time is used immediately</em>. A timezone database update, a hypervisor resync, or an NTP correction after a long stall can therefore silently swallow or duplicate a window that the DST rules would have protected.</p>
+        <p>FreeBSD and macOS take the other fork of the same decision. With <code>-s</code>, jobs that fall in a disappeared or duplicated interval <em>are executed exactly once, they are not skipped nor executed twice</em>. If an interval disappears, the job runs at the same absolute point in time it would have occupied in the old timezone &mdash; which for a one-hour jump means the first specified minute of the following hour. That is a different answer to the same question: not "catch up later", but "translate the instant".</p>
+        <p>EventBridge is the simplest and the most explicit about the asymmetry, because the platform owns the clock: <em>when time shifts forward in the Spring, if a cron expression falls on a non-existent date and time, your schedule invocation is skipped. When time shifts backwards in the Fall, your schedule runs only once and does not repeat its invocation.</em> The spring run is lost, the autumn run is not duplicated, and the documentation says so without hedging.</p>
+        <p>The practical consequence is that the annual count is conserved but the distribution is not. A daily 02:30 job fires 365 times in a normal year either way &mdash; one day contributes zero and another contributes two under the naive model, one day shifts and no day doubles under Debian's. The count survives. What does not survive is the assumption that the job will run after a specific event on a specific day, which is exactly the assumption that reconciliation and month-end jobs are built on.</p>
+    </section>
+
+    <section class="seo-section" id="names">
+        <h2>Four Things Called Cron</h2>
+        <p>The word cron covers four syntaxes that agree on the easy cases and disagree on everything else. This matters for the same reason the residue-class point matters: an expression copied from a blog post into a different platform can parse cleanly, mean something else, and fail only at the boundary conditions nobody tests.</p>
+        <table class="brief-table">
+            <thead><tr><th></th><th>POSIX crontab</th><th>Vixie crontab</th><th>Amazon EventBridge</th></tr></thead>
+            <tbody>
+                <tr><td>Fields</td><td>5</td><td>5</td><td>6, the sixth being the year</td></tr>
+                <tr><td>Year range</td><td>none</td><td>none</td><td>1970 to 2199</td></tr>
+                <tr><td>Step syntax <code>*/N</code></td><td>not defined</td><td>defined, field-local</td><td>defined</td></tr>
+                <tr><td>Day of week numbering</td><td>0 to 6, Sunday is 0</td><td>0 to 7, 0 or 7 is Sunday</td><td>1 to 7, Sunday is 1</td></tr>
+                <tr><td>Both day fields restricted</td><td>OR</td><td>OR</td><td>one field must be <code>?</code></td></tr>
+                <tr><td>Last / weekday / nth tokens</td><td>none</td><td>none</td><td><code>L</code>, <code>W</code>, <code>#</code></td></tr>
+                <tr><td>Nicknames</td><td>none</td><td><code>@daily</code>, <code>@reboot</code>, six more</td><td>none</td></tr>
+            </tbody>
+        </table>
+        <p>The <code>?</code> row is the most consequential. Vixie resolves two restricted day fields with OR, which is permissive and surprising. EventBridge forbids the ambiguity outright: <em>you can't use * in both the Day-of-month and Day-of-week fields. If you use it in one, you must use ? in the other.</em> The same intent, expressed in the two systems, looks different and behaves differently, and the migration path between them is not a copy and paste.</p>
+        <p>The weekday numbering row is a smaller trap with a sharper edge. In Vixie, <code>1</code> is Monday and <code>0</code> or <code>7</code> is Sunday. In EventBridge, <code>1</code> is Sunday. The number in field position five is not a portable symbol; it is a pointer into a table that each implementation defines for itself. A weekly job migrated from a Linux crontab to a cloud scheduler with the <code>1</code> left in place moves from Monday to Sunday, and nothing in either system complains.</p>
+        <p>Kubernetes sits in a fourth position, because it is not really a cron syntax problem at all. Its schedule field accepts cron format, but the interesting behaviour is in the fields around it: <code>timeZone</code>, stable since v1.27, which replaces the <code>CRON_TZ</code> prefix that was never officially supported; <code>concurrencyPolicy</code> with <code>Allow</code>, <code>Forbid</code> and <code>Replace</code>, which is the lock that bare cron does not have; and the 100-missed-schedule cap. Without <code>timeZone</code>, the controller interprets schedules in its own local timezone, which is a server property, not an application property.</p>
+        <p>The practical conclusion is unglamorous. A cron expression is a portable-looking string with four non-portable semantics inside it: whether a step is legal, what the day fields mean together, what the number five means, and what happens when the clock moves. If an expression matters, name the implementation in the comment above it.</p>
+    </section>
+
+    <section class="seo-section" id="measure">
+        <h2>Count the Set</h2>
+        <p>Every error in this article comes from the same move: deriving a count from the shape of the expression instead of counting the minutes that satisfy it. The shape is a summary, and a summary of a predicate is exactly the thing that loses the OR, the residue class and the calendar. The reliable method is dull and cheap: enumerate the minutes.</p>
+        <p>For a year that is 525,600 iterations, which is nothing. Walk the window a minute at a time, evaluate the five fields, and increment a counter when the whole predicate is true. The evaluator is about twenty lines, and the only part that requires care is the day logic, because that is where the OR lives:</p>
+        <ul>
+            <li>If both day fields are wildcards, the day matches.</li>
+            <li>If only one is restricted, test that one.</li>
+            <li>If both are restricted, match when either test passes. Never require both.</li>
+            <li>Convert the calendar weekday to the implementation's numbering before comparing, because Sunday is 0, 7, or 1 depending on where you are.</li>
+        </ul>
+        <p>The output of that loop is the only number worth putting in a capacity document, because it is the only one that contains the calendar. Three formulas replace the intuitions that fail, and they are worth keeping next to the evaluator:</p>
+        <table class="brief-table">
+            <thead><tr><th>Question</th><th>Wrong intuition</th><th>Correct count</th></tr></thead>
+            <tbody>
+                <tr><td>Fires per hour for <code>*/N</code></td><td class="num">60 / N</td><td class="num">floor(59 / N) + 1</td></tr>
+                <tr><td>Fires per year, daily job</td><td class="num">12 &times; 30 = 360</td><td class="num">365</td></tr>
+                <tr><td>Fires per year, both day fields restricted</td><td class="num">|A| &times; |B|</td><td class="num">|A| + |B| &minus; |A &cap; B|</td></tr>
+                <tr><td>Fires per month, any job</td><td class="num">per-day &times; 30</td><td class="num">per-day &times; 365 / 12</td></tr>
+            </tbody>
+        </table>
+        <p>The third row is the one that repays the effort. The union of two sets is smaller than their product and larger than either, which is why the Friday-the-thirteenth job over-runs by a factor of twenty rather than nine hundred: the two fields overlap on only three dates, so the union is dominated by the fifty-two Fridays. Getting the sign of that error right is the difference between adding capacity and removing it.</p>
+        <p>If you would rather not write the loop, the <a href="/cron-execution-frequency-per-month">frequency matrix</a> builds the day, week, month and year counts from a rate, and the <a href="/cron-expression-tester">expression tester</a> shows the next firing times so you can see the minute set rather than infer it. What neither tool can do is know your calendar, so the year count that matters is always the one computed against the calendar you actually run.</p>
+        <p>One last habit makes the difference permanent. Put the computed count in a comment above the crontab line, with the window it was computed over. A line that says <code># 8,760/yr on 365d</code> is auditable; a line that says <code># every 5 min</code> is a restatement of the syntax and contains no information about load. The comment is the only place where the predicate's output is written down, and it is the only thing a reviewer can check without running the enumerator again.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>Frequently Asked Questions</h2>
+        <h3>How many times does <code>*/5 * * * *</code> run per month?</h3>
+        <p>8,760 times, if a month means the annual-average month of 43,800 minutes. Twelve fires an hour times 24 hours is 288 a day, and 288 times 365 divided by 12 is exactly 8,760. The 8,640 figure that circulates is the same sum over a flat 30-day month, which is 43,200 minutes rather than 43,800: a 1.4% difference, the same 1.4% that separates a 720-hour month from a 730-hour one. The annual figure, 105,120, does not depend on the choice.</p>
+        <h3>Why did my cron job run on the wrong days?</h3>
+        <p>Because the day-of-month and day-of-week fields combine with OR, not AND, once both are restricted. POSIX specifies that any day matching either the month-and-day-of-month pair or the day of week shall be matched, and the Vixie manual says the same thing in a note. So <code>0 0 13 * 5</code> does not mean the Friday that falls on the thirteenth; it means every thirteenth and every Friday. In 2026 that is 12 thirteenths plus 52 Fridays minus the three dates that are both, which is 61 executions where three were intended.</p>
+        <h3>Does <code>*/7 * * * *</code> run every seven minutes?</h3>
+        <p>No. A step value selects the minutes whose number is zero modulo the step, inside the field's own range, so <code>*/7</code> selects 0, 7, 14, 21, 28, 35, 42, 49 and 56 and then the hour wraps to zero again. That is nine executions an hour, 216 a day and 78,840 a year, against the 8.57 per hour an actual seven-minute interval would produce. The distortion grows as the step approaches the field width: <code>*/59</code> fires at minute 0 and minute 59, twice an hour, which is exactly what <code>*/30</code> does.</p>
+        <h3>Can cron schedule the last day of the month?</h3>
+        <p>Not in the five-field Vixie syntax, which has no last-day token and no year field. Writing <code>0 0 31 * *</code> runs the job only in the seven months that have a thirty-first day, so a job intended to be monthly fires seven times a year. Writing <code>0 0 30 * *</code> fires eleven times. A twenty-ninth-of-February job fires zero times in 2026 and seven times across the twenty-eight years from 2025 to 2052. The usual workaround is a daily job that tests the date, or a scheduler with an explicit last-day construct.</p>
+        <h3>Does a cron job run twice when the clocks go back?</h3>
+        <p>Not on any implementation whose documentation states the behaviour. Debian's cron and OpenBSD's cron run jobs skipped by a forward jump soon after the change and explicitly do not re-run jobs that fall in a repeated hour. FreeBSD and macOS cron with the <code>-s</code> option execute such jobs exactly once, neither skipped nor duplicated. Amazon EventBridge Scheduler skips the spring invocation and runs the autumn one only once. The widely repeated claim that the repeated hour produces two executions is the behaviour of a predicate applied naively to wall-clock minutes, not the documented behaviour of the schedulers people actually run.</p>
+        <h3>Will cron run a job that was missed while the machine was down?</h3>
+        <p>No. Cron holds no record of what should have happened, so a minute that passes while the daemon is stopped or the machine is off is gone. This is the gap anacron exists to fill, and its manual opens by saying that unlike cron it does not assume the machine is running continuously. Kubernetes CronJob has the same gap with a cap: if more than 100 schedules were missed it refuses to start the job and logs an error. systemd timers close it only when <code>Persistent=true</code> is set, which is not the default.</p>
+    </section>
+
+    <section class="seo-section" id="method">
+        <h2>Methodology &amp; Disclosure</h2>
+        <p>Every count in this article is an enumeration, not an estimate. A minute-by-minute scan of the stated window evaluates the five fields against the calendar and increments a counter when the whole predicate is true, with both restricted day fields combined using OR and the weekday converted to Sunday-is-zero before comparison. No figure in the tables was produced by a formula; the formulas appear only where they are offered as replacements for a wrong intuition, and each was checked against the enumeration that produced the tables.</p>
+        <p>The declared constants are these. The year window is 2026, which is 365 days, 525,600 minutes, 52 Fridays and 12 thirteenths, with three dates that are both. The annual-average month is 365 divided by 12 days, which is 30.4167 days, 730 hours, 43,800 minutes &mdash; the same 730-hour convention used across this site for billing months. The flat comparison month is 30 days, 720 hours, 43,200 minutes, and appears only where the difference between the two conventions is the subject. The leap-day count covers 2025 to 2052 inclusive. Daylight-saving dates for 2026 are the second Sunday in March and the first Sunday in November, which fall on 8 March and 1 November.</p>
+        <p>No vendor price appears anywhere in this article, deliberately. The quantity that matters for cron is executions and concurrency, and expressing it in dollars requires a per-execution price that belongs to a platform rather than to the scheduler. Where the cost of a schedule is discussed, it is expressed as executions, as concurrent copies, or as the size of a burst, all of which are properties of the predicate and remain true when the price list changes.</p>
+        <p>The frequency calculator this article accompanies models a rate in runs per hour and active hours per day rather than parsing an expression, which is a deliberate simplification and a limitation worth naming: it can express <code>*/5</code> correctly because twelve is the right count for that step, but it cannot express <code>*/7</code>, because nine fires an hour is not a rate the input can hold. Its month is now computed on the annual-average basis, so the two documents agree. Where an expression has to be evaluated rather than modelled, use the expression tester and read the firing times, not the count.</p>
+    </section>
+
+    <section class="seo-section">
+        <h2>References &amp; Further Reading</h2>
+        <ol style="line-height:1.9; font-size:0.92rem;">
+            <li>The Open Group. <em>POSIX.1-2024, crontab</em> &mdash; the field definitions, the grammar of asterisk, element, list and range, the explicit absence of step syntax, and the sentence that fixes the day-field logic: any day matching either the month and day of month, or the day of week, shall be matched. <em>pubs.opengroup.org</em></li>
+            <li>Vixie cron. <em>crontab(5)</em> &mdash; the note that two restricted day fields are combined with OR and the <code>30 4 1,15 * 5</code> example; the note that steps operate only within their own field and that <code>*/35</code> fires at 0 and 35 past each hour; the 0-7 weekday range with 0 or 7 as Sunday; and the eight <code>@</code> nicknames. <em>man7.org/linux/man-pages/man5/crontab.5.html</em></li>
+            <li>Debian. <em>cron(8)</em> &mdash; the every-minute evaluation loop, and the daylight-saving rules: forward jumps run the skipped jobs soon after the change, backward jumps do not re-run the repeated ones, only jobs pinned to a specific time are affected, and changes over three hours are treated as clock corrections. <em>manpages.debian.org</em></li>
+            <li>OpenBSD. <em>cron(8)</em> &mdash; the same forward-run and backward-do-not-rerun rules stated for a BSD implementation, with the same restriction to jobs that specify a particular time. <em>man.openbsd.org</em></li>
+            <li>FreeBSD. <em>cron(8)</em> &mdash; the <code>-s</code> option, under which jobs in a disappeared or duplicated interval are executed exactly once, neither skipped nor executed twice; and the <code>-j jitter</code> option, added to smooth load spikes when many jobs start at the same minute. <em>man.freebsd.org</em></li>
+            <li>Amazon Web Services. <em>EventBridge Scheduler, schedule types</em> &mdash; the six-field expression with a year range of 1970 to 2199, the requirement that one day field be <code>?</code> when the other is <code>*</code>, the 1-7 day-of-week numbering with Sunday as 1, the <code>L</code>, <code>W</code> and <code>#</code> tokens, and the daylight-saving behaviour: spring invocations skipped, autumn invocations not repeated. <em>docs.aws.amazon.com/scheduler</em></li>
+            <li>Kubernetes. <em>CronJob</em> &mdash; the 100-missed-schedule cap and the error it logs, <code>startingDeadlineSeconds</code> and the ten-second controller interval that makes values under ten seconds unreliable, the <code>Allow</code>, <code>Forbid</code> and <code>Replace</code> concurrency policies, the <code>timeZone</code> field stable since v1.27, and the statement that a Job is created approximately once per execution time because two Jobs might be created or none. <em>kubernetes.io</em></li>
+            <li>systemd. <em>systemd.timer(5)</em> &mdash; <code>Persistent=</code> and the stored last-trigger timestamp that produces one catch-up activation regardless of how many firings were missed; <code>AccuracySec=</code> defaulting to one minute and the coalescing it performs; and <code>RandomizedDelaySec=</code> defaulting to zero. <em>freedesktop.org/software/systemd/man</em></li>
+            <li>anacron. <em>anacron(8)</em> &mdash; the statement that unlike cron it does not assume the machine is running continuously, the per-job timestamp and day-granularity check, and the locking of active jobs. <em>man7.org/linux/man-pages/man8/anacron.8.html</em></li>
+            <li>Related: <a href="/cron-execution-frequency-per-month">Cron Trigger Frequency Matrix</a> &#183; <a href="/cron-expression-tester">Cron Expression Tester</a> &#183; <a href="/cloud-billing-hours-per-month">The 730-Hour Month</a> &#183; <a href="/unix-time-not-a-clock">Unix Time Is Not a Clock</a> &#183; <a href="/devops-utilities">All DevOps Utilities</a> &#183; <a href="/methodology">Methodology</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Fcron-pattern-matcher&amp;text=Cron%20is%20a%20pattern%20matcher%2C%20not%20a%20scheduler%20%E2%80%94%20so%20%2A%2F59%20fires%20like%20%2A%2F30%20and%200%200%2013%20%2A%205%20fires%2061%20times" target="_blank" rel="noopener" aria-label="Share on X">&#120143;</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Fcron-pattern-matcher" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/cron-execution-frequency-per-month">&#128202; Cron Trigger Frequency Matrix &rarr;</a>
+            <a href="/cron-expression-tester">&#9200; Cron Expression Tester &rarr;</a>
+            <a href="/cloud-billing-hours-per-month">&#128240; The 730-Hour Month: Why Your Cloud Invoice Is Never 730 Hours &rarr;</a>
+            <a href="/unix-time-not-a-clock">&#128240; Unix Time Is Not a Clock: The 86,400-Second Day &rarr;</a>
+            <a href="/unix-timestamp-to-days">&#128202; Unix Timestamp to Epoch Days &rarr;</a>
+            <a href="/devops-utilities">&#128295; All DevOps Utilities &rarr;</a>
+            <a href="/methodology">&#128220; Methodology &amp; Sources &rarr;</a>
+            <a href="/articles">&#128240; All Briefings &rarr;</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Model Disclaimer:</strong> Counts are enumerations over the stated calendar window using the day-field semantics documented for Vixie cron and POSIX. Behaviour on a specific host depends on which cron implementation it runs, its configured timezone, and how that implementation handles clock changes. Verify against your own daemon before setting quotas or alarms.</p>
+        </div>
+    </section>
+
+
+<footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/decision-matrix">Decision Matrix</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>
