@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The 0.25 Rule: Why IOPS and Throughput Are One Limit</title>
+    <meta name="description" content="Every major cloud volume prices IOPS at 0.25 MiB/s. That is 256 KiB per IOPS, and it decides whether your provisioned IOPS is worth anything.">
+    <meta property="og:title" content="The 0.25 Rule — Your IOPS Budget Has an Exchange Rate">
+    <meta property="og:description" content="Four vendors, seven products, one coefficient. IOPS and throughput are not two limits; they are one limit quoted at two I/O sizes.">
+    <meta property="og:url" content="https://www.jslet.com/iops-throughput-exchange-rate">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-10-23T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-10-23T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The 0.25 Rule: Why IOPS and Throughput Are One Limit">
+    <meta name="twitter:description" content="gp3, Azure Ultra, GCP Hyperdisk all convert IOPS to throughput at 0.25 MiB/s. Your real ceiling depends on one number nobody measures: average I/O size.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/iops-throughput-exchange-rate">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The 0.25 Rule: Why IOPS and Throughput Are One Limit",
+      "description": "Cloud block storage quotes two limits, IOPS and throughput, as though they were independent. They are the same limit observed at two different I/O sizes. Every major vendor converts provisioned IOPS into provisionable throughput at almost exactly 0.25 MiB/s per IOPS, which means one IOPS buys 256 KiB of transfer per second, and every volume type has a break-even I/O size where its IOPS ceiling and its throughput ceiling coincide: 25.6 KiB on AWS gp3, 16 KiB on io1 and io2, 1 MiB on st1 and sc1, 24.41 KiB on Azure Premium SSD v2 and Ultra Disk, 15.36 KiB on Hyperdisk Balanced. Above that size the throughput ceiling binds and provisioned IOPS stops being worth what it cost. Below it the IOPS ceiling binds and throughput headroom is wasted. The number that decides which side you are on is the average I/O size, which iostat already prints and almost nobody divides out.",
+      "url": "https://www.jslet.com/iops-throughput-exchange-rate",
+      "datePublished": "2026-10-23T00:00:00+00:00",
+      "dateModified": "2026-10-23T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research", "url": "https://www.jslet.com/methodology" },
+      "publisher": { "@type": "Organization", "@id": "https://www.jslet.com/#organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why does my gp3 volume with 80,000 IOPS only deliver 32,000?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because the throughput ceiling binds first. A gp3 volume tops out at 2,000 MiB/s, and 80,000 IOPS only reaches 2,000 MiB/s if each I/O averages 25.6 KiB or less. At a 64 KiB average, 80,000 IOPS would require 5,000 MiB/s, so the volume is throttled to 2,048,000 KiB divided by 64 KiB, which is 32,000 IOPS. Sixty percent of the IOPS you provisioned is unusable at that block size, and you paid for it anyway."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I provision IOPS and throughput independently?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "You can set both values independently, but they are not independent in effect. AWS gp3, Azure Premium SSD v2 and GCP Hyperdisk Balanced all impose a ratio: throughput cannot exceed roughly 0.25 MiB/s per provisioned IOPS, on top of an absolute ceiling. The smaller of the two ceilings is what your workload actually sees. Independence in the console is worth exactly nothing if your average I/O size pushes you past the break-even point."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is 0.25 MiB/s per IOPS the same on every cloud?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The coefficient is the same, the unit is not. AWS and Google quote MiB/s, which makes one IOPS worth 262,144 bytes per second. Azure quotes MB/s and states that it means 10^6 bytes, which makes one IOPS worth 250,000 bytes per second. The gap is 4.86 percent, not the 7.37 percent that separates GB from GiB. It is a different conversion factor from the storage marketing gap, and it applies to a number most people never look at."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why is local NVMe so much faster than a cloud volume?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Two different reasons that get conflated. First, latency: a consumer NVMe drive reaches 22,000 IOPS at queue depth one on 4 KiB random reads, which implies roughly 45 microseconds per I/O, while a cloud volume advertises single-digit-millisecond latency, or about 1,000 IOPS at the same queue depth. Second, the break-even size: that drive pairs 1,400,000 IOPS with 7,450 MB/s, a break-even of 5.2 KiB, against 25.6 KiB for gp3. The cloud volume is not a slice of the local drive. It is a quota with a different exchange rate."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "My benchmark showed a million IOPS. Why does not that mean 4 GB/s?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because a million IOPS at 4 KiB is 4,096,000 KiB/s, which is about 4 GiB/s, and a million IOPS is a random-read figure measured at high queue depth. Sequential throughput is measured with large I/Os, usually 128 KiB or more, at a queue depth the controller can pipeline. A drive advertising 1,400,000 random 4 KiB IOPS and 7,450 MB/s does not do both at once: the sequential number requires an average I/O of 5.2 KiB, and the random number collapses the moment the access pattern becomes contiguous and the prefetcher takes over."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I find out which ceiling I am hitting?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Divide throughput by IOPS using the columns iostat already prints. The sum of rkB/s and wkB/s divided by the sum of r/s and w/s is your average I/O size in kilobytes, and comparing it to the break-even size of your volume type tells you which ceiling binds. Then read aqu-sz, which older sysstat versions called avgqu-sz. An average queue near one with IOPS far below provisioned means your application is issuing I/O serially and the volume is idle. A high queue that still falls short of provisioned means you have hit a real ceiling."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 117 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>IOPS Has an <span>Exchange Rate</span></h1>
+        <p>Every major cloud converts provisioned IOPS into provisionable throughput at almost exactly 0.25 MiB/s. That single coefficient turns two numbers into one, and it silently decides how much of the IOPS you paid for is usable</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-10-23 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 18 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ul style="line-height:2; padding-left:20px; margin:0; columns:2; column-gap:28px;">
+            <li><a href="#exchange" style="color:var(--accent); text-decoration:none;">The Rate Nobody Quotes</a></li>
+            <li><a href="#ledger" style="color:var(--accent); text-decoration:none;">256 KiB per IOPS</a></li>
+            <li><a href="#line" style="color:var(--accent); text-decoration:none;">The 25.6 KiB Line</a></li>
+            <li><a href="#breakeven" style="color:var(--accent); text-decoration:none;">Your Break-Even Size</a></li>
+            <li><a href="#waste" style="color:var(--accent); text-decoration:none;">What Over-Provisioning Buys</a></li>
+            <li><a href="#units" style="color:var(--accent); text-decoration:none;">The Same 0.25 Is Not the Same</a></li>
+            <li><a href="#queue" style="color:var(--accent); text-decoration:none;">IOPS Is a Queue, Not a Disk</a></li>
+            <li><a href="#local" style="color:var(--accent); text-decoration:none;">Why Local NVMe Sits at 5 KiB</a></li>
+            <li><a href="#metering" style="color:var(--accent); text-decoration:none;">Three Numbers, Not One</a></li>
+            <li><a href="#diagnose" style="color:var(--accent); text-decoration:none;">Three Columns, One Diagnosis</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ul>
+    </div>
+
+    <section class="seo-section">
+        <p>A database team provisions an EBS volume at 80,000 IOPS, runs a benchmark, and gets 31,000. They open a support case. The vendor is not shortchanging them, nothing is misconfigured, and the instance is not the bottleneck. The volume is behaving exactly as documented. What went wrong happened earlier, in a spreadsheet, when the number 80,000 was chosen from a dropdown without anyone asking what I/O size the workload uses.</p>
+        <p>That question is the whole article. Cloud block storage is sold as two dials, IOPS and throughput, and the console presents them as independent. They are not. They are the same dial observed at two different I/O sizes, and the conversion between them is fixed, published in the fine print, and nearly identical across four vendors. Once you know the coefficient, the second number on the pricing page stops being a specification and becomes a constraint on the first.</p>
+    </section>
+
+    <section class="seo-section" id="exchange">
+        <h2>1. The Exchange Rate Nobody Quotes</h2>
+        <p>Start with four footnotes from four vendors, collected on the same afternoon.</p>
+        <p>AWS documents gp3 this way: throughput can be provisioned up to a maximum of 2,000 MiB/s "at a ratio of 0.25 MiB/s per provisioned IOPS", and maximum throughput is reachable "at 8,000 IOPS or higher". Amazon's arithmetic is printed in the same sentence: 8,000 &times; 0.25 = 2,000.</p>
+        <p>Azure documents Premium SSD v2 almost identically: "the maximum throughput that can be set increases by 0.25 MB/s per set IOPS", and "2,000 MB/s is the maximum throughput supported for disks that have 8,000 IOPS or more". Azure's Ultra Disk repeats it with a different ceiling: "the maximum throughput limit of an Ultra Disk is 0.25 MB/s for each provisioned IOPS, up to a maximum of 10,000 MB/s per disk".</p>
+        <p>Google documents Hyperdisk Balanced as a formula rather than a sentence, but the same constant is inside it. Maximum throughput is the minimum of 2,400 MiB/s and the provisioned IOPS divided by four. One quarter of a mebibyte is 0.25 MiB. Hyperdisk Extreme states it directly: 250 MiB/s per 1,000 IOPS, up to 5,000 MiB/s.</p>
+        <p>Seven products, four vendors, one coefficient. Nobody advertises it, no console shows it, and it is the same number to three significant figures everywhere it appears. That is not a coincidence and it is not competitive convergence. It is a statement about what an IOPS is assumed to be.</p>
+        <div class="pull">The industry does not sell IOPS. It sells a rate at which bytes can be moved, denominated in a unit called "IOPS" that has a fixed size of 256 KiB attached to it.</div>
+    </section>
+
+    <section class="seo-section" id="ledger">
+        <h2>2. 256 KiB per IOPS</h2>
+        <p>Take the coefficient apart. At 0.25 MiB/s per IOPS, one unit of IOPS buys a quarter of a mebibyte per second of throughput. A mebibyte is 1,024 KiB, so a quarter of one is 256 KiB.</p>
+        <p>One IOPS, therefore, is a ledger entry worth 256 KiB per second. Provision 8,000 of them and you have bought 8,000 &times; 256 KiB = 2,048,000 KiB/s, which is exactly 2,000 MiB/s. The two numbers on the pricing page are not two purchases. They are one purchase, quoted in two units, and the exchange rate is published in a footnote.</p>
+        <p>This reframes what over-provisioning IOPS means. If you configure a volume at 80,000 IOPS, you have not bought 80,000 discrete operations per second. You have bought the right to move 80,000 &times; 256 KiB = 20,480,000 KiB/s, which is 20,000 MiB/s, subject to a separate absolute ceiling. On gp3 that ceiling is 2,000 MiB/s, so the right is capped twenty-fold and the cap, not the IOPS count, is what governs any workload with large I/Os.</p>
+        <p>Put the two statements side by side and the shape of the problem appears. The IOPS dial says: you may perform 80,000 operations. The throughput dial says: you may move 2,000 MiB. Both are true simultaneously, and they are only compatible if each of your operations averages 2,000 MiB divided by 80,000, which is 0.025 MiB, or 25.6 KiB.</p>
+    </section>
+
+    <section class="seo-section" id="line">
+        <h2>3. The 25.6 KiB Line</h2>
+        <p>That 25.6 KiB number is not something I derived and then went looking for confirmation of. AWS prints it, in a table footnote, as a dagger beside every IOPS figure in the volume-type comparison.</p>
+        <p>The footnote reads: "Represents the required I/O size to reach maximum IOPS within the volume's throughput limit." Beside gp3's 80,000 IOPS the footnote says 25.6 KiB I/O. Beside gp2 and io1's 16,000 and 64,000 it says 16 KiB. Beside io2 Block Express's 256,000 it says 16 KiB. In the HDD table, beside st1's 500 IOPS and sc1's 250, the parenthetical says 1 MiB I/O.</p>
+        <p>Every one of those numbers is the same calculation. Divide the throughput ceiling by the IOPS ceiling and you get the I/O size at which both are reached at once. AWS measured it, printed it as a footnote, and moved on without giving it a name. I am going to call it the break-even I/O size, because that is what it is: the size at which your IOPS budget and your throughput budget are exhausted at the same moment.</p>
+        <table class="brief-table">
+            <thead>
+                <tr>
+                    <th>Volume type</th>
+                    <th class="num">Max IOPS</th>
+                    <th class="num">Max throughput</th>
+                    <th class="num">Break-even I/O</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="hi"><td>AWS gp3</td><td class="num">80,000</td><td class="num">2,000 MiB/s</td><td class="num">25.6 KiB</td></tr>
+                <tr><td>AWS gp2</td><td class="num">16,000</td><td class="num">250 MiB/s</td><td class="num">16 KiB</td></tr>
+                <tr><td>AWS io1</td><td class="num">64,000</td><td class="num">1,000 MiB/s</td><td class="num">16 KiB</td></tr>
+                <tr><td>AWS io2 Block Express</td><td class="num">256,000</td><td class="num">4,000 MiB/s</td><td class="num">16 KiB</td></tr>
+                <tr><td>AWS st1</td><td class="num">500</td><td class="num">500 MiB/s</td><td class="num">1 MiB</td></tr>
+                <tr><td>AWS sc1</td><td class="num">250</td><td class="num">250 MiB/s</td><td class="num">1 MiB</td></tr>
+                <tr class="hi"><td>Azure Premium SSD v2</td><td class="num">80,000</td><td class="num">2,000 MB/s</td><td class="num">24.41 KiB</td></tr>
+                <tr><td>Azure Ultra Disk</td><td class="num">400,000</td><td class="num">10,000 MB/s</td><td class="num">24.41 KiB</td></tr>
+                <tr><td>Azure Premium SSD P80</td><td class="num">20,000</td><td class="num">900 MB/s</td><td class="num">43.95 KiB</td></tr>
+                <tr class="hi"><td>GCP Hyperdisk Balanced</td><td class="num">160,000</td><td class="num">2,400 MiB/s</td><td class="num">15.36 KiB</td></tr>
+                <tr><td>GCP Hyperdisk Extreme</td><td class="num">350,000</td><td class="num">5,000 MiB/s</td><td class="num">14.63 KiB</td></tr>
+                <tr class="bad"><td>Samsung 990 PRO (PCIe 4.0)</td><td class="num">1,400,000</td><td class="num">7,450 MB/s</td><td class="num">5.20 KiB</td></tr>
+            </tbody>
+        </table>
+        <p>Look at the AWS column. Six volume types, three families, two media types, and the break-even size takes exactly three values: 25.6 KiB, 16 KiB, and 1 MiB. The HDD types sit at 1 MiB because mechanical drives are throughput devices pretending to have an IOPS rating. The SSD types sit at 16 KiB because 16 KiB is the natural transfer unit of the virtualisation path. And gp3, the general-purpose tier, sits at 25.6 KiB, which is 1.6 times larger, because gp3 is the one tier engineered to sell bandwidth cheaply.</p>
+        <p>The Azure and Google numbers land in a narrow band between 14.6 and 24.4 KiB. That band is where the industry thinks a block I/O lives. The Samsung drive at the bottom, at 5.2 KiB, is where it actually lives when nobody is throttling you.</p>
+    </section>
+
+    <section class="seo-section" id="breakeven">
+        <h2>4. Your Break-Even Size Is a Division, Not a Constant</h2>
+        <p>The table above lists the break-even size at maximum provisioned IOPS. Provisioning less moves it. The formula is one line, and it is the only formula in this article worth memorising:</p>
+        <p style="font-family: monospace; background: var(--bg-input); padding: 14px 18px; border-radius: var(--radius-sm);">break_even_IO_size = throughput_ceiling &divide; provisioned_IOPS</p>
+        <p>Hold the throughput ceiling at gp3's 2,000 MiB/s and walk the IOPS dial down. The break-even size moves up in inverse proportion.</p>
+        <table class="brief-table">
+            <thead>
+                <tr>
+                    <th class="num">Provisioned IOPS</th>
+                    <th class="num">Throughput ceiling</th>
+                    <th class="num">Break-even I/O</th>
+                    <th>What that means</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="bad"><td class="num">80,000</td><td class="num">2,000 MiB/s</td><td class="num">25.6 KiB</td><td>Only small-I/O workloads justify this</td></tr>
+                <tr><td class="num">40,000</td><td class="num">2,000 MiB/s</td><td class="num">51.2 KiB</td><td>Two and a half times more headroom</td></tr>
+                <tr><td class="num">16,000</td><td class="num">2,000 MiB/s</td><td class="num">128 KiB</td><td>Typical database page size fits</td></tr>
+                <tr class="hi"><td class="num">8,000</td><td class="num">2,000 MiB/s</td><td class="num">256 KiB</td><td>Full throughput at 256 KiB I/O</td></tr>
+            </tbody>
+        </table>
+        <p>The bottom row is the one that should stop people. Eight thousand IOPS is the minimum AWS says you need to provision 2,000 MiB/s, and at 8,000 IOPS the break-even size is 256 KiB. If your workload uses 256 KiB I/O, which is what any sequential reader, log shipper, or backup agent uses, then 8,000 IOPS saturates the volume's bandwidth completely. The other 72,000 IOPS available on that volume would buy you nothing at all.</p>
+        <p>This is the inverse of the usual advice. The usual advice is that databases need many IOPS and streaming needs bandwidth, prose that treats the two as separate purchases. The actual rule is that IOPS count and I/O size are two ends of a see-saw anchored at a fixed throughput ceiling. Raise one and the other becomes unspendable.</p>
+    </section>
+
+    <section class="seo-section" id="waste">
+        <h2>5. What Over-Provisioning IOPS Actually Buys</h2>
+        <p>Run the numbers on the case that opens this article. A volume at 80,000 IOPS, 2,000 MiB/s ceiling, and a workload with a 64 KiB average I/O size.</p>
+        <p>To honour 80,000 IOPS at 64 KiB, the volume would have to move 80,000 &times; 64 KiB = 5,120,000 KiB/s, which is 5,000 MiB/s. The ceiling is 2,000. So the throughput ceiling binds, and the delivered IOPS is 2,048,000 KiB/s divided by 64 KiB, which is 32,000.</p>
+        <p>Sixty percent of the provisioned IOPS is unreachable. The customer in the opening scene did not get shortchanged by 49,000 IOPS as a matter of policy. They got exactly the throughput they paid for, delivered at an I/O size that made most of the IOPS line item meaningless. And because gp3 prices IOPS above the 3,000 free baseline per unit, they paid for the meaningless part.</p>
+        <p>Now run the same volume at 16 KiB. 80,000 &times; 16 KiB = 1,280,000 KiB/s = 1,250 MiB/s, comfortably under the 2,000 ceiling. Here the IOPS ceiling binds and all 80,000 are delivered. The only difference between the two cases is the average I/O size, and the same hardware delivered 32,000 or 80,000 depending on which one the application happened to use.</p>
+        <table class="brief-table">
+            <thead>
+                <tr>
+                    <th class="num">Average I/O</th>
+                    <th class="num">IOPS needed for 2,000 MiB/s</th>
+                    <th class="num">Delivered at 80,000 provisioned</th>
+                    <th class="num">Unused</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td class="num">4 KiB</td><td class="num">512,000</td><td class="num">80,000</td><td class="num">0%</td></tr>
+                <tr><td class="num">16 KiB</td><td class="num">128,000</td><td class="num">80,000</td><td class="num">0%</td></tr>
+                <tr class="hi"><td class="num">25.6 KiB</td><td class="num">80,000</td><td class="num">80,000</td><td class="num">0%</td></tr>
+                <tr class="hi"><td class="num">32 KiB</td><td class="num">64,000</td><td class="num">64,000</td><td class="num">20%</td></tr>
+                <tr class="bad"><td class="num">64 KiB</td><td class="num">32,000</td><td class="num">32,000</td><td class="num">60%</td></tr>
+                <tr class="bad"><td class="num">128 KiB</td><td class="num">16,000</td><td class="num">16,000</td><td class="num">80%</td></tr>
+                <tr class="bad"><td class="num">256 KiB</td><td class="num">8,000</td><td class="num">8,000</td><td class="num">90%</td></tr>
+            </tbody>
+        </table>
+        <p>The line where unused IOPS starts climbing is exactly the break-even size, and it is marked in the table. Everything below it is a workload where the IOPS dial matters. Everything above it is a workload where the throughput dial is the only one being read, and the IOPS figure is decoration.</p>
+        <p>There is one honest exception. A workload can have a bimodal I/O distribution: 4 KiB for the index, 256 KiB for the table scan, and the average lands somewhere meaningless. Averaging hides this, which is why the diagnostic in section ten works on the average and then checks the queue depth before believing it.</p>
+    </section>
+
+    <section class="seo-section" id="units">
+        <h2>6. The Same 0.25 Is Not the Same</h2>
+        <p>Here the story acquires a wrinkle that this site has written about before, and it is worth being precise about because it is a different wrinkle from the usual one.</p>
+        <p>AWS says 0.25 MiB/s per IOPS. Google says 0.25 MiB/s per IOPS. Azure says 0.25 MB/s per IOPS, and Azure's disk documentation is explicit that it means what it says: the Ultra Disk page defines MB/s as 10^6 bytes per second, and the Premium SSD v2 throughput increments are quoted in the same decimal unit.</p>
+        <p>One IOPS therefore buys 262,144 bytes per second on AWS and Google, and 250,000 bytes per second on Azure. The ratio is 1.048576, so the Azure exchange rate is 4.86 percent worse.</p>
+        <p>That is not the 7.37 percent gap between GB and GiB. It is a smaller number and it comes from a different place. The storage marketing gap compares 10^9 with 2^30, which is a ratio of 1.0737. This one compares 10^6 with 2^20, which is 1.0486. Same family of confusion, a different exponent, and if you assume the two gaps are the same you will be wrong by about 2.5 percentage points in whichever direction you guessed.</p>
+        <table class="brief-table">
+            <thead>
+                <tr>
+                    <th>Comparison</th>
+                    <th class="num">Binary</th>
+                    <th class="num">Decimal</th>
+                    <th class="num">Ratio</th>
+                    <th class="num">Gap</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>GiB vs GB (drive capacity)</td><td class="num">2^30</td><td class="num">10^9</td><td class="num">1.0737</td><td class="num">7.37%</td></tr>
+                <tr class="hi"><td>MiB/s vs MB/s (IOPS rate)</td><td class="num">2^20</td><td class="num">10^6</td><td class="num">1.0486</td><td class="num">4.86%</td></tr>
+            </tbody>
+        </table>
+        <p>The break-even sizes carry the same fingerprint. Azure's 25,000 bytes per IOPS works out to 24.41 KiB, while AWS's 256 KiB per IOPS against a different ceiling lands on 25.6 KiB. They look like nearly the same number in a table because they are nearly the same number, but they are not the same number, and a capacity plan that treats 24.41 and 25.6 as interchangeable is off by 4.9 percent at exactly the boundary where the answer flips.</p>
+    </section>
+
+    <section class="seo-section" id="queue">
+        <h2>7. IOPS Is a Queue, Not a Disk</h2>
+        <p>Everything above assumes you can actually issue the I/Os. That assumption is where single-threaded applications fail, and it fails silently.</p>
+        <p>An IOPS rating is a rate of completion, and completion requires concurrency. If one I/O takes one millisecond to complete and you allow exactly one to be outstanding, you complete one thousand per second. Not eight thousand, not eighty thousand. One thousand, because the arithmetic is 1 divided by 0.001.</p>
+        <p>The relationship is Little's law applied to a device: the number of requests in flight equals the completion rate multiplied by the time each one takes. Written for storage, it is <code>outstanding = IOPS &times; latency</code>. To reach 80,000 IOPS at one millisecond, you need eighty requests in flight. AWS describes gp3 as delivering single-digit-millisecond latency, so the range between one and nine milliseconds puts the required concurrency somewhere between 80 and 720 outstanding requests.</p>
+        <p>An application that opens a file, reads 4 KiB, processes it, and reads again, with no queue and no threads, has one request in flight. It will peak at about 1,000 IOPS on that volume no matter what the volume is provisioned for, and it will look like a provisioning problem to everyone reading the graph.</p>
+        <div class="pull">Provisioned IOPS is a ceiling on completions per second. It is not a promise that your application will ask for them. Between the quota and the disk sits a queue, and a serial application never fills it.</div>
+        <p>This is why the standard advice to increase queue depth exists, and also why it stops working. Past the point where the queue is deep enough to saturate the ceiling, adding depth adds latency and no throughput. The curve is not linear and the knee is exactly the provisioned IOPS. Below the knee, more concurrency buys completions. Above it, more concurrency buys queueing time, which is the mechanism behind the P99 spikes that get blamed on the storage tier.</p>
+    </section>
+
+    <section class="seo-section" id="local">
+        <h2>8. Why Local NVMe Sits at 5 KiB</h2>
+        <p>The break-even size is not a cloud invention. Every storage device has one, and putting a local drive next to the cloud tiers makes the quota visible.</p>
+        <p>Samsung publishes the 990 PRO at 7,450 MB/s sequential read, 1,400,000 IOPS of 4 KiB random read at queue depth 32, and 22,000 IOPS of the same random read at queue depth 1. Divide the sequential figure by the random figure and the drive's break-even size is 5,321 bytes, or 5.20 KiB.</p>
+        <p>Read the queue-depth pair instead and a different number falls out. At depth one the drive completes 22,000 operations per second, so a single request takes about 45 microseconds. At depth thirty-two it completes 1,400,000, so thirty-two requests take about 22.9 microseconds each. Throughput rose 63.6-fold while concurrency rose 32-fold, which means the drive got more efficient under load, not less. Nothing in that behaviour is available from a volume whose latency is quoted in whole milliseconds.</p>
+        <table class="brief-table">
+            <thead>
+                <tr>
+                    <th>Device</th>
+                    <th class="num">IOPS @ QD1</th>
+                    <th class="num">Implied latency</th>
+                    <th class="num">Break-even I/O</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="hi"><td>Samsung 990 PRO, 4 KiB random read</td><td class="num">22,000</td><td class="num">45 &micro;s</td><td class="num">5.20 KiB</td></tr>
+                <tr><td>AWS gp3 at 80,000 provisioned</td><td class="num">~1,000 at 1 ms</td><td class="num">1,000 &micro;s</td><td class="num">25.6 KiB</td></tr>
+                <tr><td>AWS io2 Block Express</td><td class="num">~2,000 at 500 &micro;s</td><td class="num">500 &micro;s</td><td class="num">16 KiB</td></tr>
+            </tbody>
+        </table>
+        <p>Two gaps, and they compound. The local drive answers in 45 microseconds and a cloud volume in hundreds to thousands, so at the same queue depth the local drive is twenty to fifty times more responsive. And the local drive converts IOPS to throughput at 5.2 KiB while the cloud converts at 16 to 25.6, so each cloud IOPS carries three to five times more bandwidth behind it.</p>
+        <p>Those two facts point in opposite directions and explain the whole shape of the market. Cloud volumes are latency-poor and bandwidth-rich per IOPS. Local NVMe is latency-rich and bandwidth-poor per IOPS. A workload that is latency-bound, which includes most databases, will always prefer the local drive and will pay for the privilege in durability. A workload that needs a durable 2,000 MiB/s at a modest operation count, which includes most backups and log pipelines, is well served by eight thousand IOPS and a big I/O size.</p>
+    </section>
+
+    <section class="seo-section" id="metering">
+        <h2>9. Three Numbers, Not One</h2>
+        <p>By now the word "IOPS" has been used to mean three different things, and they are not interchangeable. On a single volume there are three separate granularities in play, and each answers a different question.</p>
+        <p>The first is the break-even size, which answers how fast you can go. The second is the metering unit, which answers how many operations you will be charged for. The third is the physical page and erase-block size inside the drive, which answers how much extra work the flash has to do to honour a write. Only the first appears in a provisioning console.</p>
+        <p>Azure is unusually explicit about the second. Its Premium SSD documentation states that each I/O operation of 256 KiB or less is counted as a single I/O operation, and that operations larger than 256 KiB are counted as multiple I/Os of 256 KiB each. On a Premium SSD the metering unit is therefore 256 KiB, while the break-even size on a P80 is 43.95 KiB. The two differ by a factor of 5.8, and they are both correct, because they measure different things.</p>
+        <p>Watch what that does to a real request. A 256 KiB read on a P80 counts as exactly one I/O operation, which sounds generous until you price the bandwidth. Twenty thousand of those per second would move 5,120,000 KiB/s, or 5,242 MB/s, against a published ceiling of 900 MB/s. The bandwidth ceiling arrives first: 900 MB/s divided by 256 KiB is 3,433 IOPS. The meter says one operation; the ceiling says you may have 3,433 of them per second. An engineer reading only the metering rule would conclude that 256 KiB requests are cheap. They are cheap to count and expensive to move.</p>
+        <p>The reverse error is just as easy. A 4 KiB random write on a P80 counts as one operation and moves almost nothing, so an engineer reading only the throughput ceiling would conclude that small I/Os are free. They are free to move and expensive to count, and at 20,000 IOPS the ceiling binds long before the bandwidth does.</p>
+        <div class="pull">Metering and throttling are two account books kept by two different departments. Reading either one alone produces a confident answer in the wrong direction.</div>
+        <p>The third granularity sits below both. NAND flash is written in pages, typically 4 to 16 KiB, and erased in blocks measured in hundreds of kilobytes to several megabytes. A 4 KiB write that lands in a page already holding data cannot be written in place; the controller reads the whole page, modifies it, and writes it back, so the device does more internal work than the host asked for. That is write amplification, it is a property of the medium rather than of the quota, and it is why random writes age a drive faster than sequential ones at identical IOPS. No provisioning decision changes it. It is also the reason the local drive in the previous section, which has the same physics, still answers in tens of microseconds while a cloud volume answers in hundreds: the physics is shared, the virtualisation path is not.</p>
+        <table class="brief-table">
+            <thead>
+                <tr>
+                    <th>Granularity</th>
+                    <th class="num">Example (Azure P80)</th>
+                    <th>Answers</th>
+                    <th>Where it is documented</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="hi"><td>Break-even I/O size</td><td class="num">43.95 KiB</td><td>How fast can this volume go</td><td>Nowhere, by that name; derive it</td></tr>
+                <tr><td>Metering unit</td><td class="num">256 KiB</td><td>How many operations am I charged for</td><td>Disk type documentation</td></tr>
+                <tr><td>NAND page / erase block</td><td class="num">4&ndash;16 KiB / 256 KiB+</td><td>How much internal work per host write</td><td>Device datasheets, rarely in cloud docs</td></tr>
+            </tbody>
+        </table>
+        <p>The practical consequence is that the break-even size is the only one of the three that should be compared against your measured average I/O size. Doing so tells you which ceiling binds. The metering unit tells you what the invoice will say, which is a different question with a different answer, and the erase block tells you why the drive wears out. Conflating them is how a capacity plan ends up internally consistent and externally wrong.</p>
+    </section>
+
+    <section class="seo-section" id="diagnose">
+        <h2>10. Three Columns, One Diagnosis</h2>
+        <p>None of this requires a benchmarking harness. The average I/O size is already in the output of <code>iostat -x</code>, sitting in columns that most people scroll past on the way to the utilisation figure.</p>
+        <p>Take <code>rkB/s</code> plus <code>wkB/s</code>, which are kibibytes per second read and written, and divide by <code>r/s</code> plus <code>w/s</code>, which are completed read and write requests per second. The result is your average I/O size in kilobytes. Note the units: sysstat prints kB but computes in KiB, a discrepancy its own manual flags in a BUGS note, so the number you get is already in the same family as the break-even sizes above and can be compared to them without conversion.</p>
+        <p>Then read the queue column. In current sysstat it is called <code>aqu-sz</code>; in older versions, and in most blog posts and dashboards still in service, it is <code>avgqu-sz</code>. Both mean the average number of requests issued to the device and outstanding. The rename is recent enough that a monitoring query written against the old name is a plausible reason your graph went blank.</p>
+        <p>The diagnosis is a two-step decision, and it is worth writing down because the two failure modes look identical on a throughput graph.</p>
+        <table class="brief-table">
+            <thead>
+                <tr>
+                    <th>Average I/O vs break-even</th>
+                    <th>Queue depth</th>
+                    <th>Diagnosis</th>
+                    <th>Fix</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="bad"><td>Above</td><td>Low</td><td>Throughput ceiling binds; IOPS quota unspendable</td><td>Lower IOPS, raise throughput, or raise I/O size</td></tr>
+                <tr><td>Above</td><td>High</td><td>Genuine ceiling reached at your access pattern</td><td>Reduce I/O size or move to a tier with a higher ceiling</td></tr>
+                <tr class="hi"><td>Below</td><td>Low</td><td>Application is serial; volume is idle</td><td>Raise queue depth or concurrency, not provisioning</td></tr>
+                <tr><td>Below</td><td>High</td><td>IOPS ceiling binds as designed</td><td>Nothing; this is the volume working</td></tr>
+            </tbody>
+        </table>
+        <p>The first row is the expensive one, because the instinct is to provision more IOPS and that is the one action guaranteed not to help. The third row is the embarrassing one, and it is far more common than its reputation suggests. A single-threaded process on an 80,000-IOPS volume shows a throughput graph that looks like a provisioning failure and a queue column that reads 0.9.</p>
+        <p>One caveat on the averaging. A workload that mixes 4 KiB metadata reads with 256 KiB sequential scans produces an average somewhere in between, and neither ceiling is actually binding at that average. When the average lands near the break-even size, split the measurement by request size before concluding anything. The formula works on unimodal workloads and lies politely on the others.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>11. Frequently Asked Questions</h2>
+        <h3>Why does my gp3 volume with 80,000 IOPS only deliver 32,000?</h3>
+        <p>Because the throughput ceiling binds first. The volume tops out at 2,000 MiB/s, and 80,000 IOPS only reaches that ceiling if each I/O averages 25.6 KiB or less. At a 64 KiB average, 80,000 IOPS would require 5,000 MiB/s, so the volume is throttled to 2,048,000 KiB divided by 64 KiB, which is 32,000. Sixty percent of the provisioned IOPS is unusable at that block size, and it was paid for anyway.</p>
+        <h3>Can I provision IOPS and throughput independently?</h3>
+        <p>You can set both values independently, but they are not independent in effect. AWS gp3, Azure Premium SSD v2 and GCP Hyperdisk Balanced all impose a ratio of roughly 0.25 MiB/s per provisioned IOPS on top of an absolute ceiling, and the smaller of the two ceilings is what the workload sees. Independence in the console is worth nothing if your average I/O size pushes you past the break-even point.</p>
+        <h3>Is 0.25 MiB/s per IOPS the same on every cloud?</h3>
+        <p>The coefficient is the same, the unit is not. AWS and Google quote MiB/s, making one IOPS worth 262,144 bytes per second. Azure quotes MB/s and defines it as 10^6 bytes, making one IOPS worth 250,000. The gap is 4.86 percent, which is a different number from the 7.37 percent that separates GB from GiB, and confusing the two will misprice a plan at the boundary.</p>
+        <h3>Why is local NVMe so much faster than a cloud volume?</h3>
+        <p>Two reasons that get conflated. Latency: the 990 PRO reaches 22,000 IOPS at queue depth one on 4 KiB random reads, implying about 45 microseconds per I/O, while a cloud volume quotes single-digit milliseconds, or roughly 1,000 IOPS at the same depth. And the exchange rate: that drive pairs 1,400,000 IOPS with 7,450 MB/s for a break-even of 5.2 KiB, against 25.6 KiB for gp3. A cloud volume is not a slice of a local drive; it is a quota with a different exchange rate.</p>
+        <h3>My benchmark showed a million IOPS. Why is that not 4 GB/s?</h3>
+        <p>Because a million IOPS at 4 KiB is 4,096,000 KiB/s, about 4 GiB/s, and a million IOPS is a random-read figure measured at high queue depth. Sequential throughput is measured with large I/Os, typically 128 KiB or more, at a depth the controller can pipeline. A drive rated at 1,400,000 random 4 KiB IOPS and 7,450 MB/s does not do both at once; the sequential figure requires an average I/O of 5.2 KiB, and the random figure does not survive the access pattern becoming contiguous.</p>
+        <h3>How do I find out which ceiling I am hitting?</h3>
+        <p>Divide throughput by IOPS using the columns iostat already prints: the sum of rkB/s and wkB/s over the sum of r/s and w/s is your average I/O size in kilobytes. Compare it to the break-even size of the volume type. Then read aqu-sz, called avgqu-sz in older sysstat. A queue near one with IOPS far below provisioned means the application is serial and the volume is idle. A high queue that still falls short of provisioned means a real ceiling.</p>
+    </section>
+
+    <section class="seo-section" id="method">
+        <h2>12. Methodology &amp; Disclosure</h2>
+        <p>Every specification in this article was read from the vendor's own documentation on 2026-10-23, and every derived figure is arithmetic on those specifications, reproducible with a calculator. No number here comes from a benchmark I ran, and none is extrapolated from a marketing claim.</p>
+        <p><strong>What was taken as given.</strong> AWS volume-type limits, the dagger footnote on required I/O size, and the 0.25 MiB/s per provisioned IOPS ratio from the gp3 and gp2 pages. Azure Premium SSD v2 and Ultra Disk limits and the 0.25 MB/s per provisioned IOPS rule, together with Azure's explicit definition of MB/s as 10^6 bytes. Google Hyperdisk Balanced limits and its <code>MIN(2,400, P/4)</code> throughput formula, Hyperdisk Extreme's 250 MiB/s per 1,000 IOPS, and Google's statement that reaching the IOPS limit requires 4 KiB I/O while reaching the throughput limit requires at least 256 KiB. Samsung's published 990 PRO figures: 7,450 MB/s sequential read, 1,400,000 IOPS of 4 KiB random read at QD32, 22,000 IOPS of the same at QD1. The <code>iostat</code> field definitions and the kB-versus-KiB note from the sysstat manual, including the recent renaming of <code>avgqu-sz</code> to <code>aqu-sz</code>.</p>
+        <p><strong>What was computed.</strong> Break-even size is always throughput ceiling divided by IOPS ceiling, with both sides converted to the same unit. Where a vendor quotes MiB/s the calculation uses 1,024 KiB per MiB; where a vendor quotes MB/s it uses 1,000,000 bytes, per that vendor's own definition. The 4.86 percent gap is 2^20 divided by 10^6. The 7.37 percent figure is 2^30 divided by 10^9. The concurrency requirement in section seven is <code>IOPS &times; latency</code>, evaluated at the latencies each vendor states rather than at a measured value.</p>
+        <p><strong>What is an assumption.</strong> The one-millisecond figure used for gp3 concurrency is the low end of AWS's "single-digit millisecond" wording, not a measured latency. The required-concurrency numbers in section seven should be read as a range, not a point. The QD1 column for cloud volumes is derived from that assumption and is illustrative. Bimodal I/O workloads are explicitly outside what the average-based diagnostic can resolve.</p>
+        <p><strong>What this article is not.</strong> It is not a benchmark, a price comparison, or a recommendation of one vendor over another. It contains no pricing claims: the cost argument in section five is about quantity, not money, because per-IOPS and per-MiB/s prices differ by region, tier, and contract, and any dollar figure here would be stale before it was published. Verify against your own <code>iostat</code> output and your own volume's provisioned settings before changing a quota.</p>
+        <p><strong>Independence.</strong> No vendor sponsorship and carries no affiliate links. No cloud provider was contacted, and none supplied data for this briefing.</p>
+
+        <h3>References &amp; Further Reading</h3>
+        <ol style="font-size:0.9rem; line-height:1.9;">
+            <li>AWS. <em>Amazon EBS volume types</em> &mdash; the comparison tables for gp3, gp2, io1, io2 Block Express, st1, and sc1; the dagger footnote defining "the required I/O size to reach maximum IOPS within the volume's throughput limit" as 25.6 KiB for gp3 and 16 KiB for the provisioned-IOPS tiers. <em>docs.aws.amazon.com/ebs/latest/userguide/ebs-volume-types.html</em></li>
+            <li>AWS. <em>Amazon EBS General Purpose SSD volumes</em> &mdash; gp3's 3,000 IOPS and 125 MiB/s baseline, 80,000 IOPS and 2,000 MiB/s maxima, 500 IOPS per GiB and 0.25 MiB/s per provisioned IOPS ratios, and the statement that maximum throughput is reachable at 8,000 IOPS or higher. <em>docs.aws.amazon.com/ebs/latest/userguide/general-purpose.html</em></li>
+            <li>AWS. <em>gp2 volume performance</em> &mdash; the 3 IOPS per GiB scaling rule, the 16,000 IOPS ceiling at 5,334 GiB, the 128 to 250 MiB/s throughput range, and the formula <code>throughput = IOPS &times; I/O size / 1,024</code>. Same document as above.</li>
+            <li>Microsoft. <em>Azure managed disk types</em> &mdash; Premium SSD v2's 80,000 IOPS and 2,000 MB/s maxima with the 0.25 MB/s per set IOPS rule, Ultra Disk's 400,000 IOPS and 10,000 MB/s with the same ratio, the 256 KiB I/O metering rule for Premium SSD, and the statement that MB/s means 10^6 bytes per second. <em>learn.microsoft.com/azure/virtual-machines/disks-types</em></li>
+            <li>Google Cloud. <em>Hyperdisk performance overview</em> &mdash; the per-volume maxima for Balanced, Extreme, Throughput, and ML, and the rules 250 MiB/s per 1,000 IOPS and 4 IOPS per MiB/s. <em>cloud.google.com/compute/docs/disks/hyperdisk-performance</em></li>
+            <li>Google Cloud. <em>About Hyperdisk Balanced</em> &mdash; the throughput formula <code>MIN(2,400, P/4)</code> where P is provisioned IOPS, the minimum <code>MAX(140, P/256)</code>, and the statement that the IOPS limit requires 4 KiB I/O while the throughput limit requires at least 256 KiB. <em>cloud.google.com/compute/docs/disks/hd-types/hyperdisk-balanced</em></li>
+            <li>Samsung. <em>990 PRO PCIe 4.0 NVMe M.2 SSD, 2 TB specifications</em> &mdash; 7,450 MB/s and 6,900 MB/s sequential, 1,400,000 and 1,550,000 IOPS of 4 KiB random read and write at QD32, 22,000 and 80,000 IOPS of the same at QD1. <em>samsung.com/memory-storage/nvme-ssd/990-pro-2tb</em></li>
+            <li>sysstat. <em>iostat(1) manual page</em> &mdash; definitions of r/s, w/s, rkB/s, wkB/s, await, and aqu-sz, the note that the field was previously named avgqu-sz, and the BUGS entry stating that displayed kB figures are computed in kibibytes. <em>man7.org/linux/man-pages/man1/iostat.1.html</em></li>
+            <li>Related: <a href="/iops-to-throughput">IOPS to Throughput Estimator</a> &#183; <a href="/gib-to-gb-marketing-gap">GiB to GB Marketing Gap</a> &#183; <a href="/redis-ram-to-raw-json-ratio">Redis RAM to Raw JSON Ratio</a> &#183; <a href="/latency-budget-real">The Latency Budget</a> &#183; <a href="/db-instance-sizing">Database Instance Sizing</a> &#183; <a href="/data-magnitude">All Data Magnitude Tools</a> &#183; <a href="/methodology">Methodology</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Fiops-throughput-exchange-rate&amp;text=Every%20cloud%20converts%20IOPS%20to%20throughput%20at%200.25%20MiB%2Fs%20%E2%80%94%20so%20one%20IOPS%20is%20worth%20256%20KiB%2C%20and%20your%20real%20ceiling%20depends%20on%20average%20I%2FO%20size" target="_blank" rel="noopener" aria-label="Share on X">&#120143;</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Fiops-throughput-exchange-rate" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/iops-to-throughput">&#128202; IOPS to Throughput Estimator &rarr;</a>
+            <a href="/gib-to-gb-marketing-gap">&#128202; GiB to GB Marketing Gap &rarr;</a>
+            <a href="/redis-ram-to-raw-json-ratio">&#128202; Redis RAM to Raw JSON Ratio &rarr;</a>
+            <a href="/latency-budget-real">&#128240; The Latency Budget: Why P50 Is a Lie &rarr;</a>
+            <a href="/db-instance-sizing">&#128202; Database Instance Sizing &rarr;</a>
+            <a href="/cloud-storage-cost">&#128202; Cloud Storage Cost &rarr;</a>
+            <a href="/data-magnitude">&#128295; All Data Magnitude Tools &rarr;</a>
+            <a href="/articles">&#128240; All Briefings &rarr;</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Model Disclaimer:</strong> Break-even sizes are computed from vendor-published maxima and change when a vendor revises a limit. Provisioned performance is a target, not a guarantee, and actual throughput depends on instance type, access pattern, and queue depth. Verify against your own volume and your own <code>iostat</code> output before changing a quota.</p>
+        </div>
+    </section>
+
+
+<footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/decision-matrix">Decision Matrix</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>
