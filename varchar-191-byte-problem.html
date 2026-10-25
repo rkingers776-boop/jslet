@@ -350,7 +350,7 @@
             </tbody>
         </table>
 
-        <p><strong>The second ledger is on disk.</strong> Rows store actual values, so a <code>VARCHAR(255)</code> holding ten ASCII characters occupies eleven bytes. Ten million such rows are 110 megabytes, not 10 gigabytes. The declaration cost you nothing here. This is the half of the story that the "VARCHAR is expensive" folklore gets wrong.</p>
+        <p><strong>The second ledger is on disk.</strong> Rows store actual values, so a <code>VARCHAR(255)</code> holding ten ASCII characters occupies twelve bytes: ten of data and a two-byte length prefix that the declaration forced, because 255 four-byte characters can exceed 255 bytes. Ten million such rows are 120 megabytes, not 10 gigabytes. The 1,020-byte maximum never materialises; only the width you actually use does, plus the single extra prefix byte that <code>VARCHAR(255)</code> charges over <code>VARCHAR(63)</code> and anything shorter. This is the half of the story that the "VARCHAR is expensive" folklore gets wrong.</p>
         <p>Which means the honest answer to "how much does <code>VARCHAR(255)</code> cost" depends entirely on what is in it, and the declaration cannot tell you. If the column genuinely holds 255 Chinese characters, ten million rows occupy 10.22 gigabytes against the 2.55 gigabytes a naive 255-bytes-per-row estimate predicts. The estimate is wrong by 4.01×, and it is wrong because it treated a character budget as a byte budget.</p>
         <p>Two aggregate functions settle it for any column you already have. <code>LENGTH()</code> returns bytes and <code>CHAR_LENGTH()</code> returns characters, so their ratio is the byte width of your actual data:</p>
         <div class="pull"><code>SELECT AVG(LENGTH(t)) / AVG(CHAR_LENGTH(t)) AS bytes_per_char, MAX(LENGTH(t)) AS widest_row FROM tbl;</code></div>
@@ -395,7 +395,7 @@
             <li><strong>Count in the unit the requirement uses.</strong> If the product says characters, decide whether it means graphemes, code points, or UTF-16 units before you write the validator, because the three differ by up to 25×.</li>
             <li><strong>Normalise to NFC on input.</strong> It removes the last class of case where two identical-looking strings occupy different byte counts.</li>
         </ul>
-        <p>One counter-intuitive consequence is worth stating outright, because it cuts against common practice: <code>VARCHAR(max)</code> and <code>TEXT</code> are not automatically the safe choice. On MySQL a <code>TEXT</code> column cannot be indexed without an explicit prefix length, which is a real constraint that a generous <code>VARCHAR</code> does not have. On Postgres, by contrast, <code>text</code> is the native type and carries no penalty at all. The right answer is engine-specific because the limit being divided is engine-specific.</p>
+        <p>One counter-intuitive consequence is worth stating outright, because it cuts against common practice: a generous <code>VARCHAR</code> and <code>TEXT</code> are not automatically the safe choice. On MySQL a <code>TEXT</code> column cannot be indexed without an explicit prefix length, which is a real constraint that a wide <code>VARCHAR</code> does not have. On Postgres, by contrast, <code>text</code> is the native type and carries no penalty at all. The right answer is engine-specific because the limit being divided is engine-specific.</p>
     </section>
 
     <section class="seo-section" id="elsewhere">
