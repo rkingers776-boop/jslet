@@ -69,7 +69,7 @@
       "name": "Does the counter handle emoji and multi-byte characters correctly?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. The UTF-8 byte count reflects how emoji and CJK characters actually consume bytes on the wire — an emoji is often 4 bytes, not 1 character — which matters for SMS gateways and API payload limits that bill by byte. The character and word counts follow what a reader sees, while the byte count follows what the network charges."
+        "text": "Yes. The UTF-8 byte count reflects how emoji and CJK characters actually consume bytes on the wire — an emoji is often 4 bytes, not 1 character — which matters for SMS gateways and API payload limits that bill by byte. The code-point and grapheme counts follow what a reader sees, the UTF-16 count matches JavaScript's <code>.length</code>, and the byte count follows what the network and the database charge."
       }
     },
     {
@@ -110,7 +110,7 @@
             <h2 style="font-size:1rem;">🟢📖 Character Count Limits Explained</h2>
             <div style="font-size:0.9rem; color:var(--text-body); line-height:1.8;">
                 <table class="claims-table"><tr><th scope="row">Twitter/X (280)</th><td>Counts Unicode code points (not UTF-16 code units). URLs count as 23 characters regardless of length (t.co wrapped). CJK characters count as 2. This counter shows raw character count.</td></tr><tr><th scope="row">SMS (160)</th><td>Standard GSM-7 encoded SMS maxes at 160 characters. Messages using non-GSM characters (like CJK, emoji) are UCS-2 encoded and limited to 70 chars. Multi-part SMS split at 153 chars (GSM-7) or 67 chars (UCS-2).</td></tr><tr><th scope="row">SEO title (60)</th><td>Google's display limit for title tags in SERPs. Titles longer than ~600px (roughly 60 chars) get truncated with "—". Pixel width matters more than character count — W is wider than i.</td></tr><tr><th scope="row">Meta description (160)</th><td>Google displays up to ~920px (roughly 155-160 chars) of meta description in search results. Longer descriptions are truncated. In 2026, Google may dynamically generate snippets from page content regardless.</td></tr></table>
-                <p><strong>UTF-8 bytes</strong> matter for database storage, API payloads, and CSV encoding. ASCII characters are 1 byte, Latin-1 supplement characters are 2 bytes, CJK characters are 3 bytes, and emoji/supplementary characters are 4 bytes. A 140-character tweet with emojis could be 500+ bytes in UTF-8.</p>
+                <p><strong>Four counts, four answers.</strong> A character can mean four different things, so this tool reports the three that disagree. <strong>Code points</strong> are what most languages call characters, and what X counts. <strong>Grapheme clusters</strong> are what a reader perceives: a family emoji is one cluster, seven code points, eleven UTF-16 units and 25 UTF-8 bytes. <strong>UTF-16 units</strong> are what <code>&quot;&#128077;&quot;.length</code> returns &mdash; two, for one visible character &mdash; and they matter because that is the number a JavaScript validator reaches for by default.</p><p><strong>UTF-8 bytes</strong> matter for database storage, API payloads, CSV encoding and column limits. ASCII is 1 byte, Latin-1 supplement 2 bytes, CJK 3 bytes, and emoji or anything above U+FFFF is 4 bytes &mdash; which is why a <code>VARCHAR(255)</code> column under <code>utf8mb4</code> reserves 1,022 bytes rather than 255. See <a href="/varchar-191-byte-problem">The 191 Problem</a> for the arithmetic.</p>
                 <p>See also: <a href="/markdown-preview">Markdown Preview</a> · <a href="/char-counter">Character Counter</a> · <a href="/text-diff-checker">Text Diff Checker</a> · <a href="/text-to-slug">Text to Slug</a></p>
             </div>
         </section>
@@ -196,6 +196,7 @@
         var statsPanel = document.getElementById('stats-panel');
 
         function getUtf8Bytes(str) {
+            if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(str).length;
             var bytes = 0;
             for (var i = 0; i < str.length; i++) {
                 var code = str.charCodeAt(i);
@@ -210,6 +211,23 @@
                 }
             }
             return bytes;
+        }
+
+        // Code points, not UTF-16 code units: a family emoji is 1, not 11.
+        function getCodePoints(str) {
+            return Array.from ? Array.from(str).length : str.length;
+        }
+
+        // User-perceived characters. Intl.Segmenter groups ZWJ sequences,
+        // skin-tone modifiers and regional-indicator pairs into one cluster.
+        var graphemeSegmenter = (typeof Intl !== 'undefined' && Intl.Segmenter)
+            ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+
+        function getGraphemes(str) {
+            if (!graphemeSegmenter) return getCodePoints(str);
+            var n = 0, it = graphemeSegmenter.segment(str)[Symbol.iterator](), r = it.next();
+            while (!r.done) { n++; r = it.next(); }
+            return n;
         }
 
         function getLines(str) {
@@ -258,7 +276,9 @@
         window.updateCounts = function() {
             var text = textInput.value;
 
-            var chars = text.length;
+            var chars = getCodePoints(text);
+            var graphemes = getGraphemes(text);
+            var utf16 = text.length;
             var words = text.trim() === '' ? 0 : (text.trim().split(/\s+/).length);
             var lines = getLines(text);
             var sentences = getSentences(text);
@@ -266,7 +286,9 @@
             var utf8Bytes = getUtf8Bytes(text);
 
             var html = '';
-            html += '<div class="stat-card"><span class="stat-label">🟢📝 Characters</span><span class="stat-value">' + chars.toLocaleString() + '</span></div>';
+            html += '<div class="stat-card"><span class="stat-label">🟢📝 Characters (code points)</span><span class="stat-value">' + chars.toLocaleString() + '</span></div>';
+            html += '<div class="stat-card"><span class="stat-label">🟢🧩 Grapheme clusters</span><span class="stat-value">' + graphemes.toLocaleString() + '</span></div>';
+            html += '<div class="stat-card"><span class="stat-label">🟢🔢 UTF-16 units</span><span class="stat-value">' + utf16.toLocaleString() + '</span></div>';
             html += '<div class="stat-card"><span class="stat-label">🟢📚 Words</span><span class="stat-value">' + words.toLocaleString() + '</span></div>';
             html += '<div class="stat-card"><span class="stat-label">🟢📏 Lines</span><span class="stat-value">' + lines.toLocaleString() + '</span></div>';
             html += '<div class="stat-card"><span class="stat-label">🟢📖 Sentences</span><span class="stat-value">' + sentences.toLocaleString() + '</span></div>';

@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The 191 Problem: Why VARCHAR(255) Is Not 255 Bytes</title>
+    <meta name="description" content="VARCHAR(255) is not 255 bytes. Under utf8mb4 it costs 1,022. And 191 is not a MySQL constant — it is 767 ÷ 4. The arithmetic behind four magic numbers.">
+    <meta property="og:title" content="The 191 Problem — Every Column Length Is Two Different Numbers">
+    <meta property="og:description" content="You declare a column in characters. Every limit that constrains it is in bytes. The ratio is up to four, and it explains 255, 191, 63 and 450.">
+    <meta property="og:url" content="https://www.jslet.com/varchar-191-byte-problem">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-10-25T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-10-25T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The 191 Problem: Why VARCHAR(255) Is Not 255 Bytes</title>
+    <meta name="twitter:description" content="255 is where a length prefix doubles. 191 is 767 ÷ 4. Two different questions, one number everyone memorised by mistake.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/varchar-191-byte-problem">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The 191 Problem: Why VARCHAR(255) Is Not 255 Bytes",
+      "description": "A column length is declared in characters, and every limit that constrains it is expressed in bytes. The multiplier between the two is up to four, which means the numbers developers memorise for column declarations are not constants at all but quotients. 191 is 767 ÷ 4, the number of four-byte characters that fit inside the legacy InnoDB index key prefix limit. 255 is the largest latin1 length that still costs a single length byte, and it survives because 767 ÷ 3 also rounds down to 255 under utf8mb3. Under utf8mb4 with the default DYNAMIC row format the prefix limit is 3,072 bytes, so 191 solves a problem most current schemas do not have, while VARCHAR(255) now occupies up to 1,022 bytes per row and caps a table at 64 such columns against the 65,535-byte row limit. The same division produces SQL Server's 450 and 850, and PostgreSQL avoids the question entirely by counting characters. Every figure here is derived rather than quoted.",
+      "url": "https://www.jslet.com/varchar-191-byte-problem",
+      "datePublished": "2026-10-25T00:00:00+00:00",
+      "dateModified": "2026-10-25T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research", "url": "https://www.jslet.com/methodology" },
+      "publisher": { "@type": "Organization", "@id": "https://www.jslet.com/#organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Is VARCHAR(255) 255 bytes?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. The 255 is a character limit, and each character may occupy up to four bytes under utf8mb4. The maximum value is therefore 255 × 4 = 1,020 bytes, plus a 2-byte length prefix, which is 1,022 bytes. Under latin1 the same declaration is 255 bytes plus a 1-byte prefix, and the two schemas are not interchangeable even though they look identical in a migration script."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why do people say to use VARCHAR(191) instead?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because 767 ÷ 4 = 191.75, and the 767-byte index key prefix limit applies to the REDUNDANT and COMPACT row formats. Rounded down, 191 four-byte characters fit inside 767 bytes. The number is a quotient, not a MySQL constant, and MySQL's own manual gives it as the example of where the limit bites. Under the DYNAMIC and COMPRESSED row formats the limit is 3,072 bytes, which is 768 four-byte characters, so the workaround is unnecessary unless you have explicitly chosen an older row format."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What does 'max key length is 767 bytes' actually mean?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It means the index key prefix, the portion of a long column that the B-tree stores, cannot exceed 767 bytes on a table using the REDUNDANT or COMPACT row format. The error quotes bytes, but the declaration is in characters, so the fix depends on how wide your characters are: 255 for utf8mb3 at 3 bytes each, 191 for utf8mb4 at 4 bytes each, and 767 for latin1 at 1 byte each."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does my emoji count as two characters in JavaScript?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because String.length returns UTF-16 code units, and every character above U+FFFF is encoded as a surrogate pair of two code units. A thumbs-up is one code point, two code units and four UTF-8 bytes. Array.from(text).length or the spread operator gives code points, and Intl.Segmenter with grapheme granularity gives the clusters a reader perceives, which is the only count that matches 'characters' in ordinary speech."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Should I use utf8 or utf8mb4?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "utf8mb4. In MySQL, utf8 is an alias for utf8mb3, a three-byte encoding that cannot represent any character above U+FFFF, which excludes emoji and most historic scripts and some CJK extension blocks. Storing such a character fails or is replaced. utf8mb4 is a four-byte encoding that covers all of Unicode, and the only cost is that the maximum bytes per character rises from 3 to 4, which moves the index-safe character count from 255 down to 191 under the legacy row format."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does the declared VARCHAR length affect performance?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Not the way most people assume. Rows store actual values, not declared maxima, so a VARCHAR(255) column holding ten characters occupies the same bytes as a VARCHAR(10) column holding ten characters. What the declaration does affect is the DDL-time row size budget, which is charged at maximum widths, and whether an index on the column fits under the key prefix limit. Both are compile-time constraints on the schema, not runtime costs on the data."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 117 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>The <span>191</span> Problem</h1>
+        <p>You declare a column length in characters. Every limit that constrains it is written in bytes. The multiplier between the two runs from 1 to 4, and it quietly explains four numbers that the industry treats as constants</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-10-25 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 18 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform: uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ul style="line-height:2; padding-left:20px; margin:0; columns:2; column-gap:28px;">
+            <li><a href="#question" style="color:var(--accent); text-decoration:none;">Two Numbers, Two Questions</a></li>
+            <li><a href="#ladder" style="color:var(--accent); text-decoration:none;">One Byte, Sometimes</a></li>
+            <li><a href="#four" style="color:var(--accent); text-decoration:none;">Four Things Called a Character</a></li>
+            <li><a href="#prefix" style="color:var(--accent); text-decoration:none;">The Step at 63</a></li>
+            <li><a href="#767" style="color:var(--accent); text-decoration:none;">Where 767 Comes From</a></li>
+            <li><a href="#modern" style="color:var(--accent); text-decoration:none;">Why 191 Is Usually Wrong</a></li>
+            <li><a href="#others" style="color:var(--accent); text-decoration:none;">SQL Server Says 450</a></li>
+            <li><a href="#ledgers" style="color:var(--accent); text-decoration:none;">Two Ledgers, Not One</a></li>
+            <li><a href="#truncate" style="color:var(--accent); text-decoration:none;">Cutting at a Byte Boundary</a></li>
+            <li><a href="#normalize" style="color:var(--accent); text-decoration:none;">Same Text, Different Bytes</a></li>
+            <li><a href="#decide" style="color:var(--accent); text-decoration:none;">What to Declare</a></li>
+            <li><a href="#elsewhere" style="color:var(--accent); text-decoration:none;">The Same Division Elsewhere</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ul>
+    </div>
+
+    <section class="seo-section">
+        <p>Someone adds an index to a <code>VARCHAR(255)</code> column and MySQL answers with <code>ERROR 1071 (42000): Specified key was too long; max key length is 767 bytes</code>. They search the error text. The top answer, copied forward through a decade of forum threads and now through generated documentation, is one line: change the column to <code>VARCHAR(191)</code>.</p>
+        <p>Both numbers are correct. Neither is a constant of MySQL. <strong>191 is 767 divided by 4</strong>, rounded down, because the widest character that <code>utf8mb4</code> can store occupies four bytes. And 255, the number the developer typed without thinking, is not a limit either. It is the largest <code>latin1</code> length that still costs a single length byte on every row.</p>
+        <p>That is the whole problem in one sentence: <em>column lengths are declared in characters and enforced in bytes, and the exchange rate between them is not one.</em> Once you see the division, four numbers that look arbitrary stop being arbitrary. More usefully, you can compute the right number for any table instead of memorising someone else's.</p>
+    </section>
+
+    <section class="seo-section" id="question">
+        <h2>1. Two Numbers, Two Questions</h2>
+        <p>MySQL's manual is unusually direct about the first half of this. A <code>CHAR</code> or <code>VARCHAR</code> column is declared with a length that indicates "the maximum number of characters you want to store". The characters, not the bytes. Then, two paragraphs later, storage is described in bytes: "The length prefix indicates the number of bytes in the value. A column uses one length byte if values require no more than 255 bytes, two length bytes if values may require more than 255 bytes."</p>
+        <p>So a single declaration, <code>VARCHAR(255)</code>, is simultaneously a promise about characters and a constraint about bytes, and nothing in the syntax says which character set will be standing behind it. The same token in a schema becomes a 256-byte column under <code>latin1</code> and a 1,022-byte column under <code>utf8mb4</code>. The difference is not a tuning parameter. It is a factor of four.</p>
+        <p>Every "magic" number in this corner of the industry is a quotient of that form. The table below is the entire subject of this briefing, compressed.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Number</th><th>It is really</th><th>The question it answers</th></tr>
+            </thead>
+            <tbody>
+                <tr><td class="num">255</td><td>255 &divide; 1</td><td>Largest <code>latin1</code> length that still fits a 1-byte length prefix</td></tr>
+                <tr><td class="num">85</td><td>255 &divide; 3</td><td>Same question, <code>utf8mb3</code></td></tr>
+                <tr class="hi"><td class="num">63</td><td>255 &divide; 4</td><td>Same question, <code>utf8mb4</code></td></tr>
+                <tr><td class="num">767</td><td>&mdash;</td><td>Index key prefix ceiling, <code>REDUNDANT</code> and <code>COMPACT</code> row formats</td></tr>
+                <tr class="bad"><td class="num">191</td><td>767 &divide; 4</td><td>Four-byte characters that fit under that ceiling</td></tr>
+                <tr><td class="num">768</td><td>3072 &divide; 4</td><td>The same question under <code>DYNAMIC</code> and <code>COMPRESSED</code></td></tr>
+                <tr><td class="num">450</td><td>900 &divide; 2</td><td>SQL Server <code>nvarchar</code> characters in a clustered index key</td></tr>
+            </tbody>
+        </table>
+
+        <p>Read that table as a caution about how technical folklore forms. The number 191 is not wrong. It is the correct answer to a question about a row format most current installations do not use, and it has been detached from that question and repeated as though it were a property of the type.</p>
+    </section>
+
+    <section class="seo-section" id="ladder">
+        <h2>2. One Byte, Sometimes</h2>
+        <p>UTF-8 is a variable-width encoding, and the width depends on the code point. The ladder has four rungs and no others; RFC 3629 closed off the five- and six-byte forms that the original specification permitted.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Code points</th><th class="num">UTF-8 bytes</th><th class="num">UTF-16 units</th><th>Example</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>U+0000 &ndash; U+007F</td><td class="num">1</td><td class="num">1</td><td><code>A</code></td></tr>
+                <tr><td>U+0080 &ndash; U+07FF</td><td class="num">2</td><td class="num">1</td><td><code>&eacute;</code></td></tr>
+                <tr><td>U+0800 &ndash; U+FFFF</td><td class="num">3</td><td class="num">1</td><td><code>&#20013;</code></td></tr>
+                <tr class="hi"><td>U+10000 &ndash; U+10FFFF</td><td class="num">4</td><td class="num">2</td><td><code>&#128077;</code></td></tr>
+            </tbody>
+        </table>
+
+        <p>Only the first rung is one byte, and it contains 128 code points out of the 1,114,112 that Unicode assigns. That is 0.0115% of the code space. The claim that "UTF-8 uses one byte per character" is a statement about the 0.0115%, and it is repeated as though it were a statement about text.</p>
+        <p>The practical consequence is that the byte cost of a column is a property of the language in it, not of the schema. Measured on sample sentences in each script, with spaces counted as the single byte they are:</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Sample</th><th class="num">Code points</th><th class="num">UTF-8 bytes</th><th class="num">Bytes per character</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>English</td><td class="num">43</td><td class="num">43</td><td class="num">1.00</td></tr>
+                <tr><td>French, accented</td><td class="num">42</td><td class="num">49</td><td class="num">1.17</td></tr>
+                <tr><td>Arabic</td><td class="num">41</td><td class="num">76</td><td class="num">1.85</td></tr>
+                <tr><td>Russian</td><td class="num">57</td><td class="num">108</td><td class="num">1.89</td></tr>
+                <tr><td>Korean</td><td class="num">22</td><td class="num">56</td><td class="num">2.55</td></tr>
+                <tr><td>Chinese</td><td class="num">20</td><td class="num">60</td><td class="num">3.00</td></tr>
+                <tr><td>Japanese</td><td class="num">23</td><td class="num">69</td><td class="num">3.00</td></tr>
+                <tr class="bad"><td>Emoji</td><td class="num">5</td><td class="num">20</td><td class="num">4.00</td></tr>
+            </tbody>
+        </table>
+
+        <p>Chinese and Japanese land exactly on 3.00 because every character in those sentences sits in the three-byte rung and the spaces are a rounding effect on a twenty-character sample. Emoji land exactly on 4.00 because every one of them is above U+FFFF. English sits at 1.00 by definition.</p>
+        <p>This is where capacity estimates go wrong in a way that survives review. A team sizing a table for 20 million rows of user-entered text will multiply by a width they measured on test data, and test data is almost always English. Change the user base, and the same schema holds four times the bytes with no migration, no alert, and no change to the declaration.</p>
+    </section>
+
+    <section class="seo-section" id="four">
+        <h2>3. Four Things Called a Character</h2>
+        <p>Before any of this arithmetic is meaningful you have to know which count you are holding, because "character" names at least four different quantities and they disagree by up to 25×.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Text</th><th class="num">Graphemes</th><th class="num">Code points</th><th class="num">UTF-16 units</th><th class="num">UTF-8 bytes</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>A</code></td><td class="num">1</td><td class="num">1</td><td class="num">1</td><td class="num">1</td></tr>
+                <tr><td><code>&eacute;</code> precomposed (NFC)</td><td class="num">1</td><td class="num">1</td><td class="num">1</td><td class="num">2</td></tr>
+                <tr><td><code>e</code> + combining acute (NFD)</td><td class="num">1</td><td class="num">2</td><td class="num">2</td><td class="num">3</td></tr>
+                <tr><td><code>&#20013;</code></td><td class="num">1</td><td class="num">1</td><td class="num">1</td><td class="num">3</td></tr>
+                <tr><td><code>&#128077;</code> thumbs up</td><td class="num">1</td><td class="num">1</td><td class="num">2</td><td class="num">4</td></tr>
+                <tr><td><code>&#128077;&#127997;</code> with skin tone</td><td class="num">1</td><td class="num">2</td><td class="num">4</td><td class="num">8</td></tr>
+                <tr><td><code>&#127471;&#127477;</code> flag</td><td class="num">1</td><td class="num">2</td><td class="num">4</td><td class="num">8</td></tr>
+                <tr class="bad"><td><code>&#128104;&#8205;&#128105;&#8205;&#128103;&#8205;&#128102;</code> family</td><td class="num">1</td><td class="num">7</td><td class="num">11</td><td class="num">25</td></tr>
+            </tbody>
+        </table>
+
+        <p>The last row is one character to a reader, seven code points to a Unicode-aware language, eleven units to JavaScript, and twenty-five bytes to the disk. If a product requirement says "limit the name field to 25 characters", the four interpretations produce fields that differ in capacity by a factor of 25, and only one of them will match what the reader expects.</p>
+        <p>The concrete breakage is well known to anyone who has written a front-end validator. In JavaScript, <code>"&#128077;".length</code> is <code>2</code>, because <code>String.length</code> counts UTF-16 code units and every code point above U+FFFF becomes a surrogate pair. <code>Array.from("&#128077;").length</code> is <code>1</code>. In Python, <code>len("&#128077;")</code> is <code>1</code>, because Python 3 strings are sequences of code points. Neither language gives you graphemes until you ask for them by name, which is <code>Intl.Segmenter</code> in JavaScript and a third-party library in Python.</p>
+
+        <div class="pull">A character counter that uses <code>String.length</code> will report eleven characters for a single family emoji. That is not a rounding error. It is the wrong unit, and it is the default unit in the most common language on the web.</div>
+
+        <p>MySQL sits at the code-point level for <code>CHAR_LENGTH()</code>, and at the byte level for <code>LENGTH()</code>. That pair is the most useful instrument in this whole article, and section eight turns it into a single diagnostic query.</p>
+    </section>
+
+    <section class="seo-section" id="prefix">
+        <h2>4. The Step at 63</h2>
+        <p>Here is a cost that no declaration makes visible. A <code>VARCHAR</code> value is stored as a length prefix followed by the bytes. The prefix is one byte when the value can never exceed 255 bytes and two bytes otherwise. The word that matters is <em>can</em>: MySQL decides at definition time, using the maximum the column could hold, not the length of any particular row.</p>
+        <p>So the prefix doubles at a different character count for every character set, and the threshold is simply 255 divided by the widest character the set permits.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Character set</th><th class="num">Max bytes per char</th><th class="num">Largest n with 1-byte prefix</th><th class="num">At n + 1</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>latin1</code></td><td class="num">1</td><td class="num">255</td><td class="num">256 bytes</td></tr>
+                <tr><td><code>ucs2</code></td><td class="num">2</td><td class="num">127</td><td class="num">256 bytes</td></tr>
+                <tr><td><code>utf8mb3</code> (<code>utf8</code>)</td><td class="num">3</td><td class="num">85</td><td class="num">258 bytes</td></tr>
+                <tr class="hi"><td><code>utf8mb4</code></td><td class="num">4</td><td class="num">63</td><td class="num">256 bytes</td></tr>
+            </tbody>
+        </table>
+
+        <p><code>VARCHAR(63)</code> under <code>utf8mb4</code> can hold 252 bytes, so it costs one prefix byte. <code>VARCHAR(64)</code> can hold 256, so it costs two. One additional character in the declaration adds one byte to every row in the table, permanently, and the row does not have to use that character.</p>
+        <p>At ten million rows that is ten megabytes, which is not a crisis. The reason to know it is not the ten megabytes. It is that this is where 255 came from in the first place. Under <code>latin1</code>, <code>VARCHAR(255)</code> is exactly the largest column that still carries a one-byte prefix, and that is why the idiom spread in the years when <code>latin1</code> was the default. It then survived the migration to three- and four-byte character sets, where it no longer marks any boundary at all.</p>
+    </section>
+
+    <section class="seo-section" id="767">
+        <h2>5. Where 767 Comes From</h2>
+        <p>The 767-byte figure is not a property of <code>VARCHAR</code>. It is a property of two InnoDB row formats. MySQL's manual states it plainly: "The index key prefix length limit is 3072 bytes for InnoDB tables that use DYNAMIC or COMPRESSED row format. The index key prefix length limit is 767 bytes for InnoDB tables that use REDUNDANT or COMPACT row format."</p>
+        <p>It then does the division for you, and this is the sentence that half the internet is paraphrasing without attribution: "you might hit this limit with a column prefix index of more than 191 characters on a TEXT or VARCHAR column, assuming a utf8mb4 character set and the maximum of 4 bytes for each character."</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Key prefix limit</th><th class="num">latin1</th><th class="num">utf8mb3</th><th class="num">utf8mb4</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>767 bytes</td><td class="num">767</td><td class="num">255</td><td class="num">191</td></tr>
+                <tr class="hi"><td>3,072 bytes</td><td class="num">3,072</td><td class="num">1,024</td><td class="num">768</td></tr>
+            </tbody>
+        </table>
+
+        <p>Look at the second column of the first row. 767 &divide; 3 is 255.67, which rounds down to 255. That is the second reason the number 255 became the default length for indexed string columns in MySQL schemas: under the three-byte character set, it was simultaneously the largest one-prefix-byte length and the largest fully indexable length. Two unrelated constraints agreed on the same value, and the agreement made the choice look like a rule.</p>
+        <p>Then <code>utf8mb4</code> arrived, the maximum width went from three to four, both constraints moved, and only one of them moved in a way anyone noticed. The index limit produced 191 and a famous error message. The prefix limit produced 63, and nobody wrote a blog post about it.</p>
+    </section>
+
+    <section class="seo-section" id="modern">
+        <h2>6. Why 191 Is Usually Wrong Now</h2>
+        <p>Here is the part that the copied answers omit. The default InnoDB row format is <code>DYNAMIC</code>, and under <code>DYNAMIC</code> the key prefix limit is 3,072 bytes. A <code>VARCHAR(255)</code> column under <code>utf8mb4</code> can occupy at most 1,020 bytes, which is a third of the budget. It indexes without truncation, and the error that started this article does not occur.</p>
+        <p>So on a schema you are creating today, <code>VARCHAR(191)</code> is a fix for a condition you would have to opt into. Writing it by reflex costs you 64 characters of capacity in exchange for nothing, and it makes the schema harder to reason about, because the next person has to work out which of the two questions the 191 was answering.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Situation</th><th>Is 191 required?</th><th>Why</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>MySQL 8.0, default <code>DYNAMIC</code> row format</td><td>No</td><td>3,072-byte limit holds a full 1,022-byte column</td></tr>
+                <tr><td><code>ROW_FORMAT=COMPRESSED</code></td><td>No</td><td>Also 3,072 bytes</td></tr>
+                <tr class="bad"><td><code>ROW_FORMAT=COMPACT</code> or <code>REDUNDANT</code></td><td>Yes</td><td>767-byte limit, 767 &divide; 4 = 191</td></tr>
+                <tr class="bad"><td>Legacy servers before the 3,072-byte limit existed</td><td>Yes</td><td>Same 767-byte ceiling</td></tr>
+                <tr><td>Prefix index on <code>TEXT</code> or <code>BLOB</code></td><td>It is what you write</td><td><code>INDEX (col(191))</code> is an explicit prefix length, not a workaround</td></tr>
+            </tbody>
+        </table>
+
+        <p>There is a broader pattern here, and it is the same one that makes old performance advice dangerous. A number is derived from a constraint, the constraint changes, and the number keeps circulating because it is easier to copy than to re-derive. The fix outlives the bug. In this case the bug was a 767-byte limit, the fix was a shorter column, and the limit is now four times larger while the column stayed short.</p>
+    </section>
+
+    <section class="seo-section" id="others">
+        <h2>7. SQL Server Says 450</h2>
+        <p>If the division is real, other databases should produce their own magic numbers from their own limits. They do. SQL Server's index key ceiling is 900 bytes for a clustered index and 1,700 for a nonclustered one, and <code>nvarchar</code> stores two bytes per character, so the largest fully indexable declaration is 450 characters, or 850 for a nonclustered index.</p>
+        <p>That 450 is the exact analogue of MySQL's 191. It is the same quotient of an index byte limit and a character width, and it is subject to the same drift: whether it applies depends on the index type and on how a particular column is used.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Engine</th><th>Declared in</th><th class="num">Bytes per char</th><th>Column index limit</th><th class="num">Chars that fit</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>MySQL <code>utf8mb4</code>, COMPACT</td><td>characters</td><td class="num">1&ndash;4</td><td>767 bytes</td><td class="num">191</td></tr>
+                <tr><td>MySQL <code>utf8mb4</code>, DYNAMIC</td><td>characters</td><td class="num">1&ndash;4</td><td>3,072 bytes</td><td class="num">768</td></tr>
+                <tr><td>SQL Server <code>nvarchar</code>, clustered</td><td>characters</td><td class="num">2</td><td>900 bytes</td><td class="num">450</td></tr>
+                <tr><td>SQL Server <code>nvarchar</code>, nonclustered</td><td>characters</td><td class="num">2</td><td>1,700 bytes</td><td class="num">850</td></tr>
+                <tr class="hi"><td>PostgreSQL <code>varchar</code></td><td>characters</td><td class="num">varies</td><td>no prefix limit</td><td class="num">no quotient</td></tr>
+                <tr><td>SQLite <code>TEXT</code></td><td>bytes, in practice</td><td class="num">1&ndash;4</td><td>no limit</td><td class="num">no quotient</td></tr>
+            </tbody>
+        </table>
+
+        <p>PostgreSQL is the interesting row, because it refuses the premise. Its manual says both <code>varchar(n)</code> and <code>char(n)</code> "can store strings up to n characters (not bytes) in length", and that there is "no performance difference among these three types" &mdash; the third being <code>text</code>, which has no length limit at all. There is no magic number for Postgres because there is no per-column byte prefix to divide.</p>
+        <p>The storage details differ too, in a way that is worth knowing when you port a schema. Postgres charges one byte of overhead for a string of up to 126 bytes and four bytes above that, and it compresses long values automatically. Whether you write <code>varchar(255)</code> or <code>text</code> changes the constraint, not the disk.</p>
+        <p>The lesson is not "Postgres is better". It is that the number 191 encodes an implementation detail of one engine's index format, and has been exported to other engines as though it were a property of text.</p>
+    </section>
+
+    <section class="seo-section" id="ledgers">
+        <h2>8. Two Ledgers, Not One</h2>
+        <p>Now the part that determines whether your storage estimate holds. A declared width is charged against two different budgets, and only one of them is about bytes on disk.</p>
+        <p><strong>The first ledger is DDL-time.</strong> MySQL imposes a 65,535-byte limit on the combined maximum size of all columns, and it charges that budget using maximum possible widths, not actual values. A <code>VARCHAR(255)</code> under <code>utf8mb4</code> reserves 1,020 bytes plus a 2-byte prefix, which is 1,022. That means a table can hold at most 64 such columns, even if every row in it stores a single character.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Declaration</th><th class="num">Max bytes per column</th><th class="num">Columns that fit in 65,535</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>VARCHAR(255)</code> latin1</td><td class="num">256</td><td class="num">255</td></tr>
+                <tr><td><code>VARCHAR(255)</code> utf8mb3</td><td class="num">767</td><td class="num">85</td></tr>
+                <tr class="bad"><td><code>VARCHAR(255)</code> utf8mb4</td><td class="num">1,022</td><td class="num">64</td></tr>
+            </tbody>
+        </table>
+
+        <p><strong>The second ledger is on disk.</strong> Rows store actual values, so a <code>VARCHAR(255)</code> holding ten ASCII characters occupies eleven bytes. Ten million such rows are 110 megabytes, not 10 gigabytes. The declaration cost you nothing here. This is the half of the story that the "VARCHAR is expensive" folklore gets wrong.</p>
+        <p>Which means the honest answer to "how much does <code>VARCHAR(255)</code> cost" depends entirely on what is in it, and the declaration cannot tell you. If the column genuinely holds 255 Chinese characters, ten million rows occupy 10.22 gigabytes against the 2.55 gigabytes a naive 255-bytes-per-row estimate predicts. The estimate is wrong by 4.01×, and it is wrong because it treated a character budget as a byte budget.</p>
+        <p>Two aggregate functions settle it for any column you already have. <code>LENGTH()</code> returns bytes and <code>CHAR_LENGTH()</code> returns characters, so their ratio is the byte width of your actual data:</p>
+        <div class="pull"><code>SELECT AVG(LENGTH(t)) / AVG(CHAR_LENGTH(t)) AS bytes_per_char, MAX(LENGTH(t)) AS widest_row FROM tbl;</code></div>
+        <p>A result near 1.00 means your text is ASCII and every character-based estimate you have made is correct. A result near 3.00 means every row is three times the bytes you budgeted, and any capacity model built on character counts is short by that factor. The query costs one scan and answers a question that schema review cannot.</p>
+    </section>
+
+    <section class="seo-section" id="truncate">
+        <h2>9. Cutting at a Byte Boundary</h2>
+        <p>The moment a byte limit meets a character, someone truncates in the middle of one. UTF-8 is self-synchronising by design, but only from the start of a sequence. Cut at an arbitrary byte and the result may end midway through a multi-byte sequence.</p>
+        <p>Take the string <code>ab&#20013;&#25991;</code>. In UTF-8 it is <code>61 62 e4 b8 ad e6 96 87</code>, eight bytes. Cut at three bytes and you have <code>61 62 e4</code>, which ends at the first byte of a three-byte sequence. That is not a prefix of any valid UTF-8 string. A strict decoder raises an error; a lenient one substitutes U+FFFD, and the character becomes a diamond with a question mark in it.</p>
+        <p>Where this happens in practice is rarely a database. MySQL truncates a too-long value to the column limit and warns, and it truncates on character boundaries, so you get silent data loss rather than an invalid string. The invalid-string version appears one layer out: a log pipeline that cuts a message at 4,096 bytes, an object key truncated to a byte limit, an email header folded at 78 octets, a fixed-width export padded to a byte count. Each of those is a byte operation applied to a character stream.</p>
+        <p>The tell is not an error. It is a single U+FFFD, or a run of them, in a field that was fine before it passed through one more system.</p>
+    </section>
+
+    <section class="seo-section" id="normalize">
+        <h2>10. Same Text, Different Bytes</h2>
+        <p>There is a further wrinkle that survives all of the above, because it is not about how a character is encoded but about which character it is.</p>
+        <p>The letter <code>&eacute;</code> has two canonical encodings. It can be a single code point, U+00E9, which is two bytes in UTF-8. Or it can be <code>e</code> followed by the combining acute accent U+0301, which is three bytes. To a reader they are the same text. To Unicode they are canonically equivalent: normalising the second form to NFC produces the first, and the two compare equal after normalisation. To a byte counter they differ by 50%.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Form</th><th class="num">Code points</th><th class="num">UTF-8 bytes</th><th class="num">Graphemes</th><th>NFC result</th></tr>
+            </thead>
+            <tbody>
+                <tr class="hi"><td>NFC, precomposed U+00E9</td><td class="num">1</td><td class="num">2</td><td class="num">1</td><td>unchanged</td></tr>
+                <tr><td>NFD, <code>e</code> + U+0301</td><td class="num">2</td><td class="num">3</td><td class="num">1</td><td>collapses to 2 bytes</td></tr>
+            </tbody>
+        </table>
+
+        <p>The consequence for schema design is narrow but real. A byte-based length limit is a limit on the encoding, so a field that holds 40 accented characters in NFD form needs 120 bytes where the NFC form needs 80. A validation rule tuned on one corpus accepts the other and rejects the first. And a uniqueness constraint compares the strings, not their normal forms, unless the collation applies normalisation, so the same visible text can pass validation twice.</p>
+        <p>The remedy is boring and cheap: normalise to NFC at the boundary where text enters your system, before you count, validate, or store it. Every language has the function. Almost nobody calls it, because the bug it prevents looks like a mysterious duplicate rather than a character encoding problem.</p>
+    </section>
+
+    <section class="seo-section" id="decide">
+        <h2>11. What to Declare</h2>
+        <p>None of this argues for a particular number. It argues for computing one. The rules that follow from the arithmetic are short enough to apply in a review.</p>
+        <ul>
+            <li><strong>Declare the width the data needs, not the width you have seen before.</strong> <code>VARCHAR(255)</code> marks no boundary under <code>utf8mb4</code>; it is a habit inherited from <code>latin1</code>.</li>
+            <li><strong>For an indexed column, divide.</strong> Take the key prefix limit of your row format, divide by the maximum bytes per character of your character set, round down. That is the largest fully indexable declaration, and it is 191 or 768 on MySQL, 450 or 850 on SQL Server.</li>
+            <li><strong>Do not write <code>191</code> unless the row format calls for it.</strong> On <code>COMPACT</code> or <code>REDUNDANT</code> it is required. On the default <code>DYNAMIC</code> it is a 25% capacity cut for a limit that does not apply.</li>
+            <li><strong>Measure before sizing.</strong> <code>AVG(LENGTH())</code>, <code>MAX(LENGTH())</code>, and their ratio to <code>CHAR_LENGTH()</code>. The ratio is the only number that tells you what a character costs in your data.</li>
+            <li><strong>Count in the unit the requirement uses.</strong> If the product says characters, decide whether it means graphemes, code points, or UTF-16 units before you write the validator, because the three differ by up to 25×.</li>
+            <li><strong>Normalise to NFC on input.</strong> It removes the last class of case where two identical-looking strings occupy different byte counts.</li>
+        </ul>
+        <p>One counter-intuitive consequence is worth stating outright, because it cuts against common practice: <code>VARCHAR(max)</code> and <code>TEXT</code> are not automatically the safe choice. On MySQL a <code>TEXT</code> column cannot be indexed without an explicit prefix length, which is a real constraint that a generous <code>VARCHAR</code> does not have. On Postgres, by contrast, <code>text</code> is the native type and carries no penalty at all. The right answer is engine-specific because the limit being divided is engine-specific.</p>
+    </section>
+
+    <section class="seo-section" id="elsewhere">
+        <h2>12. The Same Division Elsewhere</h2>
+        <p>Column definitions are not the only place a byte limit is applied to character data. The same division shows up in three other systems that a typical application touches on every request, and the arithmetic is identical.</p>
+        <p><strong>S3 object keys.</strong> AWS documents the limit as "a maximum length of 1,024 bytes or approximately 1,024 Latin characters", and adds the sentence that gives the game away: "In some locales, a single character may require 2 bytes for encoding." The prefix and the delimiters count against the same 1,024. Divide and the working limits are 1,024 ASCII characters, 341 Chinese or Japanese characters, or 256 emoji &mdash; and prefix depth eats into all three.</p>
+        <p><strong>Filenames on ext4.</strong> The maximum name length is 255, and it is 255 <em>bytes</em>, because the name length is stored in a single 8-bit field. A filename of 85 Chinese characters reaches the ceiling, and a filename of 63 emoji reaches it too. Here the number really is bytes and there is no character budget underneath it, which is why <code>ls</code> can show a filename that <code>wc -m</code> counts as 85 characters and <code>wc -c</code> counts as 255.</p>
+        <p><strong>HTTP headers and URLs.</strong> Header field values and URL paths are octet sequences, not text, and non-ASCII has to be percent-encoded. That expansion is not 2× or 3×; it is 3× on top of the UTF-8 width. A single Chinese character is three bytes, and <code>%E4%B8%AD</code> is nine characters, so a thousand characters of CJK title becomes nine thousand characters in a URL. <code>Content-Length</code> then reports the byte count of the encoded form, which is why a page whose text you measured in characters is larger on the wire than you predicted.</p>
+
+        <div class="pull">255 keeps appearing because it is the largest value a single byte can hold: 0 to 255. Under <code>latin1</code>, where one character is one byte, the byte limit and the character limit coincide and the number looks natural. Under <code>utf8mb4</code> they diverge by up to four, and the same 255 silently changes meaning.</div>
+
+        <p>This is the general form of the whole article. A limit is placed in a field of fixed width, the field holds a byte count, the data is characters, and someone eventually writes the byte number down as though it were a character number. The fix is always the same division, and the only variable is which of the two numbers in the division you have forgotten.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>13. Frequently Asked Questions</h2>
+        <h3>Is VARCHAR(255) 255 bytes?</h3>
+        <p>No. The 255 is a character limit, and under <code>utf8mb4</code> each character may take up to four bytes, so the maximum value is 1,020 bytes plus a two-byte length prefix, or 1,022 in total. Under <code>latin1</code> the same declaration is 255 bytes plus a one-byte prefix. The two schemas are byte-identical in a migration script and differ by a factor of four on disk.</p>
+        <h3>Why do people say to use VARCHAR(191)?</h3>
+        <p>Because 767 &divide; 4 is 191.75, and 767 bytes is the index key prefix limit on <code>REDUNDANT</code> and <code>COMPACT</code> row formats. Rounded down, 191 four-byte characters fit. It is a quotient of an index limit and a character width, and MySQL's manual uses it as the worked example of where the limit bites. On the default <code>DYNAMIC</code> row format the limit is 3,072 bytes and the equivalent number is 768.</p>
+        <h3>What does "max key length is 767 bytes" actually mean?</h3>
+        <p>That the index key prefix, the part of a long column the B-tree stores, cannot exceed 767 bytes on that table's row format. The error is stated in bytes while the declaration is in characters, which is why the fix depends on your character set: 767 characters for <code>latin1</code>, 255 for <code>utf8mb3</code>, 191 for <code>utf8mb4</code>.</p>
+        <h3>Why does my emoji count as two characters in JavaScript?</h3>
+        <p>Because <code>String.length</code> counts UTF-16 code units, and every code point above U+FFFF is stored as a surrogate pair. A thumbs-up is one code point and two code units. <code>Array.from(text).length</code> gives code points, and <code>Intl.Segmenter</code> with grapheme granularity gives the clusters a reader perceives. A family emoji is one grapheme, seven code points, eleven code units, and twenty-five bytes.</p>
+        <h3>Should I use utf8 or utf8mb4?</h3>
+        <p><code>utf8mb4</code>. In MySQL, <code>utf8</code> is an alias for <code>utf8mb3</code>, a three-byte encoding that cannot represent anything above U+FFFF, which excludes emoji and several historic and CJK extension blocks. The only cost of <code>utf8mb4</code> is that the maximum bytes per character rises from three to four, which moves the index-safe character count from 255 to 191 under the legacy row format and from 1,024 to 768 under the current one.</p>
+        <h3>Does the declared VARCHAR length affect performance?</h3>
+        <p>Not through the data. Rows store actual values, so a <code>VARCHAR(255)</code> holding ten characters costs the same as a <code>VARCHAR(10)</code> holding ten. The declaration affects two things: the 65,535-byte row size budget, which is charged at maximum widths and caps a table at 64 <code>utf8mb4</code> columns declared <code>VARCHAR(255)</code>, and whether an index on the column fits under the key prefix limit. Both are schema-time constraints.</p>
+    </section>
+
+    <section class="seo-section" id="method">
+        <h2>14. Methodology &amp; Disclosure</h2>
+        <p>Every byte count in this article was computed rather than quoted. The UTF-8 and UTF-16 lengths in the four-unit table were produced by encoding each string with Python 3.13's standard codecs; grapheme counts were produced by a segmenter implementing the cluster rules for combining marks, variation selectors, emoji modifiers, regional indicator pairs, and ZWJ sequences. The byte-per-character figures come from single sample sentences in each script with spaces included, which is why Korean reads 2.55 rather than 3.00: its sample contains proportionally more spaces.</p>
+        <p>The division tables are integer floor operations on limits published by the vendors. MySQL's 767-byte and 3,072-byte key prefix limits, its 1-byte-or-2-byte length prefix rule, and its 65,535-byte row size limit are taken from the MySQL 8.4 Reference Manual, sections 13.3.2, 10.4.7, and 17.21. SQL Server's 900-byte and 1,700-byte index key limits are taken from Microsoft's maximum capacity specifications. PostgreSQL's character type semantics and its statement that <code>text</code>, <code>varchar</code> and <code>char</code> carry no performance difference are taken from the PostgreSQL 18 documentation, section 8.3. The row format limits apply to InnoDB specifically and are not a property of SQL.</p>
+        <p>Two limits below are stated as known constraints without an exact number, because the exact number is an internal page-layout parameter rather than a documented constant: the practical ceiling on a PostgreSQL b-tree index entry, and the byte boundary at which a particular logging pipeline truncates. Neither is load-bearing in the arithmetic above.</p>
+        <p>No prices appear in this briefing, so no pricing provenance applies. No vendor sponsored it, no affiliate link is present, and every number above can be reproduced from the codecs and the two divisions. Character limits are stable because Unicode is stable; index limits are not, because engines revise them, which is the entire reason this article exists.</p>
+
+        <h3 style="margin-top:28px;">References &amp; Further Reading</h3>
+        <ol style="font-size:0.9rem; line-height:1.85;">
+            <li>Oracle. <em>MySQL 8.4 Reference Manual, 13.3.2 The CHAR and VARCHAR Types</em> &mdash; the declaration in characters, the 0-to-65,535 range, and the rule that a column "uses one length byte if values require no more than 255 bytes, two length bytes if values may require more than 255 bytes". <em>dev.mysql.com/doc/refman/8.4/en/char.html</em></li>
+            <li>Oracle. <em>MySQL 8.4 Reference Manual, 17.21 InnoDB Limits</em> &mdash; the 3,072-byte limit for <code>DYNAMIC</code> and <code>COMPRESSED</code>, the 767-byte limit for <code>REDUNDANT</code> and <code>COMPACT</code>, and the worked example of "a column prefix index of more than 191 characters &hellip; assuming a utf8mb4 character set and the maximum of 4 bytes for each character". <em>dev.mysql.com/doc/refman/8.4/en/innodb-limits.html</em></li>
+            <li>Oracle. <em>MySQL Reference Manual, InnoDB Row Formats</em> &mdash; the statement that the default row format is <code>DYNAMIC</code>, that <code>REDUNDANT</code> and <code>COMPACT</code> support 767-byte prefixes while <code>DYNAMIC</code> and <code>COMPRESSED</code> support 3,072, and that <code>COMPRESSED</code> cannot be the default. <em>dev.mysql.com/doc/refman/9.7/en/innodb-row-format.html</em></li>
+            <li>Microsoft. <em>Maximum Capacity Specifications for SQL Server</em> &mdash; 900 bytes per clustered index key, 1,700 bytes per nonclustered index key, 8,000 bytes per short string column, and the note that versions before 2014 supported 900 bytes for all index types. <em>learn.microsoft.com/sql/sql-server/maximum-capacity-specifications-for-sql-server</em></li>
+            <li>The PostgreSQL Global Development Group. <em>PostgreSQL 18 Documentation, 8.3 Character Types</em> &mdash; that <code>varchar(n)</code> stores "up to n characters (not bytes)", that n cannot exceed 10,485,760, the one-byte and four-byte storage overheads, and that "there is no performance difference among these three types". <em>postgresql.org/docs/current/datatype-character.html</em></li>
+            <li>F. Yergeau. <em>RFC 3629: UTF-8, a transformation format of ISO 10646</em> &mdash; the four byte-length classes, the range U+0000 to U+10FFFF, and the prohibition on five- and six-byte sequences. <em>rfc-editor.org/rfc/rfc3629</em></li>
+            <li>Unicode Consortium. <em>UAX #29: Unicode Text Segmentation</em> &mdash; the extended grapheme cluster rules that make a ZWJ family sequence one user-perceived character. <em>unicode.org/reports/tr29</em></li>
+            <li>Unicode Consortium. <em>UAX #15: Unicode Normalization Forms</em> &mdash; the NFC and NFD forms and the definition of canonical equivalence that makes U+00E9 and U+0065 U+0301 the same text. <em>unicode.org/reports/tr15</em></li>
+            <li>Related: <a href="/char-counter">Character Counter</a> &#183; <a href="/gib-to-gb-marketing-gap">GiB to GB Marketing Gap</a> &#183; <a href="/database-rows-to-storage-est">DB Row Count to Storage</a> &#183; <a href="/token-size-to-storage">Token Size to Storage</a> &#183; <a href="/redis-ram-to-raw-json-ratio">Redis RAM to Raw JSON Ratio</a> &#183; <a href="/db-instance-sizing">Database Instance Sizing</a> &#183; <a href="/methodology">Methodology</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Fvarchar-191-byte-problem&amp;text=VARCHAR%28255%29%20is%20not%20255%20bytes%20%E2%80%94%20under%20utf8mb4%20it%20costs%201%2C022.%20And%20191%20is%20just%20767%20%C3%B7%204." target="_blank" rel="noopener" aria-label="Share on X">&#120143;</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Fvarchar-191-byte-problem" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/char-counter">&#128202; Character Counter (UTF-8 bytes) &rarr;</a>
+            <a href="/gib-to-gb-marketing-gap">&#128202; GiB to GB Marketing Gap &rarr;</a>
+            <a href="/database-rows-to-storage-est">&#128202; DB Row Count to Storage &rarr;</a>
+            <a href="/token-size-to-storage">&#128202; Token Size to Storage &rarr;</a>
+            <a href="/redis-ram-to-raw-json-ratio">&#128202; Redis RAM to Raw JSON Ratio &rarr;</a>
+            <a href="/db-instance-sizing">&#128202; Database Instance Sizing &rarr;</a>
+            <a href="/base64-inflation-tax-real">&#128240; The Base64 Inflation Tax &rarr;</a>
+            <a href="/articles">&#128240; All Briefings &rarr;</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Model Disclaimer:</strong> Byte counts are computed from the Unicode codec definitions and will not change. Index key prefix limits and row size limits are engine configuration and do change; the values here reflect the vendor documentation cited above at the time of writing. Confirm the row format of the table you are actually altering before you shorten a column.</p>
+        </div>
+    </section>
+
+<footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/decision-matrix">Decision Matrix</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>
