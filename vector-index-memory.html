@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Vector Index Memory Calculator — HNSW RAM Footprint</title>
+    <meta name="description" content="1M 1536-dim vectors cost 5.72 GiB at float32, and the HNSW graph adds 0.12 GiB. Model vector plus graph RAM across float32, float16, int8 and binary.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Vector Index Memory Calculator — jslet">
+    <meta property="og:description" content="Vectors are the part you estimate. The HNSW graph is the part you forget. Model both, across four precisions, and see which one dominates.">
+    <meta property="og:url" content="https://www.jslet.com/vector-index-memory">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Vector Index Memory Calculator — jslet">
+    <meta name="twitter:description" content="Binary quantization cuts vectors 32× but leaves the graph untouched. At 1M vectors the graph becomes 41% of RAM.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/vector-index-memory">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.45rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .formula-box {
+            background: var(--bg-input); border-left: 3px solid var(--accent);
+            border-radius: var(--radius-sm); padding: 14px 18px; margin: 16px 0;
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.9rem;
+            line-height: 1.9; overflow-x: auto;
+        }
+    </style>
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Vector Index Memory Calculator",
+      "description": "Models the RAM footprint of a vector index: embedding storage plus HNSW graph links, across float32, float16, int8 and binary precision, with per-vector bytes and node capacity.",
+      "url": "https://www.jslet.com/vector-index-memory",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much RAM does one million 1536-dimension embeddings need?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "At float32 it is 1,000,000 × 1,536 × 4 bytes = 6.144 GB, which is 5.72 GiB. Add the HNSW graph at M=16: 33.07 links per vector × 4 bytes = 132 bytes each, or 0.12 GiB. The full index is about 5.85 GiB of resident memory, or 6.28 GB, so the graph adds roughly 2% on top of the vectors."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why is the HNSW graph still 41% of memory after binary quantization?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Binary quantization stores one bit per dimension, so 1,536 dimensions drop from 6,144 bytes to 192 bytes, a 32× reduction. The graph does not shrink at all: it is still about 132 bytes per vector at M=16. The vector share collapses while the link share stays fixed, so the graph goes from 2% of the index to 41% of it."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does this calculator include replicas, snapshots and allocator overhead?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. It counts index residency only: vectors, graph links and any payload you enter. Replicas multiply the total by the replica count. Memory allocators round each allocation up to a size class, which typically adds 10% to 20%. Deleted vectors may also leave tombstoned space that is not returned immediately. Treat the output as a floor, not a quote."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What value of M should I use for HNSW?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Sixteen is the common default because it balances recall against link memory. Layer zero holds 2M links per vector and the upper layers add about M/(M-1) more, so link bytes grow linearly in M. Doubling M from 16 to 32 roughly doubles graph memory while buying recall you may not need. Raise it only when measured recall is short of target."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is int8 or binary quantization always the right choice?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Both trade recall for memory, and many setups keep a full-precision copy of the vectors for rescoring the shortlist, which means the savings are a second copy rather than a replacement. Ask your engine whether the quantized vectors are the only copy before you size the node against the quantized number."
+      }
+    }
+  ]
+}
+    </script>
+    </head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 118 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>🧠 <span>Vector Index</span> Memory</h1>
+            <p>A vector index is two data structures: the vectors, and the graph that searches them. One million 1,536-dimension embeddings at float32 is 5.72 GiB. The HNSW links that find them add another 0.12 GiB. Quantize to binary and the vectors fall 32× while the links do not move at all, which is why the graph goes from 2% of your RAM to 41% of it.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Index Configuration</h3>
+                <p class="card-desc">Enter the collection shape and the precision you store it at. The engine computes vector bytes, HNSW link bytes and total resident memory. Graph links follow the HNSW paper: layer zero holds 2M links per vector, upper layers add M/(M-1) more, each link is a 4-byte node id.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="nvec">Vectors (count)</label>
+                        <input type="number" class="unit-input" id="nvec" value="1000000" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="dim">Dimensions</label>
+                        <input type="number" class="unit-input" id="dim" value="1536" step="1" min="1">
+                    </div>
+                    <div class="input-group">
+                        <label for="prec">Precision</label>
+                        <select class="unit-input" id="prec">
+                            <option value="f32" selected>float32 (4 B/dim)</option>
+                            <option value="f16">float16 (2 B/dim)</option>
+                            <option value="i8">int8 (1 B/dim)</option>
+                            <option value="bin">binary (1 bit/dim)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="multi-input-row-3" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="mval">HNSW M (links per layer)</label>
+                        <input type="number" class="unit-input" id="mval" value="16" step="1" min="2">
+                    </div>
+                    <div class="input-group">
+                        <label for="payload">Payload per vector (B)</label>
+                        <input type="number" class="unit-input" id="payload" value="0" step="any" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="nodeGiB">Node RAM (GiB)</label>
+                        <input type="number" class="unit-input" id="nodeGiB" value="64" step="any" min="0">
+                    </div>
+                </div>
+                <button class="btn-calc">Run Vector RAM Model</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Index Residency</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="total-val">0.00 GiB</div><div class="metric-label">Total index RAM</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="vec-val">0.00 GiB</div><div class="metric-label">Vectors</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="graph-val">0.00 GiB</div><div class="metric-label">HNSW graph</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="share-val">0.0%</div><div class="metric-label">Graph share of total</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="pervec-val">0 B</div><div class="metric-label">Bytes per vector (total)</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="fit-val">0</div><div class="metric-label">Vectors fit in node</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>Two Data Structures, One Memory Bill</h2>
+            <p>Almost every vector database sizing exercise starts with the same multiplication: vectors × dimensions × bytes per dimension. That product is correct, and it is also incomplete, because a graph-based index stores a second structure alongside the vectors. In HNSW every vector becomes a node, and every node carries a list of neighbour ids at each layer it appears in. Those ids are not free, they do not compress with the vectors, and at high vector counts they are large enough to change which node size you buy.</p>
+
+            <div class="formula-box">
+vectors   = N × d × bytesPerDim<br>
+links/vec = 2M + M/(M-1)          &nbsp;&nbsp;<span style="color:var(--text-muted)">layer 0 is 2M, upper layers add M/(M-1)</span><br>
+graph     = N × links/vec × 4     &nbsp;&nbsp;<span style="color:var(--text-muted)">each link is a 4-byte node id</span><br>
+total     = vectors + graph + payload
+            </div>
+
+            <p>The 2M term comes from the HNSW paper: layer zero keeps twice the base connectivity, and each element is promoted to higher layers with probability 1/M, so the upper layers contribute a geometric series that sums to M/(M-1). At M=16 that is 32 + 1.07 links, or 33.07 links per vector, or 132 bytes. It is a small number next to a 6,144-byte float32 vector, and that is exactly why it gets ignored.</p>
+
+            <h2>The Numbers for One Million Documents</h2>
+            <p>Hold the collection fixed at one million vectors of 1,536 dimensions and vary only the precision. The vector column falls by 32× from top to bottom. The graph column does not move, because M is a property of the index and not of the vector.</p>
+
+            <table style="width:100%;border-collapse:collapse;margin:18px 0;font-size:0.92rem;">
+                <thead>
+                    <tr style="border-bottom:2px solid var(--border);">
+                        <th style="text-align:left;padding:9px 8px;">Precision</th>
+                        <th style="text-align:right;padding:9px 8px;">Bytes/vector</th>
+                        <th style="text-align:right;padding:9px 8px;">Vectors</th>
+                        <th style="text-align:right;padding:9px 8px;">Graph (M=16)</th>
+                        <th style="text-align:right;padding:9px 8px;">Total</th>
+                        <th style="text-align:right;padding:9px 8px;">Graph share</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:9px 8px;">float32</td>
+                        <td style="text-align:right;padding:9px 8px;">6,144</td>
+                        <td style="text-align:right;padding:9px 8px;">5.72 GiB</td>
+                        <td style="text-align:right;padding:9px 8px;">0.12 GiB</td>
+                        <td style="text-align:right;padding:9px 8px;"><strong>5.85 GiB</strong></td>
+                        <td style="text-align:right;padding:9px 8px;">2.1%</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:9px 8px;">float16</td>
+                        <td style="text-align:right;padding:9px 8px;">3,072</td>
+                        <td style="text-align:right;padding:9px 8px;">2.86 GiB</td>
+                        <td style="text-align:right;padding:9px 8px;">0.12 GiB</td>
+                        <td style="text-align:right;padding:9px 8px;"><strong>2.98 GiB</strong></td>
+                        <td style="text-align:right;padding:9px 8px;">4.1%</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:9px 8px;">int8</td>
+                        <td style="text-align:right;padding:9px 8px;">1,536</td>
+                        <td style="text-align:right;padding:9px 8px;">1.43 GiB</td>
+                        <td style="text-align:right;padding:9px 8px;">0.12 GiB</td>
+                        <td style="text-align:right;padding:9px 8px;"><strong>1.55 GiB</strong></td>
+                        <td style="text-align:right;padding:9px 8px;">7.9%</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:9px 8px;">binary</td>
+                        <td style="text-align:right;padding:9px 8px;">192</td>
+                        <td style="text-align:right;padding:9px 8px;">0.18 GiB</td>
+                        <td style="text-align:right;padding:9px 8px;">0.12 GiB</td>
+                        <td style="text-align:right;padding:9px 8px;"><strong>0.30 GiB</strong></td>
+                        <td style="text-align:right;padding:9px 8px;">40.8%</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p>Read the last column rather than the totals. Going from float32 to binary cuts the index by 19×, which is the headline everyone quotes. The composition of what remains is the part nobody quotes: two fifths of the resident memory is now neighbour ids, not vectors. You have finished optimizing the thing you were optimizing and arrived at a different bottleneck.</p>
+
+            <h2>Why Quantization Moves the Bottleneck to M</h2>
+            <p>Once the vectors are 192 bytes, the only remaining lever is the link structure, and the link structure scales with M rather than with dimensions. Doubling M from 16 to 32 takes links per vector from 33.07 to 65.03, which takes the graph from 132 bytes to 260 bytes. On the binary collection that pushes graph share from 41% to 57.5%. On the float32 collection the same change is invisible.</p>
+
+            <p>The practical consequence is a sequencing rule. Decide the precision first, because it dominates while vectors dominate. Then, if you quantized aggressively, re-examine M, because you have just made the graph the largest single component. Tuning M on an unquantized collection and then quantizing without revisiting M is how a carefully right-sized index ends up either oversized or short on recall for reasons that no longer correspond to the numbers you tuned against.</p>
+
+            <h2>The Rerank Store You Still Have to Pay For</h2>
+            <p>Binary and int8 quantization usually come with a rescoring step: the quantized vectors produce a candidate list cheaply, and the full-precision vectors rescore that list to recover accuracy. That is an excellent design, and it means the quantized collection is often not the only copy of your embeddings. If the originals are kept in memory, or in a second collection, the memory you saved is memory you moved rather than memory you removed.</p>
+
+            <p>Before sizing a node against a quantized number, ask one question of your engine: are the quantized vectors the only copy? If the answer is no, model the full-precision collection as well and add the two. The savings are still real when the originals live on disk or in object storage, but they are a latency and IO trade rather than a pure win, and the node size should reflect which of those you actually bought.</p>
+
+            <h2>What This Calculator Does Not Count</h2>
+            <p>Everything above is index residency: vectors, links, and any payload bytes you enter. Four things are deliberately outside the model, and each of them can be larger than the rounding error you are worried about.</p>
+
+            <p><strong>Allocator overhead.</strong> Memory allocators serve requests in size classes, so a 6,144-byte vector may occupy a slightly larger slot. The effect is usually 10% to 20% of total allocation and depends on the allocator and on how many small objects exist alongside the vectors.</p>
+
+            <p><strong>Replicas.</strong> A three-replica deployment multiplies the whole model by three before any other factor. This is the single largest omission in most sizing spreadsheets because it is a topology decision rather than a data property.</p>
+
+            <p><strong>Deleted and tombstoned vectors.</strong> Deleting a point does not always return its slot immediately. Some engines mark the slot and reclaim it during a later compaction pass, so a collection that has churned can be meaningfully larger than its live count implies.</p>
+
+            <p><strong>Id maps and metadata indexes.</strong> Engines maintain a mapping from internal node ids to external identifiers, and any filterable metadata field has its own index. Both grow with vector count, and neither appears in the three-line formula above.</p>
+
+            <p>If you are sizing a node for a production collection, take the number this page gives you and add the replica multiplier first, then a 10% to 20% allocator allowance, then whatever your metadata footprint actually measures. Treat the output as a floor for the data structure and not a quote for the deployment.</p>
+
+            <h2>Where This Fits</h2>
+            <p>This is the storage half of the RAG capacity question. The compute half is tokenization and embedding throughput, which is a different model with a different unit: tokens rather than bytes. If you are sizing a retrieval system end to end, pair this number with a token-to-storage estimate for the source corpus and an inference cost model for the embedding and generation calls, because the three scale with different inputs and are rarely proportionally sized.</p>
+
+            <p>The dimensions themselves are worth checking before you trust any of this. A 3,072-dimension model doubles the vector column against a 1,536-dimension model for the same collection, and a 1,024-dimension model cuts it by a third. Dimension count is a property of the model you chose, not a constant, and it is the cheapest variable in the entire calculation to change.</p>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/token-size-to-storage">Token Size to Storage &rarr;</a>
+                <a href="/database-rows-to-storage-est">Database Rows to Storage &rarr;</a>
+                <a href="/context-window-vram-inflation">Context Window VRAM Inflation &rarr;</a>
+                <a href="/gpu-model-fit-matrix">GPU Model Fit Matrix &rarr;</a>
+                <a href="/parameters-to-vram-fp16">LLM Params → FP16 VRAM &rarr;</a>
+            </div>
+        </div>
+
+        <footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 118 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/methodology">Methodology</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">RSS &amp; Updates</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    function num(id) {
+        var raw = parseFloat(document.getElementById(id).value);
+        return isFinite(raw) ? raw : 0;
+    }
+
+    function fmtGiB(bytes) {
+        if (bytes <= 0) { return '0 GiB'; }
+        var gib = bytes / 1073741824;
+        if (gib < 0.01) { return (bytes / 1048576).toFixed(1) + ' MiB'; }
+        return gib.toFixed(2) + ' GiB';
+    }
+
+    function fmtBytes(bytes) {
+        if (bytes <= 0) { return '0 B'; }
+        if (bytes >= 1000000) { return (bytes / 1000000).toFixed(2) + ' MB'; }
+        return Math.round(bytes).toLocaleString('en-US') + ' B';
+    }
+
+    function fmtCount(n) {
+        if (n >= 1000000) { return (n / 1000000).toFixed(1) + 'M'; }
+        if (n >= 1000) { return (n / 1000).toFixed(1) + 'K'; }
+        return String(Math.round(n));
+    }
+
+    var BPD = { f32: 4, f16: 2, i8: 1, bin: 0.125 };
+    var PNAME = { f32: 'float32', f16: 'float16', i8: 'int8', bin: 'binary' };
+
+    function compute() {
+        var n = Math.max(0, num('nvec'));
+        var d = Math.max(1, num('dim'));
+        var m = Math.max(2, num('mval'));
+        var payload = Math.max(0, num('payload'));
+        var nodeGiB = Math.max(0, num('nodeGiB'));
+        var key = document.getElementById('prec').value;
+        var bpd = BPD[key] || 4;
+
+        var vecB = n * d * bpd;
+        var linksPer = 2 * m + m / (m - 1);
+        var graphB = n * linksPer * 4;
+        var payB = n * payload;
+        var totalB = vecB + graphB + payB;
+        var perVec = n > 0 ? totalB / n : 0;
+
+        document.getElementById('total-val').innerText = fmtGiB(totalB);
+        document.getElementById('vec-val').innerText = fmtGiB(vecB);
+        document.getElementById('graph-val').innerText = fmtGiB(graphB);
+        document.getElementById('share-val').innerText = totalB > 0 ? (graphB / totalB * 100).toFixed(1) + '%' : '0.0%';
+        document.getElementById('pervec-val').innerText = fmtBytes(perVec);
+
+        var fit = perVec > 0 ? (nodeGiB * 1073741824) / perVec : 0;
+        document.getElementById('fit-val').innerText = fmtCount(fit);
+
+        document.getElementById('results-params').innerText =
+            fmtCount(n) + ' vectors · ' + Math.round(d) + ' dims · ' + PNAME[key] +
+            ' · M=' + Math.round(m) + ' · ' + linksPer.toFixed(2) + ' links/vector (' +
+            Math.round(linksPer * 4) + ' B) · ' + fmtGiB(vecB) + ' vector bytes in decimal GB is ' +
+            (vecB / 1e9).toFixed(2) + ' GB';
+
+        document.getElementById('results-card').style.display = 'block';
+    }
+
+    document.addEventListener('DOMContentLoaded', compute);
+    document.querySelector('.btn-calc').addEventListener('click', compute);
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>
