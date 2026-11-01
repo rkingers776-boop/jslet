@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>The Missing Cent: Why a Bill Does Not Add Up</title>
+    <meta name="description" content="Google's own billing query prints $1005.004832999999984. Float, rounding and the 2^53 wall are three errors orders apart, and only one costs money.">
+    <meta property="og:title" content="The Missing Cent &mdash; Three Errors, One Decimal Point">
+    <meta property="og:description" content="A bill total of $1005.004832999999984 is not a rounding bug. Three different failures wear the same decimal point, and the loudest one is not the expensive one.">
+    <meta property="og:url" content="https://www.jslet.com/float-money-precision">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta name="article:published_time" content="2026-11-01T00:00:00+00:00">
+    <meta name="article:modified_time" content="2026-11-01T00:00:00+00:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="The Missing Cent: Why a Bill Does Not Add Up">
+    <meta name="twitter:description" content="Your invoice does not disagree because of floating point. It disagrees because of where you rounded.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/float-money-precision">
+    <link rel="alternate" type="application/rss+xml" title="jslet Intel Briefings RSS" href="https://www.jslet.com/rss.xml">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Article",
+      "headline": "The Missing Cent: Why a Bill Does Not Add Up",
+      "description": "Three independent failures present themselves as one bad decimal point. Representation error is around 1e-17 relative and breaks equality comparisons. Accumulation error over a million rows is around 1e-11 relative and produces the trailing digits Google's own billing export example prints. Rounding error, which is not a floating point problem at all and survives in exact decimal arithmetic, can reach 100 percent of a line item when the rounding happens per row instead of at the end. A row of $0.0049 rounded to cents is $0.00, and one million such rows billed exactly are $4,900. The article derives the 53-bit mantissa's 15.95 decimal digits, shows why the value 1.005 rounds down in five separate cases, explains why 2^53 micros is a $9,007,199,254.74 ceiling while 2^63-1 micros is $9.22 trillion, and separates the representation problem from the ISO 4217 minor unit problem, where 7 currencies have three decimal places and 2 have four.",
+      "url": "https://www.jslet.com/float-money-precision",
+      "datePublished": "2026-11-01T00:00:00+00:00",
+      "dateModified": "2026-11-01T00:00:00+00:00",
+      "author": { "@type": "Organization", "name": "jslet Research", "url": "https://www.jslet.com/methodology" },
+      "publisher": { "@type": "Organization", "@id": "https://www.jslet.com/#organization", "name": "jslet", "url": "https://www.jslet.com/" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Is 0.1 + 0.2 really not 0.3?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "In binary64 it is 0.30000000000000004, and the comparison 0.1 + 0.2 === 0.3 returns false. The stored value of 0.1 is 0.1000000000000000055511151231257827021181583404541015625, so both operands are already slightly wrong before the addition, and the sum lands on a different representable number than the literal 0.3 does. Printing the result at 15 significant digits shows 0.3, which is why the defect survives in logs for years while assertions fail."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Should I store money as an integer?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes, but the reason is not that integers are more precise. It is that integers below 2^53 are exact, so the fractional part stops existing. Storing micros as a double is exact up to $9,007,199,254.74; storing the same micros as an int64 reaches $9.22 trillion. The unit matters less than the type, and an integer count of minor units plus a currency code is the smallest representation that survives a round trip."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does my cloud invoice differ from my own calculation by a cent?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Almost never because of floating point. Summing a million rows costs about 1.7e-7 dollars of drift. A per-row round to the nearest cent costs up to half a cent per row, which is 5,000 dollars across a million rows. If the provider rounds each line and you sum exact values, or the reverse, the totals diverge by the rounding point and no amount of extra precision reconciles them. Ask which stage rounds, not how many bits are used."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is a micro, and why do Google billing exports use them?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A micro is one millionth of a currency unit, so 1,234,567 micros is 1.234567 dollars. Google Cloud's own query examples convert cost to micros before summing specifically because summing the raw FLOAT64 values produces trailing digits; the documented example shows a total column printing $1005.004832999999984 beside a total_exact column printing $1005.00. Micros fix that by making every value an integer, and integers under 2^53 add without error."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is DECIMAL always the safe choice for money?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It is safer than floating point in one specific way: a decimal type defines what happens at a half, because the half exists exactly. But it introduces its own failure modes. Precision is finite, so a value that exceeds the declared digits raises an error or truncates depending on the engine. And the rounding mode has to be chosen: BigQuery documents that 1.125 inserted into a NUMERIC(5, 2) column rounds half-up to 1.13, while IEEE 754 arithmetic defaults to round-half-to-even. Two exact systems can still disagree by one minor unit at the boundary."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does my order ID change after passing through JSON?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because it was written as a JSON number and the receiver parsed it as an IEEE 754 double. 1234567890123456789 becomes 1234567890123456768, and 9007199254740993 becomes 9007199254740992. The damage happens once and then stays stable across further round trips, so nothing throws and nothing looks wrong in a diff. RFC 7493 recommends encoding integers outside the range [-(2^53)+1, (2^53)-1] as JSON strings for exactly this reason."
+          }
+        }
+      ]
+    }
+    </script>
+    <style>
+        .seo-section { margin-bottom: 30px; }
+        .seo-section h2 { margin-bottom: 12px; }
+        .seo-section h3 { margin: 24px 0 10px; color: var(--text-heading); }
+        .seo-section p { line-height: 1.8; margin-bottom: 14px; }
+        .seo-section ul, .seo-section ol { line-height: 1.9; padding-left: 24px; margin-bottom: 14px; }
+        .brief-toc {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 20px 24px; margin-bottom: 24px;
+        }
+        .brief-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin: 18px 0; }
+        .brief-table th, .brief-table td { padding: 10px 13px; border-bottom: 1px solid var(--border); text-align: left; }
+        .brief-table th { font-weight: 700; color: var(--text-heading); background: var(--bg-input); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+        .brief-table td.num, .brief-table th.num { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; text-align: right; }
+        .brief-table tr.hi { background: rgba(79,70,229,0.07); }
+        .brief-table tr.bad { background: rgba(192,57,43,0.06); }
+        .pull {
+            border-left: 3px solid var(--accent); background: var(--bg-input); padding: 16px 20px;
+            margin: 22px 0; font-size: 1.02rem; line-height: 1.75; color: var(--text-heading);
+        }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    </style>
+</head>
+<body>
+
+<div id="site-nav" data-current="article">
+    <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 118 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+</div>
+
+<div class="container" id="main-content">
+
+    <header>
+        <h1>The Missing <span>Cent</span></h1>
+        <p>Google's own billing query prints $1005.004832999999984 in one column and $1005.00 in the next. The gap is not the float. It is the place where you rounded &mdash; and the two failures are separated by ten orders of magnitude</p>
+        <p style="font-family: monospace; font-size: 0.8rem; color: var(--accent); margin-top: 12px;">Published: 2026-11-01 &nbsp;|&nbsp; jslet Research &nbsp;|&nbsp; 17 min read</p>
+    </header>
+
+    <div class="brief-toc">
+        <h2 style="font-size:0.95rem; text-transform: uppercase; letter-spacing:1px; margin:0 0 14px 0; color:var(--text-heading);">📑 In This Briefing</h2>
+        <ul style="line-height:2; padding-left:20px; margin:0; columns:2; column-gap:28px;">
+            <li><a href="#three" style="color:var(--accent); text-decoration:none;">Three Errors, One Decimal Point</a></li>
+            <li><a href="#seventeen" style="color:var(--accent); text-decoration:none;">Seventeen Digits, Fifteen Trusted</a></li>
+            <li><a href="#tenth" style="color:var(--accent); text-decoration:none;">Why a Tenth Is Not a Tenth</a></li>
+            <li><a href="#rounding" style="color:var(--accent); text-decoration:none;">The Rounding That Is Not There</a></li>
+            <li><a href="#drift" style="color:var(--accent); text-decoration:none;">What a Million Rows Do</a></li>
+            <li><a href="#costly" style="color:var(--accent); text-decoration:none;">The Error That Costs Money</a></li>
+            <li><a href="#micros" style="color:var(--accent); text-decoration:none;">A Unit That Is Really a Type</a></li>
+            <li><a href="#ceiling" style="color:var(--accent); text-decoration:none;">The Wall at 9,007,199,254,740,992</a></li>
+            <li><a href="#ids" style="color:var(--accent); text-decoration:none;">The Identifier That Changes</a></li>
+            <li><a href="#currencies" style="color:var(--accent); text-decoration:none;">Not Every Currency Has a Cent</a></li>
+            <li><a href="#decimal" style="color:var(--accent); text-decoration:none;">Exact Is Not the Same as Safe</a></li>
+            <li><a href="#this-site" style="color:var(--accent); text-decoration:none;">This Site Runs the Same Arithmetic</a></li>
+            <li><a href="#faq" style="color:var(--accent); text-decoration:none;">Frequently Asked Questions</a></li>
+            <li><a href="#method" style="color:var(--accent); text-decoration:none;">Methodology &amp; Disclosure</a></li>
+        </ul>
+    </div>
+
+    <section class="seo-section">
+        <p>There is a query in Google Cloud's billing documentation that returns the total cost on an invoice. It returns two columns. The first sums the cost field as it is stored. The second converts every value to micros, sums the integers, and divides at the end.</p>
+        <p>The documentation then prints what the two columns look like on real exported data:</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>month</th><th class="num">total</th><th class="num">total_exact</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>201901</td><td class="num">$1005.004832999999984</td><td class="num">$1005.00</td></tr>
+                <tr><td>201901</td><td class="num">$781.8499760000028</td><td class="num">$781.85</td></tr>
+                <tr class="bad"><td>201902</td><td class="num">$953.0034923645475983</td><td class="num">$953.03</td></tr>
+                <tr><td>201902</td><td class="num">$992.3101739999999717</td><td class="num">$992.31</td></tr>
+                <tr><td>201902</td><td class="num">$1.2817819999999998</td><td class="num">$1.28</td></tr>
+            </tbody>
+        </table>
+
+        <p>This is not an illustration I constructed. It is the vendor's own documentation, describing its own export format, and the vendor says plainly why the two columns differ: <em>"The total field directly sums the floating point cost and credit values, which can result in floating point rounding errors. The total_exact field converts costs and credit values to micros before summing, then converts back to dollars after summing, avoiding the floating point rounding error."</em></p>
+        <p>Five values, five trailing tails. The fifth is the one worth staring at: <code>$1.2817819999999998</code>. The true amount is a cent and change. The stored sum has sixteen more digits, and every one of them is noise.</p>
+        <p>Most writing about this topic stops there and says: floating point is bad, use integers. That is the right conclusion attached to the wrong reason, and it hides a much more expensive failure that no amount of integer arithmetic will fix.</p>
+    </section>
+
+    <section class="seo-section" id="three">
+        <h2>1. Three Errors, One Decimal Point</h2>
+        <p>When a total disagrees with an expectation by a cent, three unrelated things could be responsible, and they look identical on a screen. They are not comparable in size. Sorted by magnitude, they span the entire range from "invisible in any currency" to "the whole invoice".</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Failure</th><th>Typical size</th><th>Trigger</th><th>What you see</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>Representation</strong></td><td class="num">~1e-17 relative</td><td>Any fraction whose denominator has a prime factor other than 2</td><td>Equality fails; 17 digits leak into output</td></tr>
+                <tr><td><strong>Accumulation</strong></td><td class="num">~1e-11 relative<br>per million adds</td><td>Summing many values in sequence</td><td>The tails in the table above</td></tr>
+                <tr class="bad"><td><strong>Rounding</strong></td><td class="num">0 to 100%<br>of a line item</td><td>Deciding where to round, not how</td><td>A total that is simply wrong</td></tr>
+            </tbody>
+        </table>
+
+        <p>The first two are properties of binary floating point. The third is not. Rounding error survives in exact decimal arithmetic, in a ledger written by hand, and in a database column declared <code>DECIMAL(18,6)</code>. It has nothing to do with the mantissa.</p>
+        <p>That distinction is the whole reason this article exists. The literature, the conference talks and the Stack Overflow answers are almost entirely about the first two, which are the two that do not move money. The one that does is a design decision about ordering, and it is invisible in every "0.1 + 0.2" demo on the internet.</p>
+
+        <div class="pull">Two of these errors are smaller than a millionth of a cent. The third can delete an entire invoice. Only one of them gets written about.</div>
+    </section>
+
+    <section class="seo-section" id="seventeen">
+        <h2>2. Seventeen Digits, Fifteen You Can Trust</h2>
+        <p>IEEE 754 binary64 &mdash; the format behind JavaScript's <code>Number</code>, Python's <code>float</code>, Java's <code>double</code>, and the <code>FLOAT64</code> column type in BigQuery &mdash; spends 64 bits as one sign bit, eleven exponent bits, and a 52-bit fraction with an implicit leading one. That is 53 bits of significand.</p>
+        <p>Converting binary accuracy to decimal digits is one multiplication: 53 &times; log<sub>10</sub>(2) = <strong>15.9546</strong>. Not 15, not 16, not 17. The fractional part is the entire source of the folklore, because a non-integer digit count has to be rounded in one direction or the other depending on what you are promising.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Claim</th><th class="num">Digits</th><th>What it means</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Guaranteed round trip</td><td class="num">15</td><td>Any 15-digit decimal survives to binary64 and back unchanged</td></tr>
+                <tr class="hi"><td>Guaranteed distinction</td><td class="num">17</td><td>17 digits are always enough to tell two adjacent doubles apart</td></tr>
+            </tbody>
+        </table>
+
+        <p>Between 15 and 17 there is a zone where the answer depends on the value, which is exactly where bugs live. Here is the same expression printed at three precisions:</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Significant digits</th><th>Output of 0.1 + 0.2</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>15</td><td class="num">0.3</td></tr>
+                <tr><td>16</td><td class="num">0.3</td></tr>
+                <tr class="bad"><td>17</td><td class="num">0.30000000000000004</td></tr>
+            </tbody>
+        </table>
+
+        <p>One value, three renderings, and the first two are the ones your logging pipeline uses. This is not a curiosity. It explains the single most common question in this domain &mdash; <em>"the code looks right, why does the test fail"</em> &mdash; because the log line and the assertion are looking at the same 64 bits and reporting different stories.</p>
+        <p>The precision of the format is not optional and cannot be tuned. What can be chosen is how many of the digits you print, and the two choices are independent: a system can be exact to fifteen digits and still rounded to two for display, which is the normal case and also the case where a false sense of safety comes from.</p>
+    </section>
+
+    <section class="seo-section" id="tenth">
+        <h2>3. Why a Tenth Is Not a Tenth</h2>
+        <p>A binary64 value is <code>m &times; 2<sup>e</sup></code>. Every representable number is therefore a dyadic rational: a fraction whose denominator is a power of two. One half, one quarter, three eighths, and every sum of those.</p>
+        <p>One tenth has a denominator of ten, which factors as 2 &times; 5. The factor of five cannot be built out of twos. So the stored value is the nearest dyadic rational, and the nearest one is not very near in absolute terms:</p>
+
+        <p><code>0.1 &rarr; 0.1000000000000000055511151231257827021181583404541015625</code></p>
+
+        <p>That is 55 significant digits of stored value standing in for one digit of intent. The absolute error is 5.55e-18, and the relative error is 5.55e-17. It is the best binary64 can do at that magnitude, it is two fifths of one unit in the last place, and it is wrong.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Decimal</th><th>Denominator</th><th>Exact in binary64</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>0.5</td><td>2</td><td>Yes</td></tr>
+                <tr><td>0.25</td><td>4</td><td>Yes</td></tr>
+                <tr><td>0.125</td><td>8</td><td>Yes</td></tr>
+                <tr class="bad"><td>0.1</td><td>10 = 2 &times; 5</td><td>No</td></tr>
+                <tr class="bad"><td>0.2</td><td>10 = 2 &times; 5</td><td>No</td></tr>
+                <tr class="bad"><td>0.05</td><td>20 = 4 &times; 5</td><td>No</td></tr>
+                <tr class="bad"><td>0.01</td><td>100 = 4 &times; 25</td><td>No</td></tr>
+            </tbody>
+        </table>
+
+        <p>The rule is mechanical, which is the useful part. You do not have to remember which constants are safe; you factor the denominator and look for a five. Every cent, every half cent, every price ending in a nine &mdash; all of them carry a five, which means the entire domain of money is on the wrong side of this table.</p>
+        <p>Note what is <em>not</em> claimed here. The error is not growing, not drifting, and not causing visible damage at the magnitudes most calculators work in. A price of $0.10 stored as $0.1000000000000000055 will display as $0.10 at any reasonable precision. The problem is never the displayed price. It is the comparison, the sum, and the identifier &mdash; the three places where the extra bits are read.</p>
+    </section>
+
+    <section class="seo-section" id="rounding">
+        <h2>4. The Rounding That Is Not There</h2>
+        <p>Rounding to two decimals means finding the nearest multiple of one hundredth. In exact arithmetic this is well defined, including at the midpoint: 1.005 is exactly halfway between 1.00 and 1.01, and a rule has to be chosen. In binary floating point there is no midpoint to be halfway from, because 1.005 is not representable either.</p>
+        <p>What the stored value actually is, is <code>1.00499999999999989341858963598497211933135986328125</code>. That is strictly less than the midpoint. There is nothing ambiguous left to resolve, and the only correct answer is 1.00.</p>
+        <p>Here are five values where that happens, run through <code>toFixed(2)</code>:</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Literal</th><th>Stored as</th><th class="num">toFixed(2)</th><th class="num">Expected</th></tr>
+            </thead>
+            <tbody>
+                <tr class="bad"><td>1.005</td><td>1.00499999999999989...</td><td class="num">1.00</td><td class="num">1.01</td></tr>
+                <tr class="bad"><td>8.575</td><td>8.57499999999999928...</td><td class="num">8.57</td><td class="num">8.58</td></tr>
+                <tr class="bad"><td>2.675</td><td>2.67499999999999982...</td><td class="num">2.67</td><td class="num">2.68</td></tr>
+                <tr class="bad"><td>0.615</td><td>0.61499999999999999...</td><td class="num">0.61</td><td class="num">0.62</td></tr>
+                <tr class="bad"><td>10.235</td><td>10.23499999999999943...</td><td class="num">10.23</td><td class="num">10.24</td></tr>
+            </tbody>
+        </table>
+
+        <p>Five for five, all in the same direction. That is not a coincidence and not a bug in any particular engine &mdash; it is what the arithmetic says. And the direction is biased: if your prices are generated as <code>x.xx5</code>, you will systematically under-collect, forever, by up to half a cent per line.</p>
+        <p>Now the mitigation that everyone reaches for:</p>
+
+        <p><code>Math.round(1.005 * 100) / 100 &nbsp;&rarr;&nbsp;1</code></p>
+
+        <p>It fails for the same reason, one step earlier. <code>1.005 * 100</code> is not 100.5; it is <code>100.49999999999999</code>. Multiplying introduced a second rounding, and the second one landed on the wrong side of 100.5 just as the first one landed on the wrong side of the midpoint. Multiplying by a power of ten does not move a binary number into decimal space. It moves it into a different binary number.</p>
+        <p>The two built-in rounding functions do not even agree with each other:</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Expression</th><th class="num">Result</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><code>(-1.5).toFixed(0)</code></td><td class="num">"-2"</td></tr>
+                <tr><td><code>Math.round(-1.5)</code></td><td class="num">-1</td></tr>
+            </tbody>
+        </table>
+
+        <p>Same runtime, same input, two answers. <code>Math.round</code> is defined to round toward positive infinity at the midpoint; <code>toFixed</code> is defined to format rather than to round, and its tie behaviour runs the other way. Neither is wrong. They are answering different questions, and both are named with the word "round".</p>
+    </section>
+
+    <section class="seo-section" id="drift">
+        <h2>5. What a Million Rows Do</h2>
+        <p>Accumulation is the failure that gets demonstrated and never quantified. Adding a million values in sequence does not produce a million times the error of one value, because each partial sum rounds at its own magnitude. The total error is roughly the square root of the count times the per-operation error, which sounds alarming until you put units on it.</p>
+        <p>Adding 0.01 one million times, in order, gives <code>10000.000000171856</code>. The exact answer is 10000. The drift is +1.72e-7 dollars, which is 0.0000172 cents. You cannot display that number in a currency format and have it mean anything.</p>
+        <p>Do it ten million times and the sign flips: <code>99999.99998630969</code>, which is 1.37e-5 <em>short</em>. Adding more rows made the error negative. There is no correction you can apply, because the direction is a function of the exact magnitudes and the order of the additions rather than of the count.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Operation</th><th class="num">Result</th><th class="num">Error</th><th class="num">In cents</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>1,000,000 &times; 0.01</td><td class="num">10000.000000171856</td><td class="num">+1.72e-7</td><td class="num">0.0000172</td></tr>
+                <tr><td>10,000,000 &times; 0.01</td><td class="num">99999.99998630969</td><td class="num">-1.37e-5</td><td class="num">-0.00137</td></tr>
+            </tbody>
+        </table>
+
+        <p>This is the honest size of accumulation error at billing scale: less than a hundredth of a cent per ten million rows. It produces the ugly trailing digits in a debugging session. It does not produce a discrepancy anyone can find in a reconciliation.</p>
+        <p>Which brings the first two failures to their real status. Representation error is 1e-17. Accumulation error over ten million rows is 1e-5 cents. Together they are a display problem, and the fix is a <code>CAST</code> at the boundary, which is precisely what the micros columns in the Google examples do. The reason the industry treats this as the big problem is that it is the <em>visible</em> one.</p>
+    </section>
+
+    <section class="seo-section" id="costly">
+        <h2>6. The Error That Costs Money</h2>
+        <p>A bill has to be denominated in something. Suppose the smallest unit is the cent, because the invoice prints two decimals. Now take a million line items, each costing $0.0049 &mdash; less than half a cent, which is not an unusual unit price for a single API call.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Strategy</th><th class="num">Total</th><th>What happened to the money</th></tr>
+            </thead>
+            <tbody>
+                <tr class="hi"><td>Sum exactly, round once at the end</td><td class="num">$4,900.00</td><td>Collected in full</td></tr>
+                <tr class="bad"><td>Round each line to cents, then sum</td><td class="num">$0.00</td><td>Every line rounded to zero</td></tr>
+            </tbody>
+        </table>
+
+        <p>Same usage data. Same data types. Two hundred lines of code, both defensible, and the revenue differs by 100 percent. Note that this is <em>not</em> a floating point story &mdash; run it in <code>DECIMAL(18,6)</code> and the result is identical, because the rounding is the point.</p>
+        <p>The half-cent threshold makes this concrete. Compute how much usage has to accumulate before a single line reaches the point where rounding to cents can see it:</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Unit price</th><th class="num">Calls to reach $0.005</th><th>Effect of per-line rounding</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>$0.0000002 per call</td><td class="num">25,000</td><td>Customers below 25,000 calls per line pay nothing</td></tr>
+                <tr><td>$0.000001 per call</td><td class="num">5,000</td><td>Customers below 5,000 calls per line pay nothing</td></tr>
+            </tbody>
+        </table>
+
+        <p>This is why cloud billing systems do not round at the line. Serverless pricing is deliberately denominated below the cent, and the invoice is an aggregate of hundreds of thousands of sub-cent quantities. Rounding each of them to the currency's smallest printed unit is not a rounding policy; it is a discount.</p>
+        <p>The reverse error costs the customer instead, and it is bounded differently. If you round each line <em>up</em>, the maximum overcharge is half a cent per line, so a million lines can be billed $5,000 more than the usage justifies. That is the number that makes this a real failure rather than a curiosity: <strong>the worst case of per-line rounding is $5,000 per million rows, and the worst case of floating point accumulation is $0.0000002.</strong></p>
+
+        <div class="pull">Ten orders of magnitude separate the error everyone writes about from the error that changes the invoice. They are both called "rounding" in postmortems, which is why the wrong one keeps getting fixed.</div>
+
+        <p>There is a tell in the vendor documentation. Google's billing export schema has a <code>cost_type</code> field, and the documented values are "regular costs, taxes, adjustments, and rounding errors". A rounding error is a first-class accounting category, with its own row, because the money it represents has to land somewhere. A system that buries it in a decimal point cannot produce that row, and cannot tell you which direction it went.</p>
+    </section>
+
+    <section class="seo-section" id="micros">
+        <h2>7. A Unit That Is Really a Type</h2>
+        <p>A micro is one millionth: 1,234,567 micros is $1.234567. The name suggests a smaller ruler, as though a finer unit were the fix for a precision problem. That is the wrong reading, and the wrong reading leads people to invent micro-micros, which does not help.</p>
+        <p>The reason micros work is that they are <strong>integers</strong>. Binary64 represents every integer up to 2<sup>53</sup> exactly, with no error at all, and integer addition of two exactly represented integers produces an exactly represented integer as long as the result stays in range. There is no error to accumulate because there are no fractional bits to lose.</p>
+        <p>Compare the two representations of the same amount:</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Amount</th><th>Stored as</th><th>Exact</th></tr>
+            </thead>
+            <tbody>
+                <tr class="bad"><td>$0.000123</td><td class="num">double 0.000123</td><td>No &mdash; denominator has a factor of 5</td></tr>
+                <tr class="hi"><td>$0.000123</td><td class="num">123 micros</td><td>Yes &mdash; 123 is an integer below 2<sup>53</sup></td></tr>
+            </tbody>
+        </table>
+
+        <p>So the conversion in the Google example is not a unit change. It is a change of domain, from the set of dyadic rationals to the set of small integers, and the second set has no representation error by construction. The <code>CAST</code> is doing the work that the word "micros" gets credit for.</p>
+        <p>One consequence follows immediately, and it is the useful one for anyone building a cost model: once every value is an integer, the order of addition stops mattering. Ten million micros added forward and added backward give the same integer. No Kahan summation, no sorted accumulation, no compensated arithmetic. The properties that floating point makes fragile become free.</p>
+    </section>
+
+    <section class="seo-section" id="ceiling">
+        <h2>8. The Wall at 9,007,199,254,740,992</h2>
+        <p>2<sup>53</sup> is 9,007,199,254,740,992. Above it, binary64 still represents integers, but not every integer: the spacing between adjacent representable values doubles, then doubles again. The numbers stay clean-looking and stop being distinct.</p>
+        <p>The name in JavaScript is <code>Number.MAX_SAFE_INTEGER</code>, and it equals 2<sup>53</sup> &minus; 1 = 9,007,199,254,740,991, one less than the power of two. The off-by-one is not arbitrary. 2<sup>53</sup> itself is exactly representable &mdash; the test <code>Number.isInteger(Math.pow(2, 53))</code> returns true &mdash; but 2<sup>53</sup> + 1 is not, so a value at 2<sup>53</sup> cannot be safely incremented. "Safe" here means "n and n + 1 are distinguishable", not "n can be stored". The name describes a neighbourhood property and reads like a ceiling.</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Representation</th><th class="num">Largest exact integer</th><th class="num">In dollars, as micros</th></tr>
+            </thead>
+            <tbody>
+                <tr class="bad"><td>binary64</td><td class="num">9,007,199,254,740,992</td><td class="num">$9,007,199,254.74</td></tr>
+                <tr class="hi"><td>int64</td><td class="num">9,223,372,036,854,775,807</td><td class="num">$9,223,372,036,854.78</td></tr>
+            </tbody>
+        </table>
+
+        <p>The ratio between those two ceilings is 1,024, and that is not a coincidence: it is 2<sup>10</sup>, because the signed 64-bit integer carries ten more bits than the double's significand. The practical difference is between ninety billion dollars and nine trillion. One is the lifetime spend of a large customer. The other is the annual spend of the entire cloud market. Choosing the wrong column type does not fail at the first invoice; it fails at an aggregate nobody is watching.</p>
+        <p>Denominate in cents instead of micros and the double ceiling becomes $90,071,992,547.41 &mdash; ninety billion, a hundred times better and still two orders below the integer ceiling. Which is the reason the answer is not "use a bigger unit". A bigger unit buys precision in the wrong direction: it reduces how small an amount you can express, while the risk being managed is how <em>large</em> a total you can hold.</p>
+        <p>RFC 7493 states the boundary directly, and it is the sentence to quote at anyone who proposes a JSON number for money: <em>"An I-JSON sender cannot expect a receiver to treat an integer whose absolute value is greater than 9007199254740991 (i.e., that is outside the range [-(2**53)+1, (2**53)-1]) as an exact value."</em></p>
+    </section>
+
+    <section class="seo-section" id="ids">
+        <h2>9. The Identifier That Changes</h2>
+        <p>Money is the case everyone discusses. Identifiers are the case that catches people who already know to store money as integers, because the identifier is not money and does not look like it needs a type decision.</p>
+        <p>A 19-digit Snowflake identifier takes a predictable path through a JavaScript service:</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Stage</th><th class="num">Value</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>As written by the database</td><td class="num">1234567890123456789</td></tr>
+                <tr class="bad"><td>After <code>JSON.parse</code></td><td class="num">1234567890123456768</td></tr>
+                <tr class="bad"><td>After <code>String()</code></td><td class="num">1234567890123456800</td></tr>
+            </tbody>
+        </table>
+
+        <p>Three numbers for one object. The second is the actual IEEE value and the third is its shortest round-trip rendering, which differs from the second in the last three digits it prints. A human comparing a log line to a database row sees a 21-unit difference and calls it a data corruption. It is arithmetic.</p>
+        <p>The behaviour at both ends of the range is worth knowing:</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Input</th><th class="num">Survives as</th><th class="num">Delta</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>9,007,199,254,740,993 (2<sup>53</sup> + 1)</td><td class="num">9,007,199,254,740,992</td><td class="num">&minus;1</td></tr>
+                <tr><td>1,234,567,890,123,456,789</td><td class="num">1,234,567,890,123,456,768</td><td class="num">&minus;21</td></tr>
+                <tr><td>9,223,372,036,854,775,807 (int64 max)</td><td class="num">9,223,372,036,854,775,808</td><td class="num">+1</td></tr>
+            </tbody>
+        </table>
+
+        <p>The last row is the interesting one. The largest signed 64-bit integer, pushed through a double and printed back, becomes <em>larger than the maximum</em> it came from. If that value is handed to a system that range-checks on the way in, it passes. If it is handed back to a database expecting a signed 64-bit integer, it does not fit.</p>
+        <p>And the damage does not compound. Parse and re-serialise the same document three times and the value stays at 1234567890123456800 &mdash; the first conversion is the only one that loses anything, and after that it is stable. Nothing throws, nothing appears in a diff, and round-trip tests pass, because the value being round-tripped is now the wrong one.</p>
+        <p>RFC 8259 is explicit that this is permitted rather than a defect, which is why the fix has to be at the schema level: <em>"This specification allows implementations to set limits on the range and precision of numbers accepted."</em> The same document then gives the interoperable window, <code>[-(2**53)+1, (2**53)-1]</code>, and RFC 7493 recommends that anything outside it travel as a JSON string.</p>
+    </section>
+
+    <section class="seo-section" id="currencies">
+        <h2>10. Not Every Currency Has a Cent</h2>
+        <p>Everything above assumed the smallest unit is one hundredth. ISO 4217 does not. Each currency carries a minor unit exponent, and it is not always two:</p>
+
+        <table class="brief-table">
+            <thead>
+                <tr><th>Exponent</th><th>Examples</th><th class="num">Count</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>0</td><td>JPY, KRW, VND, CLP, ISK, UGX, XAF, XOF, XPF</td><td class="num">17&ndash;31*</td></tr>
+                <tr class="hi"><td>2</td><td>USD, EUR, GBP, CNY, and most others</td><td class="num">majority</td></tr>
+                <tr><td>3</td><td>BHD, IQD, JOD, KWD, LYD, OMR, TND</td><td class="num">7</td></tr>
+                <tr><td>4</td><td>CLF, UYW</td><td class="num">2</td></tr>
+            </tbody>
+        </table>
+
+        <p>*The zero-decimal count depends on which edition of the list you read and whether indexed units of account are included. The three-decimal and four-decimal groups are stable at seven and two.</p>
+
+        <p>The multiplication error runs in both directions and is not subtle. Treating yen as a two-decimal currency sends <code>300000</code> where <code>3000</code> was meant, and charges a hundred times the price. Treating Kuwaiti dinar as a two-decimal currency sends <code>1250</code> where <code>12500</code> was meant, and charges a tenth. One direction is a refund and a support ticket; the other is a chargeback and a compliance conversation.</p>
+        <p>Stripe's documentation is unambiguous about what the number means: <em>"All API requests expect amount values in the currency's minor unit."</em> It then gives both cases in one line each &mdash; <code>1000</code> for ten US dollars, <code>10</code> for ten yen.</p>
+        <p>But the exponent is not a property of the currency. It is a property of the interface. Stripe documents Icelandic króna as a special case: ISK is zero-decimal in ISO 4217, yet the API requires it represented as a two-decimal value where the trailing digits are always <code>00</code>. Charging 5 ISK means sending <code>500</code>. A system that reads the standard, multiplies by one, and sends <code>5</code> is sending five hundredths of a króna under a protocol that expects hundredths.</p>
+
+        <div class="pull">"The smallest unit" is not a fact about a currency. It is a fact about the system you are talking to, and the two disagree for at least seven currencies.</div>
+
+        <p>The practical rule is therefore not "never hardcode 100" but something slightly different: keep one exponent table per integration, seed it from ISO 4217, and override it wherever the provider's documentation overrides it. The table is configuration, not a constant, and it changes &mdash; currencies are added, redenominated, and retired on a schedule that has nothing to do with your release cycle.</p>
+    </section>
+
+    <section class="seo-section" id="decimal">
+        <h2>11. Exact Is Not the Same as Safe</h2>
+        <p>The advice to use a decimal type is correct, and it fixes a problem that the advice rarely names. In a decimal type, the value 1.005 <em>is</em> 1.005. The midpoint exists, so the rounding rule has something to operate on, and the result is reproducible across engines.</p>
+        <p>That is a narrower guarantee than "safe". Three things still have to be decided, and each one has a failure mode:</p>
+        <ul>
+            <li><strong>Precision is finite.</strong> BigQuery's <code>NUMERIC</code> is 38 digits with a scale of 9; <code>BIGNUMERIC</code> is 76.76 digits with a scale of 38. Exceed the declared precision and the insert raises <code>OUT_OF_RANGE</code> rather than silently truncating, which is better behaviour than floating point offers, but it is still a failure that reaches production the first time a currency with a large exponent meets a large aggregate.</li>
+            <li><strong>The rounding mode is a decision.</strong> BigQuery documents that inserting 1.125 into a <code>NUMERIC(5, 2)</code> column "rounds 1.125 half-up to 1.13". IEEE 754 arithmetic defaults to round-half-to-even, which would give 1.12. Both are exact systems and they disagree by one minor unit at exactly the values where it matters most &mdash; the halves.</li>
+            <li><strong>The rounding point is still yours.</strong> Section 6 applies unchanged. A <code>DECIMAL</code> column rounded per row loses exactly as much as a <code>FLOAT64</code> column rounded per row, because the type was never the problem.</li>
+        </ul>
+        <p>Half-up versus half-even is worth a sentence of its own, because it is the only place where the two families genuinely differ in a way a customer can feel. Half-up rounds every tie away from zero, so a long sequence of ties drifts upward &mdash; the seller gains. Half-even rounds ties toward the even digit, so half of them go up and half go down, and the drift cancels over a large sample. Bankers use the second one for the same reason it is in the IEEE standard, and consumer pricing uses the first because 1.13 looks more like what a person expects than 1.12 does.</p>
+        <p>Neither is wrong, and neither can be called from a single global setting. The point is that "I used DECIMAL" answers the question of what 0.1 means, and leaves open the question of what happens at 0.005 &mdash; which is the question that appears on the invoice.</p>
+    </section>
+
+    <section class="seo-section" id="this-site">
+        <h2>12. This Site Runs the Same Arithmetic</h2>
+        <p>Everything above is easier to apply to someone else's billing system than to one's own calculators. So: the 194 HTML files this site published before this one contain 398 calls to <code>toFixed()</code> spread across 63 pages. Every one of them is JavaScript <code>Number</code>, which is binary64. Every one of them has the representation error described in section 3.</p>
+        <p>That is a real limitation and it is worth stating precisely rather than apologetically. What these calculators do not do is the second and third things that break: they do not sum a million rows, they do not persist a value that will be recomputed differently later, and they do not decide where a real invoice rounds. The arithmetic they perform is one multiplication and a division at magnitudes where the sixteenth digit is noise.</p>
+        <p>The display decision is separate, and this site makes it in the direction of fewer digits. A cost calculator that printed seventeen significant digits would be technically more honest and practically useless, because a reader who sees <code>$1,234.5600000000001</code> concludes that the tool is broken, not that the tool is exact. Two decimals is a statement about readability, not about accuracy.</p>
+        <p>The failure this site can actually have is the one in section 4: a result that should round up and rounds down because the midpoint was never there. That is a per-value defect, not a per-sum defect, and it is testable &mdash; which is why the figures in this article were checked against both a V8 runtime and CPython rather than trusted from one of them.</p>
+    </section>
+
+    <section class="seo-section" id="faq">
+        <h2>13. Frequently Asked Questions</h2>
+
+        <h3>Is 0.1 + 0.2 really not 0.3?</h3>
+        <p>In binary64 it is 0.30000000000000004, and <code>0.1 + 0.2 === 0.3</code> returns false. Both operands are already slightly wrong before the addition &mdash; 0.1 is stored as 0.1000000000000000055511151231257827021181583404541015625 &mdash; and the sum lands on a different representable number than the literal 0.3 does. Printing the result at 15 significant digits shows 0.3, which is why the defect survives in logs for years while assertions fail.</p>
+
+        <h3>Should I store money as an integer?</h3>
+        <p>Yes, but not because integers are more precise. It is because integers below 2<sup>53</sup> are exact, so the fractional part stops existing and there is nothing left to accumulate. The unit matters less than the type: micros stored in a double are exact to $9,007,199,254.74, while the same micros stored in an int64 reach $9.22 trillion.</p>
+
+        <h3>Why does my cloud invoice differ from my calculation by a cent?</h3>
+        <p>Almost never because of floating point. Summing a million rows costs about 1.7e-7 dollars of drift. A per-row round to the nearest cent costs up to half a cent per row, which is 5,000 dollars across a million rows. If the provider rounds each line and you sum exact values, the totals diverge at the rounding point, and no amount of extra precision reconciles them.</p>
+
+        <h3>What is a micro, and why do billing exports use them?</h3>
+        <p>A micro is one millionth of a currency unit, so 1,234,567 micros is 1.234567 dollars. Google Cloud's query examples convert cost to micros before summing specifically because summing raw <code>FLOAT64</code> values produces trailing digits &mdash; the documented sample prints $1005.004832999999984 beside $1005.00. Micros fix it by making every value an integer, and integers under 2<sup>53</sup> add without error.</p>
+
+        <h3>Is DECIMAL always the safe choice for money?</h3>
+        <p>It is safer in one specific way: a decimal type defines what happens at a half, because the half exists exactly. But precision is finite, and the rounding mode has to be chosen. BigQuery rounds 1.125 half-up to 1.13 in a <code>NUMERIC(5, 2)</code> column, while IEEE 754 defaults to half-even. Two exact systems can still disagree by one minor unit.</p>
+
+        <h3>Why does my order ID change after passing through JSON?</h3>
+        <p>Because it travelled as a JSON number and the receiver parsed it as an IEEE 754 double. 1234567890123456789 becomes 1234567890123456768, and 9007199254740993 becomes 9007199254740992. The damage happens once and then stays stable, so nothing throws and nothing looks wrong in a diff. RFC 7493 recommends encoding integers outside <code>[-(2**53)+1, (2**53)-1]</code> as strings for exactly this reason.</p>
+    </section>
+
+    <section class="seo-section" id="method">
+        <h2>14. Methodology &amp; Disclosure</h2>
+        <p>Every floating point value in this article was produced by execution, not by description. The same expressions were run on Node (V8, 64-bit) and on CPython 3.13; both produce identical binary64 results for every case cited, which is expected because both implement the same standard. Where the two differ in <em>formatting</em> rather than in value, the article quotes the JavaScript output and says so.</p>
+        <p>The derived figures are computed as follows:</p>
+        <ul>
+            <li><strong>15.9546 decimal digits</strong> is 53 &times; log<sub>10</sub>(2). The mantissa is 53 bits including the implicit leading one.</li>
+            <li><strong>The exact expansion of 0.1</strong> and the other stored values come from Decimal conversion of the double, not from a printed representation, so they are the full value and not a truncation.</li>
+            <li><strong>The 1.005 rounding cases</strong> are raw <code>toFixed(2)</code> return values. Nothing is rounded by the article before it is shown.</li>
+            <li><strong>The million-row drift</strong> is a sequential loop, not a built-in <code>sum()</code>, because the question is what ordered accumulation does.</li>
+            <li><strong>The 2<sup>53</sup> and 2<sup>63</sup>&minus;1 dollar figures</strong> divide exact integers by 10<sup>6</sup> in decimal arithmetic rather than in binary, so the trailing digits are the true quotient.</li>
+            <li><strong>The toFixed census</strong> is a regular expression over the 194 HTML files in the published tree, matching <code>.toFixed(</code> followed by a single digit, which counts calls in inline scripts. It excludes the two files in <code>embed/</code>.</li>
+        </ul>
+        <p>Two figures are bounded rather than exact, and are marked as such in place. The count of zero-decimal currencies in ISO 4217 varies between editions and between summaries that include or exclude units of account, so the article cites the range and relies on the seven three-decimal and two four-decimal entries, which are stable. The exact error that produced the trailing digits in Google's documented example is not reconstructible from the documentation, because the underlying row values are not published; the article quotes the two columns as printed and attributes the mechanism to the vendor's own explanation rather than reverse-engineering it.</p>
+        <p>Vendor behaviour described here &mdash; BigQuery type precision, Stripe's minor unit requirements, Cloud Billing's export schema &mdash; is documentation, not measurement. It is accurate as published on the date below and is the kind of detail that changes without notice. Confirm it against the current documentation before you size a schema around it.</p>
+        <p>This site carries no vendor sponsorship and no affiliate links. Nothing here is paid placement, and no provider was consulted on the content.</p>
+
+        <h3>References &amp; Further Reading</h3>
+        <ol style="line-height:1.9; font-size:0.9rem;">
+            <li>IETF. <em>RFC 7493: The I-JSON Message Format</em>, Section 2.2 &mdash; the 9007199254740991 boundary and the recommendation to encode large integers as strings. <em>rfc-editor.org/rfc/rfc7493</em></li>
+            <li>IETF. <em>RFC 8259: The JavaScript Object Notation (JSON) Data Interchange Format</em>, Section 6 &mdash; the statement that implementations may limit range and precision, and the interoperable integer window. <em>rfc-editor.org/rfc/rfc8259</em></li>
+            <li>IEEE. <em>IEEE 754-2019 Standard for Floating-Point Arithmetic</em> &mdash; binary64 layout, the 53-bit significand, and roundTiesToEven as the default rounding attribute. <em>ieeexplore.ieee.org</em></li>
+            <li>Google Cloud. <em>Cloud Billing &mdash; Example queries for Cloud Billing data export</em> &mdash; the total and total_exact columns, the documented sample output, and the explanation that summing floating point values directly produces rounding errors. <em>cloud.google.com/billing/docs/how-to/bq-examples</em></li>
+            <li>Google Cloud. <em>BigQuery &mdash; Data types</em> &mdash; NUMERIC at 38 digits of precision and 9 of scale, BIGNUMERIC at 76.76 and 38, FLOAT64 as double precision, and the half-up example for NUMERIC(5, 2). <em>cloud.google.com/bigquery/docs/reference/standard-sql/data-types</em></li>
+            <li>Stripe. <em>Supported currencies</em> &mdash; amounts in the currency's minor unit, the zero-decimal list, and the ISK and UGX compatibility exceptions. <em>docs.stripe.com/currencies</em></li>
+            <li>ISO 4217 currency codes, published by SIX Group on behalf of ISO &mdash; the minor unit exponent table, including the seven three-decimal and two four-decimal entries. <em>six-group.com</em></li>
+            <li>ECMAScript Language Specification, <em>Number.prototype.toFixed</em> and <em>Math.round</em> &mdash; the differing tie behaviour of the two functions. <em>tc39.es/ecma262</em></li>
+            <li>Related: <a href="/gib-to-gb-marketing-gap">GiB to GB Marketing Gap</a> &#183; <a href="/cloud-billing-hours-per-month">The 730-Hour Month</a> &#183; <a href="/uuid-v4-collision-probability-estimator">UUID v4 Collision Estimator</a> &#183; <a href="/json-formatter">JSON Formatter</a> &#183; <a href="/varchar-191-byte-problem">The 191 Problem</a> &#183; <a href="/char-counter">Character Counter</a> &#183; <a href="/methodology">Methodology</a></li>
+        </ol>
+    </section>
+
+    <div class="social-share-bar">
+        <span class="share-label">Share this briefing:</span>
+        <div class="share-buttons">
+            <a href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fwww.jslet.com%2Ffloat-money-precision&amp;text=Your%20invoice%20does%20not%20disagree%20because%20of%20floating%20point.%20It%20disagrees%20because%20of%20where%20you%20rounded.%20The%20two%20errors%20are%2013%20orders%20of%20magnitude%20apart." target="_blank" rel="noopener" aria-label="Share on X">&#120143;</a>
+            <a href="https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fwww.jslet.com%2Ffloat-money-precision" target="_blank" rel="noopener" aria-label="Share on LinkedIn">in</a>
+        </div>
+    </div>
+
+    <div class="related-tools" style="margin-top: 40px;">
+        <h3>Related Tools &amp; Reading</h3>
+        <div class="related-grid">
+            <a href="/cloud-storage-cost">&#128202; Cloud Storage Cost &rarr;</a>
+            <a href="/lambda-execution-ms-to-cost">&#128202; Lambda Execution to Cost &rarr;</a>
+            <a href="/cloud-billing-hours-per-month">&#128240; The 730-Hour Month &rarr;</a>
+            <a href="/gib-to-gb-marketing-gap">&#128202; GiB to GB Marketing Gap &rarr;</a>
+            <a href="/json-formatter">&#128202; JSON Formatter &rarr;</a>
+            <a href="/varchar-191-byte-problem">&#128240; The 191 Problem &rarr;</a>
+            <a href="/database-rows-to-storage-est">&#128202; DB Row Count to Storage &rarr;</a>
+            <a href="/articles">&#128240; All Briefings &rarr;</a>
+        </div>
+    </div>
+
+    <section class="seo-section" style="border-top:2px solid var(--border); padding-top:20px; margin-top:24px;">
+        <h2 style="font-size:0.95rem; text-transform:uppercase; letter-spacing:1px;">📜 Copyright &amp; Attribution</h2>
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px 20px; font-size:0.85rem; color:var(--text-body); line-height:1.8;">
+            <p style="margin:0 0 10px 0;"><strong>&copy; 2026 jslet Research.</strong> This article is an original work published on <a href="/">jslet</a> (<a href="https://www.jslet.com">jslet.com</a>). All rights reserved.</p>
+            <p style="margin:0 0 10px 0;"><strong>Sharing &amp; Reprinting:</strong> You may share excerpts (up to 200 words) with a mandatory, do-follow link back to the original article URL. Full reproduction, translation, or adaptation requires prior written permission. Contact: support@jslet.com.</p>
+            <p style="margin:0;"><strong>Model Disclaimer:</strong> The floating point values here are properties of IEEE 754 binary64 and will not change. Vendor types, precision limits, minor unit tables and export schemas are configuration and do change; the values cited reflect the documentation listed above at the time of writing. Confirm the type and precision of the column you are actually summing before you move a billing pipeline onto it.</p>
+        </div>
+    </section>
+
+<footer class="jslet-footer-box">
+        <div class="jslet-footer-inner">
+            <div class="jslet-footer-top">
+                <h3>Get more insights</h3>
+                <p>Infrastructure economics research for people who read the invoice, not the datasheet.</p>
+                <div class="jslet-footer-links">
+                    <a href="/articles">All Briefings</a>
+                    <a href="/decision-matrix">Decision Matrix</a>
+                    <a href="/rss.xml">RSS</a>
+                    <a href="/about">About</a>
+                </div>
+            </div>
+            <div class="jslet-footer-bottom">
+                <p>&copy; 2026 jslet. Independent research. No vendor sponsorship and carries no affiliate links.</p>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+<script src="nav.js"></script>
+
+</body>
+</html>
