@@ -196,7 +196,7 @@
 
 
 <div id="site-nav" data-current="tool">
-        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 118 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 119 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
     </div>
 
     <div class="container" id="main-content">
@@ -434,7 +434,7 @@
                             <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             <span class="jslet-footer-name">jslet.com</span>
                         </a>
-                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 118 tools, all running locally in your browser.</p>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 119 tools, all running locally in your browser.</p>
                         <div class="jslet-footer-score">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
                             Architecture-ready · 100% client-side
@@ -551,16 +551,18 @@
         var effectiveMax = Math.min(maxByCpu, maxByMem, maxByStorage, maxByIp);
 
         // ── Resource Utilization at Max Pods ──
-        var cpuUsed = effectiveMax * podCpu;
-        var memUsed = effectiveMax * podMemGib;
-        var storageUsed = effectiveMax * podStorageGib;
+        // effectiveMax 可能是 Infinity（该维度无约束）；Infinity × 0 会得 NaN，
+        // 而「单 Pod 请求为 0 ⇒ 总用量为 0」在数学上是确定的，故显式短路。
+        var cpuUsed = podCpu > 0 ? effectiveMax * podCpu : 0;
+        var memUsed = podMemGib > 0 ? effectiveMax * podMemGib : 0;
+        var storageUsed = podStorageGib > 0 ? effectiveMax * podStorageGib : 0;
         var cpuUtilPct = allocatableCpu > 0 ? (cpuUsed / allocatableCpu * 100) : 0;
         var memUtilPct = allocatableMemGib > 0 ? (memUsed / allocatableMemGib * 100) : 0;
         var storageUtilPct = allocatableStorageGib > 0 ? (storageUsed / allocatableStorageGib * 100) : 0;
 
         // ── Bin Packing Efficiency ──
-        var totalReqCpu = effectiveMax * podCpu;
-        var totalReqMem = effectiveMax * podMemGib;
+        var totalReqCpu = podCpu > 0 ? effectiveMax * podCpu : 0;
+        var totalReqMem = podMemGib > 0 ? effectiveMax * podMemGib : 0;
         var wastedCpuPct = allocatableCpu > 0 ? Math.max(0, (allocatableCpu - totalReqCpu) / allocatableCpu * 100) : 0;
         var wastedMemPct = allocatableMemGib > 0 ? Math.max(0, (allocatableMemGib - totalReqMem) / allocatableMemGib * 100) : 0;
 
@@ -569,7 +571,7 @@
             { name: 'CPU', value: maxByCpu, pct: cpuUtilPct, color: '#3b82f6' },
             { name: 'Memory', value: maxByMem, pct: memUtilPct, color: '#10b981' },
             { name: 'Storage', value: maxByStorage, pct: storageUtilPct, color: '#f59e0b' },
-            { name: 'IP / Max-Pods', value: maxByIp, pct: (effectiveMax / (maxByIp || 1) * 100), color: '#8b5cf6' },
+            { name: 'IP / Max-Pods', value: maxByIp, pct: isFinite(maxByIp) ? (effectiveMax / maxByIp * 100) : 0, color: '#8b5cf6' },
         ];
         var bottleneck = constraints.reduce((a, b) => a.value < b.value ? a : b);
 
@@ -579,10 +581,10 @@
 
         // Metric tiles
         document.getElementById('val-max-pods').innerText = effectiveMax === Infinity ? '∞' : Math.floor(effectiveMax).toLocaleString();
-        document.getElementById('val-cpu-pods').innerText = maxByCpu === Infinity ? '∞' : Math.floor(maxByCpu).toLocaleString();
-        document.getElementById('val-mem-pods').innerText = maxByMem === Infinity ? '∞' : Math.floor(maxByMem).toLocaleString();
-        document.getElementById('val-storage-pods').innerText = maxByStorage === Infinity ? '∞' : Math.floor(maxByStorage).toLocaleString();
-        document.getElementById('val-ip-pods').innerText = maxByIp === Infinity ? '∞' : Math.floor(maxByIp).toLocaleString();
+        document.getElementById('val-cpu-pods').innerText = maxByCpu === Infinity ? '∞' : podsLabel(maxByCpu).toLocaleString();
+        document.getElementById('val-mem-pods').innerText = maxByMem === Infinity ? '∞' : podsLabel(maxByMem).toLocaleString();
+        document.getElementById('val-storage-pods').innerText = maxByStorage === Infinity ? '∞' : podsLabel(maxByStorage).toLocaleString();
+        document.getElementById('val-ip-pods').innerText = maxByIp === Infinity ? '∞' : podsLabel(maxByIp).toLocaleString();
 
         // Overall utilization
         var avgUtil = (cpuUtilPct + memUtilPct + storageUtilPct) / 3;
@@ -619,40 +621,44 @@
         document.getElementById('bottleneck-banner').innerHTML =
             '<div class="efficiency-card" style="border-color:' + (riskLevel === 'high' ? 'var(--error)' : riskLevel === 'moderate' ? 'var(--gold)' : 'var(--success)') + ';">' +
                 '<span class="risk-badge risk-' + riskLevel + '">BOTTLENECK: ' + bottleneck.name + '</span>' +
-                '<span style="margin-left:10px;font-weight:700;">' + Math.floor(effectiveMax) + ' pods max — limited by <strong>' + bottleneck.name + '</strong></span>' +
+                '<span style="margin-left:10px;font-weight:700;">' + podsLabel(effectiveMax) + ' pods max — limited by <strong>' + bottleneck.name + '</strong></span>' +
                 '<p style="font-size:0.82rem;color:var(--text-body);margin-top:8px;">' + riskText + '</p>' +
             '</div>';
 
         // Constraint bars
         var barMaxPods = Math.max(maxByCpu, maxByMem, maxByStorage, maxByIp, 1);
-        var barScale = 100 / barMaxPods; // percentage per pod
+        var barScale = (barMaxPods > 0 && isFinite(barMaxPods)) ? 100 / barMaxPods : 0; // percentage per pod
+        // 无约束维度取的是 Infinity，而 Infinity × 0 会得 NaN，进度条宽度必须单独兜底
+        function barPct(v) { return isFinite(v) ? Math.min(100, v * barScale) : 100; }
+        // 无约束维度的容量是 Infinity，直接 Math.floor 会印出 "Infinity"，统一渲染成 ∞
+        function podsLabel(v) { return isFinite(v) ? Math.floor(v).toLocaleString() : '∞'; }
         document.getElementById('constraint-bars').innerHTML =
             '<h4 style="margin-bottom:8px;font-size:0.85rem;">📏 Per-Constraint Pod Capacity</h4>' +
             '<div class="constraint-bar-wrap">' +
                 '<span class="constraint-label">CPU</span>' +
                 '<div class="constraint-bar-outer">' +
-                    '<div class="constraint-bar-inner cpu-bar" style="width:' + Math.min(100, maxByCpu * barScale) + '%;">' + Math.floor(maxByCpu) + '</div>' +
+                    '<div class="constraint-bar-inner cpu-bar" style="width:' + barPct(maxByCpu) + '%;">' + podsLabel(maxByCpu) + '</div>' +
                 '</div>' +
                 '<span class="constraint-detail">' + Math.round(allocatableCpu * 10) / 10 + ' vCPU allocatable · ' + podCpuM + 'm/pod</span>' +
             '</div>' +
             '<div class="constraint-bar-wrap">' +
                 '<span class="constraint-label">Memory</span>' +
                 '<div class="constraint-bar-outer">' +
-                    '<div class="constraint-bar-inner mem-bar" style="width:' + Math.min(100, maxByMem * barScale) + '%;">' + Math.floor(maxByMem) + '</div>' +
+                    '<div class="constraint-bar-inner mem-bar" style="width:' + barPct(maxByMem) + '%;">' + podsLabel(maxByMem) + '</div>' +
                 '</div>' +
                 '<span class="constraint-detail">' + allocatableMemGib.toFixed(2) + ' GiB allocatable · ' + podMemMib + ' MiB/pod</span>' +
             '</div>' +
             '<div class="constraint-bar-wrap">' +
                 '<span class="constraint-label">Storage</span>' +
                 '<div class="constraint-bar-outer">' +
-                    '<div class="constraint-bar-inner storage-bar" style="width:' + Math.min(100, maxByStorage * barScale) + '%;">' + Math.floor(maxByStorage) + '</div>' +
+                    '<div class="constraint-bar-inner storage-bar" style="width:' + barPct(maxByStorage) + '%;">' + podsLabel(maxByStorage) + '</div>' +
                 '</div>' +
                 '<span class="constraint-detail">' + allocatableStorageGib.toFixed(2) + ' GiB allocatable · ' + podStorageMib + ' MiB/pod</span>' +
             '</div>' +
             '<div class="constraint-bar-wrap">' +
                 '<span class="constraint-label">IP Limit</span>' +
                 '<div class="constraint-bar-outer">' +
-                    '<div class="constraint-bar-inner ip-bar" style="width:' + Math.min(100, maxByIp * barScale) + '%;">' + Math.floor(maxByIp) + '</div>' +
+                    '<div class="constraint-bar-inner ip-bar" style="width:' + barPct(maxByIp) + '%;">' + podsLabel(maxByIp) + '</div>' +
                 '</div>' +
                 '<span class="constraint-detail">--max-pods=' + maxPodsLimit + '</span>' +
             '</div>';
@@ -737,16 +743,16 @@
                     '<thead><tr><th>Constraint</th><th>Allocatable</th><th>Per Pod</th><th>Max Pods</th><th>Used at Max</th><th>Utilization</th></tr></thead>' +
                     '<tbody>' +
                         '<tr style="' + (bottleneck.name === 'CPU' ? 'font-weight:700;color:var(--error);' : '') + '">' +
-                            '<td>CPU</td><td>' + allocatableCpu.toFixed(2) + ' vCPU</td><td>' + podCpuM + 'm</td><td>' + Math.floor(maxByCpu) + '</td><td>' + cpuUsed.toFixed(2) + ' vCPU</td><td>' + Math.round(cpuUtilPct) + '%</td>' +
+                            '<td>CPU</td><td>' + allocatableCpu.toFixed(2) + ' vCPU</td><td>' + podCpuM + 'm</td><td>' + podsLabel(maxByCpu) + '</td><td>' + cpuUsed.toFixed(2) + ' vCPU</td><td>' + Math.round(cpuUtilPct) + '%</td>' +
                         '</tr>' +
                         '<tr style="' + (bottleneck.name === 'Memory' ? 'font-weight:700;color:var(--error);' : '') + '">' +
-                            '<td>Memory</td><td>' + allocatableMemGib.toFixed(2) + ' GiB</td><td>' + podMemMib + ' MiB</td><td>' + Math.floor(maxByMem) + '</td><td>' + memUsed.toFixed(2) + ' GiB</td><td>' + Math.round(memUtilPct) + '%</td>' +
+                            '<td>Memory</td><td>' + allocatableMemGib.toFixed(2) + ' GiB</td><td>' + podMemMib + ' MiB</td><td>' + podsLabel(maxByMem) + '</td><td>' + memUsed.toFixed(2) + ' GiB</td><td>' + Math.round(memUtilPct) + '%</td>' +
                         '</tr>' +
                         '<tr style="' + (bottleneck.name === 'Storage' ? 'font-weight:700;color:var(--error);' : '') + '">' +
-                            '<td>Storage</td><td>' + allocatableStorageGib.toFixed(2) + ' GiB</td><td>' + podStorageMib + ' MiB</td><td>' + Math.floor(maxByStorage) + '</td><td>' + storageUsed.toFixed(2) + ' GiB</td><td>' + Math.round(storageUtilPct) + '%</td>' +
+                            '<td>Storage</td><td>' + allocatableStorageGib.toFixed(2) + ' GiB</td><td>' + podStorageMib + ' MiB</td><td>' + podsLabel(maxByStorage) + '</td><td>' + storageUsed.toFixed(2) + ' GiB</td><td>' + Math.round(storageUtilPct) + '%</td>' +
                         '</tr>' +
                         '<tr style="' + (bottleneck.name === 'IP / Max-Pods' ? 'font-weight:700;color:var(--error);' : '') + '">' +
-                            '<td>Max Pods</td><td>' + maxPodsLimit + ' slots</td><td>1 slot</td><td>' + Math.floor(maxByIp) + '</td><td>' + effectiveMax + ' pods</td><td>' + (maxPodsLimit > 0 ? Math.round(effectiveMax / maxPodsLimit * 100) + '%' : 'N/A') + '</td>' +
+                            '<td>Max Pods</td><td>' + maxPodsLimit + ' slots</td><td>1 slot</td><td>' + podsLabel(maxByIp) + '</td><td>' + podsLabel(effectiveMax) + ' pods</td><td>' + (maxPodsLimit > 0 ? Math.round(effectiveMax / maxPodsLimit * 100) + '%' : 'N/A') + '</td>' +
                         '</tr>' +
                     '</tbody>' +
                 '</table>' +

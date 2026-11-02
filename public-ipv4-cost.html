@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Public IPv4 Cost Calculator — $0.005 per Address-Hour</title>
+    <meta name="description" content="AWS bills $0.005 per public IPv4 address-hour whether it is attached or idle — $3.65 a month each. Model your account's address bill by count and idle share.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="Public IPv4 Cost Calculator — jslet">
+    <meta property="og:description" content="Attaching an Elastic IP no longer stops the meter. Since 2024 idle and in-use addresses cost the same $0.005/hour, so releasing is the only lever left.">
+    <meta property="og:url" content="https://www.jslet.com/public-ipv4-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Public IPv4 Cost Calculator — jslet">
+    <meta name="twitter:description" content="Every public IPv4 address costs $3.65 a month, attached or not. One thousand addresses is $43,800 a year.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/public-ipv4-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.45rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .formula-box {
+            background: var(--bg-input); border-left: 3px solid var(--accent);
+            border-radius: var(--radius-sm); padding: 14px 18px; margin: 16px 0;
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.9rem;
+            line-height: 1.9; overflow-x: auto;
+        }
+        .pull {
+            border-left: 3px solid var(--gold);
+            padding: 4px 0 4px 18px; margin: 22px 0;
+            font-size: 1.02rem; line-height: 1.75; color: var(--text-secondary);
+        }
+    </style>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Public IPv4 Cost Calculator",
+      "description": "Converts public IPv4 address counts into an hourly, monthly and annual bill at the published $0.005 per address-hour rate, including idle addresses, contiguous blocks at $0.008 per address-hour, and the 60-second billing minimum.",
+      "url": "https://www.jslet.com/public-ipv4-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much does one public IPv4 address cost per month on AWS?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "$0.005 per hour, which is $3.65 for a 730-hour month and $43.80 for a full 8,760-hour year. The rate is identical for in-use and idle addresses, so there is no discount for putting the address to work."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is an idle Elastic IP charged the same as an attached one?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. AWS lists $0.005 per hour for in-use public IPv4 addresses and $0.005 per hour for idle ones. Before February 2024 only unattached addresses carried a charge, so the standard advice was to attach an Elastic IP to something. That advice now changes nothing: attaching moves the charge, it does not remove it. Releasing the address is the only action that stops the meter."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does a public IPv4 address cost the same in every AWS region?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The public IPv4 charge applies across all AWS commercial regions, US GovCloud, AWS China regions and AWS Local Zones. Unlike compute or data transfer, the figure does not vary by region, so an address in ap-southeast-1 costs the same as one in us-east-1."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the minimum billing period for a public IPv4 address?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The bill is calculated in one-second increments with a minimum of 60 seconds. A workload that holds an address for three seconds is billed for a full minute. For churning workloads the number of allocation events matters more than the wall-clock hours, because every event carries a 60-second floor."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which public IPv4 addresses are not charged?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Addresses you bring with Bring Your Own IP, customer-owned IP addresses on Outposts, and addresses that are not dedicated to your resource, such as the ones Amazon S3 serves requests from. Amazon-provided contiguous IPv4 blocks are billed differently again, at $0.008 per address per hour, with every address in the block charged from the moment it is provisioned."
+      }
+    }
+  ]
+}
+    </script>
+</head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 119 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>🌐 <span>Public IPv4</span> Cost</h1>
+            <p>An address is now a metered resource in its own right: $0.005 per hour, which is $3.65 a month and $43.80 a year. The rate does not care whether the address is serving traffic or sitting in a subnet doing nothing, and it does not vary by region or by instance size. That single change inverted a decade of advice &mdash; attaching an Elastic IP used to stop the meter, and now it only moves it.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Address Inventory</h3>
+                <p class="card-desc">Enter how many public IPv4 addresses the account holds. In-use and idle are separate fields because they are billed at the same rate but usually arrive from different places: one set is attached to instances, load balancers and NAT gateways, the other is Elastic IPs parked in the account. Contiguous blocks are a third line item at a higher rate.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="inuse">In-use addresses</label>
+                        <input type="number" class="unit-input" id="inuse" value="12" step="1" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="idle">Idle / unattached addresses</label>
+                        <input type="number" class="unit-input" id="idle" value="8" step="1" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="contig">Addresses in contiguous blocks</label>
+                        <input type="number" class="unit-input" id="contig" value="0" step="1" min="0">
+                    </div>
+                </div>
+                <div class="multi-input-row" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="months">Period to project (months)</label>
+                        <input type="number" class="unit-input" id="months" value="12" step="1" min="1">
+                    </div>
+                </div>
+                <p class="card-desc" style="margin-top:12px;">Standard addresses are priced at $0.005/hour and contiguous-block addresses at $0.008/hour; the two are totalled separately and added, because a block is billed at its own rate regardless of whether its addresses are assigned.</p>
+                <button class="btn-calc">Run Address Bill</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Address Bill</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="monthly-val">$0.00</div><div class="metric-label">Per month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="annual-val">$0.00</div><div class="metric-label">Per year</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="period-val">$0.00</div><div class="metric-label">Over the period</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="per-addr-val">$3.65</div><div class="metric-label">Per address / month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="idle-val">0.0%</div><div class="metric-label">Idle share of bill</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="hourly-val">$0.000</div><div class="metric-label">Per hour, all addresses</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>What the meter actually counts</h2>
+
+            <p>AWS prices a public IPv4 address the way a landlord prices a parking space: per space per hour, whether or not a car is in it. The published rate is <strong>$0.005 per address per hour</strong> for in-use addresses and <strong>$0.005 per address per hour</strong> for idle ones. There is no volume discount, no region variation, and no difference between an address on a production load balancer and one attached to a stopped instance.</p>
+
+            <div class="formula-box">
+monthly = addresses &times; $0.005/hr &times; 730 hr
+        = addresses &times; $3.65
+
+annual  = addresses &times; $0.005/hr &times; 8,760 hr
+        = addresses &times; $43.80
+            </div>
+
+            <p>The 730-hour month is the billing convention, not a calendar fact: (365 &times; 24) &divide; 12 = 730. A 30-day month bills 720 hours and a 31-day month bills 744, which is why a bill that says $3.65 in February can say $3.72 in March. Over a year the two bases converge exactly, because 730 &times; 12 = 8,760.</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Addresses</th><th>Per month</th><th>Per year</th><th>Where you see this many</th></tr></thead>
+                <tbody>
+                    <tr><td>1</td><td>$3.65</td><td>$43.80</td><td>A single Elastic IP on a jump host</td></tr>
+                    <tr><td>8</td><td>$29.20</td><td>$350.40</td><td>Four services &times; two AZs behind NAT</td></tr>
+                    <tr><td>20</td><td>$73.00</td><td>$876.00</td><td>A default-VPC account that never cleaned up</td></tr>
+                    <tr><td>100</td><td>$365.00</td><td>$4,380.00</td><td>A multi-account landing zone with per-env NAT</td></tr>
+                    <tr><td>256</td><td>$934.40</td><td>$11,212.80</td><td>One /24 held as separate Elastic IPs</td></tr>
+                    <tr><td>1,000</td><td>$3,650.00</td><td>$43,800.00</td><td>An address plan nobody has audited since 2021</td></tr>
+                </tbody>
+            </table>
+
+            <div class="pull">The bill scales with topology, not with traffic. Ten addresses cost $36.50 a month whether the fleet serves a thousand requests or a billion, because the meter counts sockets in the network design rather than bytes on the wire.</div>
+
+            <h2>The advice that stopped working in February 2024</h2>
+
+            <p>Until 2024 the charge applied only to addresses that were <em>not</em> attached to a running resource. That produced a piece of folk knowledge repeated in every cost-optimization checklist: if you are paying for an Elastic IP, attach it to something and the charge goes away. The instruction was correct, and it trained a generation of engineers to think of attachment as the fix.</p>
+
+            <p>Since February 2024 both states carry the same rate. The old remedy now converts one $3.65 charge into a different $3.65 charge:</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Address state</th><th>Before 2024</th><th>Since February 2024</th></tr></thead>
+                <tbody>
+                    <tr><td>Attached to a running instance or load balancer</td><td>$0.00</td><td>$3.65 / month</td></tr>
+                    <tr><td>Allocated but unattached</td><td>$3.65 / month</td><td>$3.65 / month</td></tr>
+                    <tr><td>Released back to AWS</td><td>$0.00</td><td>$0.00</td></tr>
+                </tbody>
+            </table>
+
+            <p>The only row that changed the answer is the last one. Releasing is now the entire optimization, and it is the one step the old checklist never asked for, because the old meter had already taught everyone that the address was free once it was in use.</p>
+
+            <p>This is the same shape as the index advice elsewhere on this site: a rule that was true when it was written, still repeated after the constraint underneath it moved. The check is not whether the advice sounds right, but whether the number it was derived from is still the number.</p>
+
+            <h2>What a 60-second minimum does to churn</h2>
+
+            <p>The bill is calculated in one-second increments with a minimum of 60 seconds. For a steady fleet that floor never binds: an address held for a month is billed for a month. It binds on the workloads that allocate and release addresses constantly &mdash; integration-test environments, blue-green cutovers, per-tenant gateways spun up on demand.</p>
+
+            <p>A single one-minute allocation costs $0.005 &divide; 60 = $0.0000833, which is to say nothing. Ten thousand of them cost $0.83. The reason to know the rule is not the arithmetic; it is that a cost model built on "addresses &times; hours" silently drops this term, and then someone discovers a line item that the model said could not exist. Round up every allocation event to a minute, then add it to the hourly total.</p>
+
+            <h2>Contiguous blocks cost 1.6&times; and buy something else</h2>
+
+            <p>An Amazon-provided contiguous IPv4 block is priced at <strong>$0.008 per address per hour</strong>, not $0.005. You are not buying more addresses; you are buying the property that they are sequential, which is what makes firewall allowlisting and BGP announcements possible without maintaining a list of 256 unrelated entries.</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Block</th><th>Addresses</th><th>At $0.008/hr</th><th>Same count at $0.005/hr</th><th>Premium</th></tr></thead>
+                <tbody>
+                    <tr><td>/28</td><td>16</td><td>$93.44 / mo</td><td>$58.40 / mo</td><td>$35.04 / mo</td></tr>
+                    <tr><td>/27</td><td>32</td><td>$186.88 / mo</td><td>$116.80 / mo</td><td>$70.08 / mo</td></tr>
+                    <tr><td>/26</td><td>64</td><td>$373.76 / mo</td><td>$233.60 / mo</td><td>$140.16 / mo</td></tr>
+                    <tr><td>/24</td><td>256</td><td>$1,495.04 / mo</td><td>$934.40 / mo</td><td>$560.64 / mo</td></tr>
+                </tbody>
+            </table>
+
+            <p>Two details matter more than the 1.6&times;. First, every address in the block is charged from the moment the block is provisioned, and the in-use / idle distinction does not apply inside it &mdash; there is nothing to be gained by assigning them. Second, the block is billed in hourly increments with any partial hour counted as a full hour, so the 60-second floor that applies to single addresses does not apply here; the granularity is coarser.</p>
+
+            <h2>What is not on the meter</h2>
+
+            <p>Three categories are excluded, and each is a legitimate way to move addresses off the bill rather than merely reorganising them.</p>
+
+            <p><strong>Bring Your Own IP.</strong> Address space you have registered with a regional internet registry and imported into AWS is not charged the public IPv4 rate. The trade is that you now own the RIR relationship, the annual fees and the minimum assignment size that comes with it &mdash; a /24 in most regions, which is 256 addresses to justify before the first one is used.</p>
+
+            <p><strong>Customer-owned IP on Outposts.</strong> Addresses in a customer-owned pool are not billed at the public IPv4 rate either, for the same reason: AWS is not supplying them.</p>
+
+            <p><strong>Addresses that are not dedicated to your resource.</strong> When a service shares its front end across customers, as S3 does, the address is not yours and is not metered to you. A static site on S3 plus CloudFront can therefore serve public traffic while holding zero public IPv4 addresses of its own &mdash; which is the pattern worth checking before assuming an internet-facing workload must cost $3.65 a month per endpoint.</p>
+
+            <p>The last one generalises: the cheapest address is the one the architecture never needed. A load balancer that terminates TLS for six services holds one address; six load balancers hold six. Consolidating front ends is an architecture decision that happens to have a price, and at $3.65 a month per endpoint it is small enough to be ignored in review and large enough to appear on the bill every month for years.</p>
+        </section>
+
+        <section class="seo-section" id="pricing-basis">
+            <h2>Pricing Basis, Sources &amp; Assumptions</h2>
+            <p>Every rate on this page is a <strong>published vendor list price</strong> &mdash; no negotiated discounts, private pricing, credits or enterprise agreements. Totals are in <strong>USD</strong> and exclude tax. Rates were last checked against the sources below on <time datetime="2026-11-03">2026-11-03</time>.</p>
+            <table class="cost-table">
+                <thead><tr><th>Pricing input</th><th>Basis used on this page</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Source</strong></td><td><a href="https://aws.amazon.com/vpc/pricing/" rel="nofollow noopener" target="_blank">Amazon VPC pricing</a> &mdash; the "Public IPv4 Address" and "Amazon-provided contiguous IPv4 block" sections. This is the only rate used; no other service price is implied.</td></tr>
+                    <tr><td><strong>Region</strong></td><td>All AWS commercial regions, US GovCloud, AWS China regions and AWS Local Zones. The public IPv4 rate is global and does not vary by region, so no region selector is offered.</td></tr>
+                    <tr><td><strong>Currency</strong></td><td>USD &mdash; on-demand list price, tax excluded</td></tr>
+                    <tr><td><strong>Last checked</strong></td><td><time datetime="2026-11-03">2026-11-03</time> &mdash; $0.005/address-hour for both in-use and idle, $0.008/address-hour for contiguous blocks, and the 60-second minimum were re-read from the page on this date.</td></tr>
+                </tbody>
+            </table>
+            <h3>Modelling assumptions</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li><strong>Month length.</strong> 730 hours is used for monthly figures, the standard billing convention of (365 &times; 24) &divide; 12. Real months bill 672 to 744 hours, so a single month will differ from the projection by up to 2%.</li>
+                <li><strong>Year length.</strong> 8,760 hours, which is exactly 730 &times; 12, so the monthly and annual columns never disagree.</li>
+                <li><strong>Steady state.</strong> Addresses are assumed held for the whole period. Allocation churn is not modelled beyond the note on the 60-second minimum.</li>
+                <li><strong>Excluded.</strong> Data transfer, NAT gateway hourly and per-GB charges, load balancer hours, and any charge that the address merely accompanies. This page prices addresses only.</li>
+                <li><strong>Excluded.</strong> Enterprise discounts, private pricing agreements, credits and refunds. Public IPv4 pricing is not commonly discountable, but a negotiated bill may differ.</li>
+            </ul>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/nat-gateway-cost-calculator">NAT Gateway Cost &rarr;</a>
+                <a href="/alb-nlb-cost-calculator">ALB / NLB Cost &rarr;</a>
+                <a href="/aws-cross-az-data-transfer-cost">Cross-AZ Data Transfer &rarr;</a>
+                <a href="/terabytes-egress-to-aws-cost">Egress to AWS Cost &rarr;</a>
+                <a href="/cidr-calculator">CIDR Calculator &rarr;</a>
+            </div>
+        </div>
+<footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 119 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/methodology">Methodology</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">RSS &amp; Updates</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    
+    <script>
+    (function () {
+        var STD_RATE = 0.005;      // 每个公网 IPv4 地址每小时
+        var BLOCK_RATE = 0.008;    // 连续块内的地址按另一价目
+        var HOURS_PER_MONTH = 730; // (365 x 24) / 12，计费惯例
+
+        function num(id) {
+            var el = document.getElementById(id);
+            if (!el) { return 0; }
+            var v = parseFloat(el.value);
+            return isFinite(v) && v > 0 ? v : 0;
+        }
+
+        function money(v) {
+            return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function compute() {
+            var inUse = Math.floor(num('inuse'));
+            var idle = Math.floor(num('idle'));
+            var contig = Math.floor(num('contig'));
+            var months = Math.max(1, Math.round(num('months') || 12));
+
+            var stdCount = inUse + idle;
+            // 两类地址价目不同，必须分开计价再相加；混算会把块内地址按 0.005 低估 37.5%
+            var stdMonthly = stdCount * STD_RATE * HOURS_PER_MONTH;
+            var blockMonthly = contig * BLOCK_RATE * HOURS_PER_MONTH;
+            var monthly = stdMonthly + blockMonthly;
+            var count = stdCount + contig;
+
+            document.getElementById('monthly-val').innerText = money(monthly);
+            document.getElementById('annual-val').innerText = money(monthly * 12);
+            document.getElementById('period-val').innerText = money(monthly * months);
+            document.getElementById('per-addr-val').innerText = count > 0 ? money(monthly / count) : money(STD_RATE * HOURS_PER_MONTH);
+            document.getElementById('idle-val').innerText = monthly > 0 ? (idle * STD_RATE * HOURS_PER_MONTH / monthly * 100).toFixed(1) + '%' : '0.0%';
+            document.getElementById('hourly-val').innerText = '$' + (stdCount * STD_RATE + contig * BLOCK_RATE).toFixed(3);
+
+            document.getElementById('results-params').innerText =
+                inUse + ' in-use + ' + idle + ' idle = ' + stdCount + ' standard addresses · ' +
+                contig + ' in contiguous blocks · ' +
+                '$' + STD_RATE + '/hr standard, $' + BLOCK_RATE + '/hr block · ' +
+                HOURS_PER_MONTH + '-hour month · ' + months + '-month projection';
+
+            document.getElementById('results-card').style.display = 'block';
+        }
+
+        document.addEventListener('DOMContentLoaded', compute);
+        document.querySelector('.btn-calc').addEventListener('click', compute);
+    })();
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>
