@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>DynamoDB Capacity Cost Calculator — RCU, WCU &amp; Breakeven</title>
+    <meta name="description" content="Turn item size and request rate into DynamoDB RCU/WCU, then price the same workload on-demand and provisioned. Provisioned wins above 28.9% utilization.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="DynamoDB Capacity Cost Calculator — jslet">
+    <meta property="og:description" content="A 4.1 KB item costs two RCU per strongly consistent read. Convert item size into capacity units, then see where provisioned beats on-demand.">
+    <meta property="og:url" content="https://www.jslet.com/dynamodb-capacity-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="DynamoDB Capacity Cost Calculator — jslet">
+    <meta name="twitter:description" content="Every GSI adds a second write bill. Model RCU/WCU from item size and see the 28.9% utilization line where provisioned capacity takes over.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/dynamodb-capacity-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.45rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-val.txt { font-size: 1.02rem; letter-spacing: 0.2px; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .formula-box {
+            background: var(--bg-input); border-left: 3px solid var(--accent);
+            border-radius: var(--radius-sm); padding: 14px 18px; margin: 16px 0;
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.9rem;
+            line-height: 1.9; overflow-x: auto;
+        }
+        .pull {
+            border-left: 3px solid var(--gold);
+            padding: 4px 0 4px 18px; margin: 22px 0;
+            font-size: 1.02rem; line-height: 1.75; color: var(--text-secondary);
+        }
+    </style>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "DynamoDB Capacity Cost Calculator",
+      "description": "Converts DynamoDB item size and request rate into RCU and WCU at peak, prices the workload under both on-demand and provisioned capacity, and reports the utilization at which provisioned becomes cheaper.",
+      "url": "https://www.jslet.com/dynamodb-capacity-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How many RCUs does a 10 KB item need for a strongly consistent read?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Three. Reads are counted in 4 KB blocks, rounded up per request, so ceil(10 / 4) = 3 RCU. An eventually consistent read of the same item costs half that, 1.5 RCU, and a transactional read costs double, 6 RCU."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "When is provisioned capacity cheaper than on-demand for DynamoDB?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Above roughly 28.9% utilization of the provisioned ceiling. One WCU-month costs $0.4745 and delivers 2.628 million writes at full use, or $0.1806 per million, against $0.625 per million on demand. The ratio is the same for reads, because both unit prices were cut in the same proportion."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does a global secondary index consume its own write capacity?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Every write to the base table is propagated to each GSI, and that copy is billed against the index's own WCU. A table with three GSIs pays four times the base write cost per item, which is why write-heavy designs treat index count as a pricing decision rather than a query convenience."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How is DynamoDB item size measured for capacity billing?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Attribute names are counted along with values, numbers are variable length, and strings are counted as UTF-8 bytes. The total is rounded up to the next 1 KB for writes and the next 4 KB for reads, per request. A single item cannot exceed 400 KB including attribute names."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is there a per-partition limit above the provisioned total?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. A single partition supports up to 3,000 RCU and 1,000 WCU. Provisioning 10,000 WCU on a table splits the allowance across at least ten partitions, but a single hot partition key still caps at 1,000 WCU no matter how much capacity the table owns."
+      }
+    }
+  ]
+}
+    </script>
+</head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 120 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>⚡ <span>DynamoDB</span> Capacity Cost</h1>
+            <p>A DynamoDB bill is decided by two numbers that never appear next to each other in the console: how many kilobytes each request actually touches, and how much of the capacity you paid for is in use. Rounding happens before pricing, not after, so a 4.1 KB item costs twice what a 4.0 KB item does on a strongly consistent read. This page converts an item size and a request rate into capacity units, then prices the identical workload both ways.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Workload</h3>
+                <p class="card-desc">Enter the peak request rate, not the average. Provisioned capacity is bought at the peak, while on-demand is billed at whatever the traffic actually does, so the utilization field is what connects the two models.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="itemkb">Item size (KB)</label>
+                        <input type="number" class="unit-input" id="itemkb" value="1.5" step="0.1" min="0.1" max="400">
+                    </div>
+                    <div class="input-group">
+                        <label for="wps">Writes / sec at peak</label>
+                        <input type="number" class="unit-input" id="wps" value="50" step="1" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="rps">Reads / sec at peak</label>
+                        <input type="number" class="unit-input" id="rps" value="200" step="1" min="0">
+                    </div>
+                </div>
+                <div class="multi-input-row-3" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="cons">Read consistency</label>
+                        <select class="unit-input" id="cons">
+                            <option value="eventual">Eventually consistent (0.5 RCU / 4 KB)</option>
+                            <option value="strong" selected>Strongly consistent (1 RCU / 4 KB)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="wmode">Write mode</label>
+                        <select class="unit-input" id="wmode">
+                            <option value="standard" selected>Standard (1 WCU / KB)</option>
+                            <option value="txn">Transactional (2 WCU / KB)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="gsis">GSIs (each copies writes)</label>
+                        <input type="number" class="unit-input" id="gsis" value="1" step="1" min="0" max="20">
+                    </div>
+                </div>
+                <div class="multi-input-row-3" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="storage">Table + index storage (GB)</label>
+                        <input type="number" class="unit-input" id="storage" value="200" step="10" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="util">Average use of peak (%)</label>
+                        <input type="number" class="unit-input" id="util" value="35" step="1" min="0" max="100">
+                    </div>
+                    <div class="input-group">
+                        <label for="months">Period to project (months)</label>
+                        <input type="number" class="unit-input" id="months" value="12" step="1" min="1">
+                    </div>
+                </div>
+                <p class="card-desc" style="margin-top:12px;">Storage is priced once and added to both models, so the comparison isolates throughput. Write capacity covers the base table plus one copy per GSI; read capacity is estimated from the base table only, because index read traffic depends on which queries you route to it.</p>
+                <button class="btn-calc">Compare Both Models</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Monthly Bill, Both Models</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="od-val">$0</div><div class="metric-label">On-demand / month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="prov-val">$0</div><div class="metric-label">Provisioned / month</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="win-val">—</div><div class="metric-label">Cheaper model</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="wcu-val">0</div><div class="metric-label">WCU at peak</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="rcu-val">0</div><div class="metric-label">RCU at peak</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="be-val">28.9%</div><div class="metric-label">Breakeven use</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="wru-val">0</div><div class="metric-label">WRU / month (M)</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="period-val">$0</div><div class="metric-label">Cheaper, over period</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>Capacity units round up before they multiply</h2>
+
+            <p>DynamoDB does not bill bytes. It bills the number of capacity units a request consumes, and a unit is a fixed block of data. Writes are counted in <strong>1 KB</strong> blocks and reads in <strong>4 KB</strong> blocks, and the block count is rounded up per request, not amortised across a batch. Two requests that touch 0.6 KB each cost two write units, not 1.2.</p>
+
+            <div class="formula-box">
+WCU per write = ceil(item KB &divide; 1) &times; (2 if transactional)
+RCU per read  = ceil(item KB &divide; 4) &times; (1 strong | 0.5 eventual | 2 transactional)
+
+1 WCU = 1 write/sec of 1 KB
+1 RCU = 1 strongly consistent read/sec of 4 KB
+            </div>
+
+            <p>The read block is four times the write block because a read unit buys four times the throughput, which is why the two unit prices differ by exactly 5&times; in the published table and why a mixed workload cannot be costed with a single blended number.</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Item size</th><th>WCU per write</th><th>RCU, eventually consistent</th><th>RCU, strongly consistent</th></tr></thead>
+                <tbody>
+                    <tr><td>0.4 KB</td><td>1</td><td>0.5</td><td>1</td></tr>
+                    <tr><td>1.0 KB</td><td>1</td><td>0.5</td><td>1</td></tr>
+                    <tr><td>1.1 KB</td><td>2</td><td>0.5</td><td>1</td></tr>
+                    <tr><td>4.0 KB</td><td>4</td><td>0.5</td><td>1</td></tr>
+                    <tr><td>4.1 KB</td><td>5</td><td>1</td><td>2</td></tr>
+                    <tr><td>10 KB</td><td>10</td><td>1.5</td><td>3</td></tr>
+                    <tr><td>40 KB</td><td>40</td><td>5</td><td>10</td></tr>
+                </tbody>
+            </table>
+
+            <div class="pull">Crossing 4.0 KB by one byte doubles the read cost of every access to that item, forever. Crossing 1.0 KB doubles the write cost. Neither boundary shows up in a latency graph, which is why size-driven bills are so often discovered late.</div>
+
+            <h2>Item size is usually not the lever</h2>
+
+            <p>A typical record &mdash; a user row with an id, a status, an amount and a timestamp &mdash; lands somewhere between 60 and 300 bytes. That is one write unit and half a read unit, and no amount of JSON trimming moves it down, because the floor is one unit. For the majority of tables, the bill is set by the <em>number of requests</em>, and the largest available saving is removing a request pattern rather than shrinking an item.</p>
+
+            <p>The patterns that multiply request counts are boring and well known: a list screen that issues one query per row, a poll loop that re-reads the same item every second, a scan used as a query. One thousand eventually consistent reads per second of a 200-byte item costs 500 RCU, which is about $164 a month on demand. The same screen served by a single query that returns 20 rows costs a twentieth of that, and the item size never entered the calculation.</p>
+
+            <p>Size becomes the dominant term in three situations, and they are worth recognising because each has a different fix. Items over 1 KB, where every write pays the multiplier. Wide collections stored as a single item, which is the classic way to break the 400 KB limit and to burn write units on partial updates. And anything that stores a document blob in the item instead of in S3, where the read cost per page view is exact and unavoidable.</p>
+
+            <h2>On-demand versus provisioned: the 28.9% line</h2>
+
+            <p>The two models price the same unit differently, and the difference is a constant. One WCU-hour costs <strong>$0.00065</strong>; a 730-hour month of it costs <strong>$0.4745</strong>, and that month delivers 2.628 million writes if the capacity is fully used. On-demand charges <strong>$0.625 per million</strong> writes. Divide one by the other and provisioned capacity is 3.46&times; cheaper, <em>if you use all of it</em>.</p>
+
+            <div class="formula-box">
+provisioned per million = $0.4745 &divide; 2.628 = $0.1806
+on-demand per million   = $0.6250
+
+breakeven = 0.4745 &divide; 1.6425 = 28.9% utilization
+            </div>
+
+            <p>The same 28.9% applies to reads, because the read prices sit in the same 5:1 ratio and one RCU-hour delivers one read per second just as a WCU-hour delivers one write per second. A read-heavy table and a write-heavy table cross the line at the identical point, which is a useful thing to know when someone argues that provisioned capacity "only makes sense for writes".</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Average use of 200 WCU</th><th>On-demand / month</th><th>Provisioned / month</th><th>Difference</th></tr></thead>
+                <tbody>
+                    <tr><td>10%</td><td>$32.85</td><td>$94.90</td><td>On-demand saves $62.05</td></tr>
+                    <tr><td>25%</td><td>$82.13</td><td>$94.90</td><td>On-demand saves $12.78</td></tr>
+                    <tr><td>28.9%</td><td>$94.90</td><td>$94.90</td><td>Dead heat</td></tr>
+                    <tr><td>40%</td><td>$131.40</td><td>$94.90</td><td>Provisioned saves $36.50</td></tr>
+                    <tr><td>60%</td><td>$197.10</td><td>$94.90</td><td>Provisioned saves $102.20</td></tr>
+                    <tr><td>100%</td><td>$328.50</td><td>$94.90</td><td>Provisioned saves $233.60</td></tr>
+                </tbody>
+            </table>
+
+            <p>The table hides the part that actually decides the migration: a provisioned table that gets the peak wrong is not slower, it is <em>throttled</em>. On-demand absorbs a spike by design, at a price. Provisioned capacity is a bet that next month looks like this month, and the 28.9% line is the size of the reward for being right.</p>
+
+            <p>Auto scaling narrows the gap rather than closing it. It adjusts the provisioned level on a schedule measured in minutes against a target utilization that defaults to 70%, which is comfortably above the breakeven line, so a well-tuned auto-scaled table usually beats on-demand. But the floor never goes below one unit, the ceiling is whatever you configured, and a table that doubles in ten seconds will throttle while the policy is still deciding. Reserved capacity goes further in the same direction: one-year terms discount provisioned throughput by up to 54%, three-year terms by up to 77%, and both require a commitment that on-demand never asks for.</p>
+
+            <h2>Every index is a second write bill</h2>
+
+            <p>A global secondary index is a copy of your table, maintained by the service. When you write to the base table, DynamoDB writes the same change into every GSI whose keys are affected, and charges that write to the index's own capacity. Three GSIs means four write bills for one logical write, and the multiplier applies whether the index is queried or not.</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Design</th><th>WCU per 2 KB write</th><th>At 50 writes/sec</th><th>Monthly, provisioned</th></tr></thead>
+                <tbody>
+                    <tr><td>Base table only</td><td>2</td><td>100 WCU</td><td>$47.45</td></tr>
+                    <tr><td>Base + 1 GSI</td><td>4</td><td>200 WCU</td><td>$94.90</td></tr>
+                    <tr><td>Base + 3 GSIs</td><td>8</td><td>400 WCU</td><td>$189.80</td></tr>
+                    <tr><td>Base + 5 GSIs</td><td>12</td><td>600 WCU</td><td>$284.70</td></tr>
+                </tbody>
+            </table>
+
+            <p>Two details keep the arithmetic honest. A GSI item contains only the index keys and the projected attributes, so it is usually smaller than the base item &mdash; but the write is still rounded up to at least one WCU, so a 200-byte index still costs a full unit per write. And index reads are eventually consistent only, which halves their cost relative to a strongly consistent base read but rules out the pattern entirely inside a transaction.</p>
+
+            <p>The practical consequence is that index count belongs in the design review next to query count. An index added for one ad-hoc report keeps charging for every write for as long as it exists, and dropping an unused index is one of the few optimisations on this page that has no downside at all.</p>
+
+            <h2>The ceiling that capacity does not remove</h2>
+
+            <p>A single partition supports up to <strong>3,000 RCU and 1,000 WCU</strong>. Buying more capacity adds partitions, not throughput per key: a table provisioned at 10,000 WCU spreads that across at least ten partitions, and a single hot partition key still stops at 1,000 WCU. This is the most common reason a table with generous provisioned capacity throttles anyway, and it is invisible in every capacity calculator that stops at the total.</p>
+
+            <p>The related hard limits are worth keeping in view while sizing. An item cannot exceed 400 KB including attribute names. A transactional write costs double the units of the same write performed normally. And on-demand tables start a new table at 4,000 WCU and 12,000 RCU, then allow the ceiling to double once the previous peak is established, which is why the first hour of a launch is the one that throttles.</p>
+
+            <h2>What this page does not price</h2>
+
+            <p>Several DynamoDB charges sit outside the capacity model, and each has a habit of appearing on a bill that was "fully modelled".</p>
+
+            <p><strong>Streams.</strong> Stream read requests are billed separately from table capacity, per 100,000 requests. A consumer that polls aggressively can exceed the table's own throughput cost.</p>
+
+            <p><strong>Backups and point-in-time recovery.</strong> Both are priced per GB-month on top of storage, and PITR applies to the whole table whether or not a restore is ever performed.</p>
+
+            <p><strong>Global tables.</strong> A replicated write is billed as a write in every region that receives it, so a three-region table pays three write bills for the same operation, plus cross-region replication traffic.</p>
+
+            <p><strong>Table class.</strong> The Standard-IA class trades a higher per-request price for a lower storage price, which moves the breakeven point and is worth a separate model rather than a footnote.</p>
+
+            <p><strong>The free tier.</strong> 25 GB of storage and 25 WCU / 25 RCU are included per account per region, which covers small tables entirely and is deliberately not subtracted here, because a projection that assumes the free tier stops being a projection the moment the table grows.</p>
+        </section>
+
+        <section class="seo-section" id="pricing-basis">
+            <h2>Pricing Basis, Sources &amp; Assumptions</h2>
+            <p>Every rate on this page is a <strong>published vendor list price</strong> &mdash; no negotiated discounts, private pricing, savings plans, credits or enterprise agreements. Totals are in <strong>USD</strong> and exclude tax. Rates were last checked against the sources below on <time datetime="2026-11-08">2026-11-08</time>.</p>
+            <table class="cost-table">
+                <thead><tr><th>Pricing input</th><th>Basis used on this page</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Source</strong></td><td><a href="https://aws.amazon.com/dynamodb/pricing/on-demand/" rel="nofollow noopener" target="_blank">Amazon DynamoDB on-demand pricing</a> for $0.625 per million write request units, $0.125 per million read request units and $0.25 per GB-month of Standard table class storage; <a href="https://aws.amazon.com/dynamodb/pricing/provisioned/" rel="nofollow noopener" target="_blank">provisioned capacity pricing</a> for $0.00065 per WCU-hour and $0.00013 per RCU-hour.</td></tr>
+                    <tr><td><strong>Region</strong></td><td>US East (N. Virginia), us-east-1, DynamoDB Standard table class. Other regions are priced higher and the difference is not modelled here.</td></tr>
+                    <tr><td><strong>Currency</strong></td><td>USD &mdash; on-demand and provisioned list price, tax excluded</td></tr>
+                    <tr><td><strong>Last checked</strong></td><td><time datetime="2026-11-08">2026-11-08</time> &mdash; all five rates plus the 1 KB write and 4 KB read increment definitions were re-read from the two pages on this date.</td></tr>
+                </tbody>
+            </table>
+            <h3>Modelling assumptions</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li><strong>Peak versus average.</strong> Provisioned capacity is sized from the peak values entered. On-demand cost is the peak multiplied by the utilization field, because that is what the meter actually counts.</li>
+                <li><strong>Month length.</strong> 730 hours is used for monthly figures, the billing convention of (365 &times; 24) &divide; 12, which implies 2,628,000 seconds per month. Real months bill 672 to 744 hours.</li>
+                <li><strong>Year length.</strong> 8,760 hours, exactly 730 &times; 12, so the monthly and annual columns never disagree.</li>
+                <li><strong>Unit rounding.</strong> Capacity is rounded up per request to whole units, and provisioned capacity is rounded up to whole WCU and RCU. Fractional read units from eventually consistent reads still require a full RCU to be provisioned.</li>
+                <li><strong>Index reads.</strong> Read capacity covers the base table only. Reads served from a GSI are billed against the index and are not added to the total.</li>
+                <li><strong>Excluded.</strong> Streams, backups, point-in-time recovery, global table replication, DAX, data transfer, the free tier, savings plans and reserved capacity discounts.</li>
+            </ul>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/database-rows-to-storage-est">DB Rows to Storage &rarr;</a>
+                <a href="/db-instance-sizing">DB Instance Sizing &rarr;</a>
+                <a href="/redis-ram-to-raw-json-ratio">Redis Key Inflation &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/api-rate-limit-cost">Rate Limit to Cost &rarr;</a>
+                <a href="/public-ipv4-cost">Public IPv4 Cost &rarr;</a>
+            </div>
+        </div>
+<footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+                
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 120 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/methodology">Methodology</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">RSS &amp; Updates</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    
+    <script>
+    (function () {
+        // 2026-11-08 核对的 us-east-1 公开牌价（DynamoDB Standard 表类）
+        var OD_W_PER_M = 0.625;    // 每百万 WRU
+        var OD_R_PER_M = 0.125;    // 每百万 RRU
+        var PROV_W_HR = 0.00065;   // 每 WCU-小时
+        var PROV_R_HR = 0.00013;   // 每 RCU-小时
+        var STORAGE_GB_MO = 0.25;  // 每 GB-月
+        var HOURS_PER_MONTH = 730;
+        var SEC_PER_MONTH = HOURS_PER_MONTH * 3600; // 2,628,000
+
+        function num(id) {
+            var el = document.getElementById(id);
+            if (!el) { return 0; }
+            var v = parseFloat(el.value);
+            return isFinite(v) && v > 0 ? v : 0;
+        }
+
+        function money(v) {
+            return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function commas(v) {
+            return Math.round(v).toLocaleString('en-US');
+        }
+
+        function compute() {
+            var kb = Math.min(400, Math.max(0, num('itemkb')));
+            var wps = Math.floor(num('wps'));
+            var rps = Math.floor(num('rps'));
+            var gsis = Math.min(20, Math.floor(num('gsis')));
+            var gb = num('storage');
+            var util = Math.min(1, Math.max(0, num('util') / 100));
+            var months = Math.max(1, Math.round(num('months') || 12));
+
+            var cons = document.getElementById('cons').value;
+            var wmode = document.getElementById('wmode').value;
+
+            // 计费按整块向上取整：写 1 KB、读 4 KB，逐请求而非逐批
+            var wuPerWrite = kb > 0 ? Math.ceil(kb / 1) : 0;
+            if (wmode === 'txn') { wuPerWrite *= 2; }
+            var blocks = kb > 0 ? Math.ceil(kb / 4) : 0;
+            var ruPerRead = blocks * (cons === 'eventual' ? 0.5 : 1);
+
+            // 每个 GSI 复制一份写入，按索引自身 WCU 计费
+            var writeUnits = wps * wuPerWrite * (1 + gsis);
+            var readUnits = rps * ruPerRead;
+
+            var storageMonthly = gb * STORAGE_GB_MO;
+
+            var odMonthly = writeUnits * util * SEC_PER_MONTH / 1e6 * OD_W_PER_M
+                          + readUnits * util * SEC_PER_MONTH / 1e6 * OD_R_PER_M
+                          + storageMonthly;
+
+            var provW = Math.ceil(writeUnits);
+            var provR = Math.ceil(readUnits);
+            var provMonthly = provW * PROV_W_HR * HOURS_PER_MONTH
+                            + provR * PROV_R_HR * HOURS_PER_MONTH
+                            + storageMonthly;
+
+            // 满负荷下每单位容量的两条价目之比，即交叉点
+            var beRatio = (PROV_W_HR * HOURS_PER_MONTH) /
+                          (SEC_PER_MONTH / 1e6 * OD_W_PER_M);
+
+            var cheaper = odMonthly <= provMonthly ? odMonthly : provMonthly;
+            var useProv = provMonthly < odMonthly;
+            var gap = Math.abs(odMonthly - provMonthly);
+
+            document.getElementById('od-val').innerText = money(odMonthly);
+            document.getElementById('prov-val').innerText = money(provMonthly);
+            document.getElementById('win-val').innerText = gap < 0.005
+                ? 'Tied'
+                : (useProv ? 'Provisioned' : 'On-demand');
+            document.getElementById('wcu-val').innerText = commas(provW);
+            document.getElementById('rcu-val').innerText = commas(provR);
+            document.getElementById('be-val').innerText = (beRatio * 100).toFixed(1) + '%';
+            document.getElementById('wru-val').innerText = (writeUnits * SEC_PER_MONTH / 1e6).toFixed(1);
+            document.getElementById('period-val').innerText = money(cheaper * months);
+
+            document.getElementById('results-params').innerText =
+                kb.toFixed(2) + ' KB items · ' + wps + ' writes/s + ' + rps + ' reads/s at peak · ' +
+                wuPerWrite + ' WCU/write, ' + ruPerRead + ' RCU/read · ' +
+                gsis + ' GSI' + (gsis === 1 ? '' : 's') + ' · ' +
+                Math.round(util * 100) + '% average use · ' +
+                gb + ' GB storage · ' + months + '-month projection';
+
+            document.getElementById('results-card').style.display = 'block';
+        }
+
+        document.addEventListener('DOMContentLoaded', compute);
+        document.querySelector('.btn-calc').addEventListener('click', compute);
+    })();
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>
