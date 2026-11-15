@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>EBS Snapshot Cost Calculator — Retention &amp; Archive</title>
+    <meta name="description" content="EBS snapshot storage is set by retention days times churn, not by volume size. Model incremental growth, then compare standard against the 90-day archive floor.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="EBS Snapshot Cost Calculator — jslet">
+    <meta property="og:description" content="The first snapshot costs the whole dataset; the next thirty cost only the delta. Retention × churn decides the bill, and archive storage is 4× cheaper with a 90-day floor.">
+    <meta property="og:url" content="https://www.jslet.com/ebs-snapshot-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="EBS Snapshot Cost Calculator — jslet">
+    <meta name="twitter:description" content="Snapshot storage grows with retention × daily change, never with provisioned size. See the standard tier against the archive tier, including the 90-day minimum.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/ebs-snapshot-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.45rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-val.txt { font-size: 1.02rem; letter-spacing: 0.2px; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .formula-box {
+            background: var(--bg-input); border-left: 3px solid var(--accent);
+            border-radius: var(--radius-sm); padding: 14px 18px; margin: 16px 0;
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.9rem;
+            line-height: 1.9; overflow-x: auto;
+        }
+        .pull {
+            border-left: 3px solid var(--gold);
+            padding: 4px 0 4px 18px; margin: 22px 0;
+            font-size: 1.02rem; line-height: 1.75; color: var(--text-secondary);
+        }
+    </style>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "EBS Snapshot Cost Calculator",
+      "description": "Models Amazon EBS snapshot storage growth from retained snapshot count and daily change rate, prices it on the standard and archive tiers, and reports the retrieval break-even.",
+      "url": "https://www.jslet.com/ebs-snapshot-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Why does my EBS snapshot storage not match the volume size?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Snapshots store written blocks, not provisioned capacity. A 1,000 GiB volume holding 300 GiB of data produces a first snapshot of roughly 300 GiB, and EBS does not save empty blocks at all. The number in the console is the sum of distinct blocks referenced by the retained snapshot chain, which is why it grows with change rate rather than with volume size."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does every new snapshot cost as much as the first one?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. The first snapshot of a volume is a full copy of the used blocks; each later snapshot stores only blocks that changed since the previous one. Billing follows the total distinct storage, so thirty daily snapshots of a volume whose data changes two percent a day cost roughly 1.58 times the first snapshot, not thirty times."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is the EBS snapshot archive tier always cheaper?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It is four times cheaper per gigabyte-month, $0.0125 against $0.05, but it carries a 90-day minimum retention, a $0.03 per GB retrieval fee, and for a temporary restore the copy is billed at the standard rate while the archived copy keeps billing. A single restore breaks even only if the snapshot has been archived for at least 24 days."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does deleting an old snapshot free storage?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Only if no remaining snapshot references those blocks. Snapshots form a chain, and a later snapshot depends on blocks first written by an earlier one, so deleting a snapshot in the middle of the chain usually frees nothing. Deleting the entire chain for a volume is what releases the storage."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do snapshots keep billing after the volume is deleted?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Snapshots are independent objects stored in S3 and are billed until each one is deleted, whether or not the source volume still exists. Orphaned snapshots from decommissioned volumes are one of the few EBS charges that can run for years without any running resource to explain them."
+      }
+    }
+  ]
+}
+    </script>
+</head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 122 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>🗄️ <span>EBS</span> Snapshot Cost</h1>
+            <p>Snapshot storage is the one EBS meter that has nothing to do with what you provisioned. It counts blocks that have been written and are still referenced by a retained snapshot, so the bill is set by two numbers an infrastructure diagram never shows: how long you keep snapshots, and how much of the data changes between them. A volume that churns two percent a day and keeps thirty days of history carries half again its own data in snapshots. The same volume kept for ninety days carries 2.8 times.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Backup Policy</h3>
+                <p class="card-desc">Change rate is the share of live data rewritten between two snapshots. A database writing its whole working set daily is 100%; a static file server is near zero. Use the sustained figure over the retention window, not a peak.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="size">Volume size (GiB)</label>
+                        <input type="number" class="unit-input" id="size" value="1000" step="50" min="1" max="65536">
+                    </div>
+                    <div class="input-group">
+                        <label for="used">Data in use (GiB)</label>
+                        <input type="number" class="unit-input" id="used" value="400" step="10" min="0" max="65536">
+                    </div>
+                    <div class="input-group">
+                        <label for="vols">Volumes in scope</label>
+                        <input type="number" class="unit-input" id="vols" value="5" step="1" min="1" max="2000">
+                    </div>
+                </div>
+                <div class="multi-input-row-3" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="change">Daily change (% of data)</label>
+                        <input type="number" class="unit-input" id="change" value="2" step="0.5" min="0" max="100">
+                    </div>
+                    <div class="input-group">
+                        <label for="perday">Snapshots per day</label>
+                        <input type="number" class="unit-input" id="perday" value="1" step="1" min="1" max="96">
+                    </div>
+                    <div class="input-group">
+                        <label for="retention">Retention (days)</label>
+                        <input type="number" class="unit-input" id="retention" value="30" step="1" min="1" max="3650">
+                    </div>
+                </div>
+                <div class="multi-input-row" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="tier">Storage tier</label>
+                        <select class="unit-input" id="tier">
+                            <option value="standard" selected>Standard &mdash; $0.05/GiB-mo</option>
+                            <option value="archive">Archive &mdash; $0.0125, 90-day floor</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="restores">Restores per month</label>
+                        <input type="number" class="unit-input" id="restores" value="0" step="1" min="0" max="100">
+                    </div>
+                </div>
+                <p class="card-desc" style="margin-top:12px;">Restores matter only on the archive tier, where each one costs $0.03 per GB of snapshot retrieved. On the standard tier the field is ignored, because a standard snapshot can be restored at no retrieval charge.</p>
+                <button class="btn-calc">Price This Policy</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Monthly Backup Bill</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="count-val">0</div><div class="metric-label">Snapshots retained</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="stored-val">0 GiB</div><div class="metric-label">Stored per volume</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="first-val">$0</div><div class="metric-label">First snapshot</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="per-val">$0</div><div class="metric-label">Per volume / month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="fleet-val">$0</div><div class="metric-label">Fleet / month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="year-val">$0</div><div class="metric-label">Fleet / year</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="day-val">$0</div><div class="metric-label">Cost of +1 day</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="multi-val">1.00&times;</div><div class="metric-label">Versus live data</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>The first snapshot is the expensive one</h2>
+
+            <p>An EBS snapshot copies the blocks that have been written, not the space that was provisioned. A 1,000 GiB volume holding 400 GiB of data produces a first snapshot of about 400 GiB, and the 600 GiB of never-written space costs nothing &mdash; snapshots do not save empty blocks. Every snapshot after that stores only the blocks that changed since the previous one, so the marginal price collapses immediately and then stays low.</p>
+
+            <div class="formula-box">
+retained      = snapshots per day &times; retention days
+stored        = data in use &times; (1 + (retained &minus; 1) &times; daily change)
+standard      = stored &times; $0.05   per GiB-month
+archive       = stored &times; $0.0125 per GiB-month, 90-day floor
+retrieval     = restored GB &times; $0.03  (archive only)
+
+400 GiB, 2%/day, 30 daily snapshots
+stored        = 400 &times; (1 + 29 &times; 0.02) = 632 GiB
+standard      = 632 &times; $0.05 = $31.60 / month
+            </div>
+
+            <p>Thirty snapshots of a 400 GiB dataset cost $31.60 a month, and the first one alone would have cost $20.00. That is the shape of the whole problem: the twenty-nine extra copies added $11.60, so the policy is cheap and the <em>first</em> copy is the expensive part. Which means the question worth asking is not "how many snapshots" but "how much data am I keeping that I no longer need".</p>
+
+            <h2>Retention and churn set the bill, size does not</h2>
+
+            <p>Doubling retention almost doubles the incremental term, and doubling the change rate does the same. Doubling the volume size does nothing at all unless the extra space is actually written to. This is the inverse of how people usually reason about backup cost, and it is why a 4 TiB volume holding 200 GiB of cold archives is cheaper to protect than a 500 GiB database that rewrites itself daily.</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Policy on 400 GiB of data</th><th>Snapshots</th><th>Stored</th><th>Standard / month</th></tr></thead>
+                <tbody>
+                    <tr><td>7 days, 1%/day</td><td>7</td><td>424 GiB</td><td>$21.20</td></tr>
+                    <tr><td>30 days, 1%/day</td><td>30</td><td>516 GiB</td><td>$25.80</td></tr>
+                    <tr><td>30 days, 2%/day</td><td>30</td><td>632 GiB</td><td>$31.60</td></tr>
+                    <tr><td>30 days, 5%/day</td><td>30</td><td>980 GiB</td><td>$49.00</td></tr>
+                    <tr><td>90 days, 2%/day</td><td>90</td><td>1,112 GiB</td><td>$55.60</td></tr>
+                    <tr><td>90 days, 5%/day</td><td>90</td><td>2,180 GiB</td><td>$109.00</td></tr>
+                    <tr><td>24 snapshots/day, 30 days, 2%/day</td><td>720</td><td>6,152 GiB</td><td>$307.60</td></tr>
+                </tbody>
+            </table>
+
+            <p>The last row is the one that surprises people. Taking a snapshot every hour instead of every day multiplies the retained copies by twenty-four and the bill by roughly ten, because the increments are smaller but there are twenty-four times as many of them. Hourly retention over a week is a reasonable policy. Hourly retention over a month is how a $30 backup line becomes a $300 one.</p>
+
+            <div class="pull">Snapshot storage is 62.5% of the price of live storage per gigabyte. Retaining one full extra copy of a dataset costs $0.05 where the gp3 volume holding it costs $0.08 &mdash; the backup is not free, and it is not cheap.</div>
+
+            <h2>Deleting a snapshot usually frees nothing</h2>
+
+            <p>Snapshots are a chain, not a set of independent files. Each new snapshot references blocks written by earlier ones and adds only what changed, so a block that first appeared in Tuesday's snapshot stays on the bill as long as any later snapshot still points at it. Deleting Tuesday's snapshot while Thursday's exists releases the reference but not the bytes.</p>
+
+            <p>The practical consequence is that pruning a chain from the middle is a no-op on the invoice, and pruning it from the front frees only the blocks that no surviving snapshot still needs. To actually reclaim storage you delete the entire chain for a volume, which is why retention policies that expire snapshots one at a time appear not to work. The bill does step down eventually, as the last snapshot referencing a given generation of blocks expires, but the step is proportional to the age of the data, not to the snapshot you deleted.</p>
+
+            <p>The same independence cuts the other way when a volume is decommissioned. Snapshots live in S3 and have no dependency on the source volume, so destroying the instance and the volume leaves the backups billing indefinitely. Orphaned snapshot chains are one of the few EBS charges that can run for years with no running resource to explain them, and they are invisible in any view that groups cost by instance.</p>
+
+            <h2>Archive is four times cheaper with a 90-day floor</h2>
+
+            <p>EBS Snapshots Archive stores a full copy of a snapshot at <strong>$0.0125 per GiB-month</strong>, a quarter of the standard rate. It is a genuinely different product rather than a discount tier, and three of its properties decide whether it saves money.</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Property</th><th>Standard</th><th>Archive</th></tr></thead>
+                <tbody>
+                    <tr><td>Storage</td><td>$0.05 / GiB-month</td><td>$0.0125 / GiB-month</td></tr>
+                    <tr><td>Minimum retention</td><td>None</td><td>90 days, billed even if deleted early</td></tr>
+                    <tr><td>Retrieval fee</td><td>$0.00</td><td>$0.03 / GB</td></tr>
+                    <tr><td>Restore time</td><td>Immediate</td><td>Minutes to hours</td></tr>
+                    <tr><td>Restored copy</td><td>&mdash;</td><td>Billed at $0.05 while restored; archive copy keeps billing</td></tr>
+                    <tr><td>Typical restore window</td><td>&mdash;</td><td>1 to 5 days, then re-archived</td></tr>
+                </tbody>
+            </table>
+
+            <p>The 90-day floor turns storage into a minimum commitment: archiving a 400 GiB snapshot and deleting it the next morning still bills 90 days at $0.0125, or $15.00 &mdash; the same as 22.5 days of leaving it in the standard tier. Delete it at day 70 and the remaining 20 days are charged anyway.</p>
+
+            <p>Retrieval is the sharper edge. The saving is $0.0375 per GiB-month, and one restore costs $0.03 per GB, so a snapshot must sit archived for <strong>24 days</strong> before a single restore has paid for itself. Restore the same archive twice a quarter and the standard tier was cheaper all along, before the restore window is even counted. Archive is for the copy you are keeping for a compliance auditor, not for the copy you might need on Tuesday.</p>
+
+            <h2>What the model assumes, and where it bends</h2>
+
+            <p>The formula multiplies the change rate by the retained snapshot count, which treats each snapshot as storing a fresh copy of every changed block. That is right for append-heavy workloads and for filesystems that allocate copy-on-write, where an overwritten block becomes a new block and the old one survives. It overstates the bill when a workload rewrites the same blocks in place, because the second and third versions of a block still occupy one slot in the chain.</p>
+
+            <p>The error is bounded and worth understanding rather than eliminating. The lower bound is the size of the live data, since the first snapshot already contains every written block. The upper bound is the total bytes written since the chain began, which for a heavy writer can be several times the dataset. Real workloads land between the two, and a figure derived from this page should be read as the shape of the bill rather than a quote.</p>
+
+            <p>What is not modelled, and belongs in any real estimate: incremental snapshot copies to another region, which bill data transfer plus destination storage and are priced separately; Fast Snapshot Restore at $0.75 per DSU-hour, charged for as long as the feature is enabled rather than per restore; EBS direct API request charges for block-level backup tools; and the 30 GiB of free snapshot storage per account, which is not subtracted for the same reason as everywhere else on this site.</p>
+
+            <p>The cheapest change to most backup bills is not a tier and not a tool. It is asking which of the retained snapshots would ever be restored, and deleting the chain behind the answer.</p>
+        </section>
+
+        <section class="seo-section" id="pricing-basis">
+            <h2>Pricing Basis, Sources &amp; Assumptions</h2>
+            <p>Every rate on this page is a <strong>published vendor list price</strong> &mdash; no negotiated discounts, private pricing, savings plans, credits or enterprise agreements. Totals are in <strong>USD</strong> and exclude tax. Rates were last checked against the sources below on <time datetime="2026-11-16">2026-11-16</time>.</p>
+            <table class="cost-table">
+                <thead><tr><th>Pricing input</th><th>Basis used on this page</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Source</strong></td><td><a href="https://aws.amazon.com/ebs/pricing/" rel="nofollow noopener" target="_blank">Amazon EBS pricing</a> for the snapshot billing rules, the 90-day archive minimum, the early-delete charge and the temporary-restore behaviour, cross-checked against the <a href="https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ebs.json" rel="nofollow noopener" target="_blank">AWS price list feed for EBS</a> for the exact us-east-1 rates: $0.05 per GiB-month for standard snapshot storage, $0.0125 per GiB-month for archive storage and $0.03 per GB for archive retrieval.</td></tr>
+                    <tr><td><strong>Region</strong></td><td>US East (N. Virginia), us-east-1. Other regions are priced higher and the difference is not modelled here.</td></tr>
+                    <tr><td><strong>Currency</strong></td><td>USD &mdash; list price, tax excluded</td></tr>
+                    <tr><td><strong>Last checked</strong></td><td><time datetime="2026-11-16">2026-11-16</time> &mdash; all three snapshot rates plus the 90-day minimum were re-read from both sources on this date.</td></tr>
+                </tbody>
+            </table>
+            <h3>Modelling assumptions</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li><strong>Steady state.</strong> Figures describe a chain that has reached its retention depth and is rotating, not the ramp-up month. A new policy costs less than this in month one and converges upward.</li>
+                <li><strong>Change rate.</strong> The share of live data rewritten between consecutive snapshots, applied as newly stored bytes. In-place rewrites that EBS deduplicates will cost less; append-only workloads cost the same or slightly more.</li>
+                <li><strong>Empty blocks.</strong> Never counted. Storage is driven by data in use, not by provisioned volume size, and provisioned size is asked for only to show the contrast.</li>
+                <li><strong>Deletion behaviour.</strong> The model prices retained snapshots only, and does not attempt to model the block-level reference counting that makes mid-chain deletion a no-op. Treat deletions as reclaiming storage only when the whole chain goes.</li>
+                <li><strong>Archive floor.</strong> A 90-day minimum applies per archived snapshot. Early deletion bills the remainder of the minimum, rounded down to the nearest hour.</li>
+                <li><strong>Restores.</strong> Priced at $0.03 per GB of retrieved snapshot, charged per restore event. The restored copy's standard-tier storage during the restore window is excluded because the window is user-chosen and typically days, not months.</li>
+                <li><strong>Excluded.</strong> Cross-region snapshot copy, Fast Snapshot Restore, EBS direct APIs, lifecycle policies, the free tier, and any committed-use discount.</li>
+            </ul>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/ebs-volume-cost">EBS Volume Cost &rarr;</a>
+                <a href="/backup-cost">Backup Cost &rarr;</a>
+                <a href="/cloud-storage-cost">Cloud Storage Cost &rarr;</a>
+                <a href="/s3-lifecycle-cost">S3 Lifecycle Cost &rarr;</a>
+                <a href="/dynamodb-capacity-cost">DynamoDB Capacity Cost &rarr;</a>
+                <a href="/data-migration-time">Data Migration Time &rarr;</a>
+            </div>
+        </div>
+<footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 122 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/methodology">Methodology</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">RSS &amp; Updates</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+
+    <script>
+    (function () {
+        // 2026-11-16 核对的 us-east-1 公开牌价（AWS 价目 feed + EBS 定价页）
+        var STD_GB = 0.05;         // 标准层每 GiB-月
+        var ARCHIVE_GB = 0.0125;   // 归档层每 GiB-月
+        var RETRIEVAL_GB = 0.03;   // 归档取回每 GB
+        var ARCHIVE_MIN_DAYS = 90; // 归档最短留存
+
+        function num(id, def) {
+            var el = document.getElementById(id);
+            if (!el) { return def; }
+            var v = parseFloat(el.value);
+            return isFinite(v) ? v : def;
+        }
+
+        function money(v) {
+            if (!isFinite(v)) { v = 0; }
+            return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function commas(v) {
+            if (!isFinite(v)) { v = 0; }
+            return Math.round(v).toLocaleString('en-US');
+        }
+
+        function compute() {
+            var size = Math.max(1, Math.min(65536, num('size', 1000)));
+            var used = Math.max(0, Math.min(size, num('used', 400)));
+            var vols = Math.max(1, Math.min(2000, Math.floor(num('vols', 5))));
+            var change = Math.min(100, Math.max(0, num('change', 2)));
+            var perDay = Math.max(1, Math.min(96, Math.floor(num('perday', 1))));
+            var retention = Math.max(1, Math.min(3650, Math.floor(num('retention', 30))));
+            var restores = Math.max(0, Math.min(100, Math.floor(num('restores', 0))));
+            var tier = document.getElementById('tier').value;
+
+            var retained = perDay * retention;
+            var stored = used * (1 + (retained - 1) * change / 100);
+            if (!isFinite(stored) || stored < 0) { stored = 0; }
+
+            var rate = tier === 'archive' ? ARCHIVE_GB : STD_GB;
+            var storageCost = stored * rate;
+
+            // 归档：90 天最低留存按 GiB 折算；取回按 GB 计费
+            var floorCost = 0, retrievalCost = 0;
+            if (tier === 'archive') {
+                if (retention < ARCHIVE_MIN_DAYS) {
+                    // 提前删除仍按剩余留存天数计费，30 天=1 个月
+                    floorCost = stored * rate * (ARCHIVE_MIN_DAYS - retention) / 30;
+                }
+                retrievalCost = stored * restores * RETRIEVAL_GB;
+            }
+
+            var perVol = storageCost + floorCost + retrievalCost;
+            var fleet = perVol * vols;
+            var dayCost = used * change / 100 * rate;
+            var multi = used > 0 ? stored / used : 0;
+
+            document.getElementById('count-val').innerText = commas(retained);
+            document.getElementById('stored-val').innerText = commas(stored) + ' GiB';
+            document.getElementById('first-val').innerText = money(used * rate);
+            document.getElementById('per-val').innerText = money(perVol);
+            document.getElementById('fleet-val').innerText = money(fleet);
+            document.getElementById('year-val').innerText = money(fleet * 12);
+            document.getElementById('day-val').innerText = money(dayCost);
+            document.getElementById('multi-val').innerText = multi.toFixed(2) + '\u00d7';
+
+            document.getElementById('results-params').innerText =
+                commas(used) + ' GiB in use on a ' + commas(size) + ' GiB volume \u00b7 ' +
+                change + '% change/day \u00b7 ' + perDay + ' snapshot' + (perDay === 1 ? '' : 's') +
+                '/day \u00b7 ' + retention + '-day retention \u00b7 ' + commas(vols) + ' volume' +
+                (vols === 1 ? '' : 's') + ' \u00b7 ' + tier + ' tier';
+
+            document.getElementById('results-card').style.display = 'block';
+        }
+
+        document.addEventListener('DOMContentLoaded', compute);
+        document.querySelector('.btn-calc').addEventListener('click', compute);
+    })();
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>EBS Volume Cost Calculator — gp3 IOPS &amp; Throughput</title>
+    <meta name="description" content="Price an EBS volume from size, IOPS and throughput. The 3,000 IOPS baseline is free on every volume, so gp2 needs 1,000 GiB to match a 100 GiB gp3.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:title" content="EBS Volume Cost Calculator — jslet">
+    <meta property="og:description" content="Every gp3 volume ships with 3,000 IOPS and 125 MiB/s included. Model storage, marginal IOPS and throughput separately, then compare against gp2 and io2.">
+    <meta property="og:url" content="https://www.jslet.com/ebs-volume-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="EBS Volume Cost Calculator — jslet">
+    <meta name="twitter:description" content="Storage, IOPS and throughput are three separate meters. IOPS above 3,000 costs $5 per thousand; throughput above 125 MiB/s costs $0.04 per MiB/s.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/ebs-volume-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) {
+            .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; }
+        }
+        select.unit-input {
+            width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input);
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            transition: border-color 0.2s, box-shadow 0.2s; appearance: none; cursor: pointer;
+        }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px; margin-top: 14px;
+        }
+        .metric-tile {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 14px 16px; text-align: center;
+        }
+        .metric-tile .metric-val {
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+            font-size: 1.45rem; font-weight: 700; color: var(--accent);
+        }
+        .metric-tile .metric-val.txt { font-size: 1.02rem; letter-spacing: 0.2px; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .formula-box {
+            background: var(--bg-input); border-left: 3px solid var(--accent);
+            border-radius: var(--radius-sm); padding: 14px 18px; margin: 16px 0;
+            font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.9rem;
+            line-height: 1.9; overflow-x: auto;
+        }
+        .pull {
+            border-left: 3px solid var(--gold);
+            padding: 4px 0 4px 18px; margin: 22px 0;
+            font-size: 1.02rem; line-height: 1.75; color: var(--text-secondary);
+        }
+        .warn-line {
+            margin-top: 14px; padding: 10px 14px; border-radius: var(--radius-sm);
+            background: rgba(217, 119, 6, 0.08); border: 1px solid rgba(217, 119, 6, 0.35);
+            font-size: 0.86rem; color: var(--text-secondary); display: none;
+        }
+    </style>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "EBS Volume Cost Calculator",
+      "description": "Prices an Amazon EBS volume from provisioned size, IOPS and throughput, separating the per-gigabyte storage charge from the marginal IOPS and throughput charges above the gp3 baseline, and compares the result against gp2 and io2.",
+      "url": "https://www.jslet.com/ebs-volume-cost",
+      "applicationCategory": "EngineeringApplication",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+    </script>
+
+    <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How much does 3,000 IOPS on EBS cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Nothing, on a gp3 volume. Every gp3 volume includes 3,000 provisioned IOPS and 125 MiB/s of throughput at no extra charge, regardless of volume size, so a 100 GiB volume at baseline costs $8.00 a month and delivers $20.00 a month of performance at the marginal rates."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why is gp2 more expensive than gp3 for the same IOPS?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "gp2 grants IOPS per gigabyte, at three IOPS per GiB, while gp3 grants a flat 3,000 IOPS per volume. Reaching 3,000 IOPS on gp2 therefore requires a 1,000 GiB volume costing $100.00 a month, against $8.00 for a 100 GiB gp3 volume carrying the same 3,000 IOPS. The gap closes only above roughly 1,000 GiB, where gp2 starts to give more IOPS per dollar of storage."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the maximum IOPS and throughput for a gp3 volume?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "80,000 IOPS and 2,000 MiB/s per volume, provisioned independently, subject to a ceiling of 500 IOPS per GiB of volume size and a floor of 160 GiB before the full 80,000 becomes available. Throughput reaches its 2,000 MiB/s maximum from 8,000 IOPS and 16 GiB upward. Anything beyond those numbers requires io2 Block Express, which reaches 256,000 IOPS and 4,000 MiB/s."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does adding more EBS volumes increase total IOPS?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, and at no extra storage cost. Twenty 100 GiB gp3 volumes cost the same $160.00 a month as one 2,000 GiB volume, but the twenty carry 60,000 IOPS of included baseline while the single volume would have to buy 57,000 IOPS at $285.00 a month to reach the same figure. Striping them into one filesystem with RAID 0 or LVM aggregates that throughput, at the cost of losing independent failure domains."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "At what block size does throughput rather than IOPS become the limit?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "At 25.6 KiB. 80,000 IOPS multiplied by 25.6 KiB is exactly 2,000 MiB/s, so any workload with a larger block size hits the throughput cap before the IOPS cap; a 4 KiB workload reaches only 312.5 MiB/s at the same IOPS ceiling and never approaches the throughput limit."
+      }
+    }
+  ]
+}
+    </script>
+</head>
+<body>
+
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 122 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>⚡ <span>EBS</span> Volume Cost</h1>
+            <p>An EBS bill has three meters that never appear on the same screen: gigabytes provisioned, IOPS provisioned, and throughput provisioned. The first is linear in size and easy. The other two are <em>step functions</em> that start charging only after a free allowance you already paid for &mdash; 3,000 IOPS and 125 MiB/s on every gp3 volume, whatever its size. Get the allowance wrong and the same 3,000 IOPS prices at $8 or at $100 depending on which volume type you chose.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <!-- INPUT CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Provisioning</h3>
+                <p class="card-desc">Enter the numbers as they appear in the volume configuration, not the numbers the application achieved. EBS bills what is provisioned, so an idle volume costs exactly as much as a busy one of the same shape.</p>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="size">Volume size (GiB)</label>
+                        <input type="number" class="unit-input" id="size" value="500" step="10" min="1" max="65536">
+                    </div>
+                    <div class="input-group">
+                        <label for="count">Number of volumes</label>
+                        <input type="number" class="unit-input" id="count" value="2" step="1" min="1" max="500">
+                    </div>
+                </div>
+                <div class="multi-input-row" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="iops">Provisioned IOPS</label>
+                        <input type="number" class="unit-input" id="iops" value="3000" step="500" min="0" max="256000">
+                    </div>
+                    <div class="input-group">
+                        <label for="tput">Provisioned throughput (MiB/s)</label>
+                        <input type="number" class="unit-input" id="tput" value="125" step="25" min="0" max="4000">
+                    </div>
+                </div>
+                <div class="multi-input-row" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="vtype">Volume type</label>
+                        <select class="unit-input" id="vtype">
+                            <option value="gp3" selected>gp3 &mdash; SSD, independent IOPS</option>
+                            <option value="gp2">gp2 &mdash; SSD, 3 IOPS per GiB</option>
+                            <option value="io2">io2 &mdash; tiered IOPS, 99.999%</option>
+                            <option value="st1">st1 &mdash; HDD, throughput only</option>
+                            <option value="sc1">sc1 &mdash; cold HDD, cheapest per GiB</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="hours">Billed hours per month</label>
+                        <input type="number" class="unit-input" id="hours" value="730" step="1" min="1" max="744">
+                    </div>
+                </div>
+                <div class="warn-line" id="warn-line"></div>
+                <p class="card-desc" style="margin-top:12px;">gp3, io2 and gp2 are billed per second with a 60-second minimum, which a monthly hour count approximates closely enough. The IOPS and throughput fields are ignored on st1 and sc1, where both are fixed by volume size.</p>
+                <button class="btn-calc">Price This Volume</button>
+            </div>
+
+            <!-- RESULTS CARD -->
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Monthly Bill</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="storage-val">$0</div><div class="metric-label">Storage / month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="iops-val">$0</div><div class="metric-label">IOPS / month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="tput-val">$0</div><div class="metric-label">Throughput / month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="per-val">$0</div><div class="metric-label">Per volume</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="fleet-val">$0</div><div class="metric-label">All volumes / month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="year-val">$0</div><div class="metric-label">All volumes / year</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="eff-val">$0</div><div class="metric-label">Effective $/GiB</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="free-val">$20.00</div><div class="metric-label">Included performance</div></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- SEO SECTION -->
+        <section class="seo-section">
+            <h2>The free allowance is per volume, not per gigabyte</h2>
+
+            <p>Every gp3 volume includes <strong>3,000 provisioned IOPS</strong> and <strong>125 MiB/s</strong> of throughput at no charge, and that allowance does not scale with size. A 10 GiB volume gets 3,000 IOPS. A 4,000 GiB volume also gets 3,000 IOPS. This is the single most useful fact in EBS pricing, and it is the reason volume type matters far more than volume size for anything performance-sensitive.</p>
+
+            <div class="formula-box">
+storage      = GiB &times; $0.08
+IOPS         = max(0, provisioned &minus; 3,000) &times; $0.005
+throughput   = max(0, MiB/s &minus; 125) &times; $0.04
+             &mdash; per volume, per month, us-east-1
+
+3,000 IOPS &times; $0.005 = $15.00
+125 MiB/s  &times; $0.04  = $5.00
+included performance    = $20.00 / month, every gp3 volume
+            </div>
+
+            <p>That $20.00 is not a discount. It is the price you would pay for the same performance if it were metered, and it is included in a volume that can cost as little as $0.80 a month at 10 GiB. Small volumes are therefore where gp3 looks almost free, and where a naive cost model that multiplies gigabytes by a rate goes most wrong.</p>
+
+            <h2>gp2 requires a thousand gigabytes to buy what gp3 gives away</h2>
+
+            <p>gp2 has no independent IOPS dial. It grants three IOPS per GiB, so the only way to buy performance is to buy storage you may not need. Reaching 3,000 IOPS &mdash; the gp3 baseline &mdash; requires a 1,000 GiB gp2 volume.</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Configuration</th><th>IOPS delivered</th><th>Monthly</th><th>Monthly per 1,000 IOPS</th></tr></thead>
+                <tbody>
+                    <tr><td>gp3, 10 GiB, baseline</td><td>3,000</td><td>$0.80</td><td>$0.27</td></tr>
+                    <tr><td>gp3, 100 GiB, baseline</td><td>3,000</td><td>$8.00</td><td>$2.67</td></tr>
+                    <tr><td>gp3, 1,000 GiB, baseline</td><td>3,000</td><td>$80.00</td><td>$26.67</td></tr>
+                    <tr><td>gp2, 1,000 GiB</td><td>3,000</td><td>$100.00</td><td>$33.33</td></tr>
+                    <tr><td>gp2, 100 GiB</td><td>300, bursting to 3,000</td><td>$10.00</td><td>$33.33</td></tr>
+                    <tr><td>gp3, 1,000 GiB, 16,000 IOPS</td><td>16,000</td><td>$145.00</td><td>$9.06</td></tr>
+                    <tr><td>io2, 1,000 GiB, 16,000 IOPS</td><td>16,000</td><td>$1,165.00</td><td>$72.81</td></tr>
+                </tbody>
+            </table>
+
+            <p>Read the fourth row against the third: 1,000 GiB of gp2 costs $100.00 a month for exactly the IOPS that 1,000 GiB of gp3 includes for $80.00. gp3 is cheaper at the same size, and the one throughput advantage gp2 retains &mdash; 250 MiB/s baseline against 125 &mdash; is worth $5.00 a month at the gp3 marginal rate. It is difficult to construct a case for gp2 on a new volume in 2026, which is why the migration is one of the few cloud changes with no downside beyond the maintenance window.</p>
+
+            <p>The fifth row is the trap that catches people who compare on list price alone. A 100 GiB gp2 volume advertises 300 baseline IOPS and bursts to 3,000 using a credit balance &mdash; it is genuinely fast in a benchmark and genuinely slow after ten minutes of sustained load, because the credits are exhausted and the burst stops. gp3 does not burst. It provisions 3,000 IOPS and holds them.</p>
+
+            <div class="pull">gp2 is not slower than gp3 at small sizes. It is slower <em>later</em>, which is worse, because the regression appears in production after a load test that passed.</div>
+
+            <h2>Marginal IOPS is $5 per thousand, and it is a cliff</h2>
+
+            <p>Above the baseline, IOPS costs <strong>$0.005 per provisioned IOPS-month</strong>. There is no taper, no volume discount, and no relationship to how much of the volume is used. The first IOPS beyond 3,000 costs $5 per thousand and the thirteen-thousandth costs the same $5 per thousand. Running a 500 GiB volume to the gp3 ceiling therefore looks like this:</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Provisioned IOPS</th><th>Storage (500 GiB)</th><th>IOPS charge</th><th>Total / month</th></tr></thead>
+                <tbody>
+                    <tr><td>3,000 (baseline)</td><td>$40.00</td><td>$0.00</td><td>$40.00</td></tr>
+                    <tr><td>6,000</td><td>$40.00</td><td>$15.00</td><td>$55.00</td></tr>
+                    <tr><td>10,000</td><td>$40.00</td><td>$35.00</td><td>$75.00</td></tr>
+                    <tr><td>16,000</td><td>$40.00</td><td>$65.00</td><td>$105.00</td></tr>
+                    <tr><td>40,000</td><td>$40.00</td><td>$185.00</td><td>$225.00</td></tr>
+                    <tr><td>80,000 (ceiling)</td><td>$40.00</td><td>$385.00</td><td>$425.00</td></tr>
+                </tbody>
+            </table>
+
+            <p>Provisioning the maximum multiplies the storage bill by 10.6&times; before throughput is considered, and adds $4,620 a year to a single volume. The ceiling is worth understanding rather than avoiding: gp3 supports up to <strong>80,000 IOPS</strong> and <strong>2,000 MiB/s</strong> per volume, and caps IOPS at <strong>500 per GiB</strong> of size, so the full 80,000 becomes available only from <strong>160 GiB</strong> upward and a 16 GiB volume is limited to 8,000. Throughput has its own floor: the 2,000 MiB/s maximum is provisionable from 8,000 IOPS and 16 GiB, because the two dials move together at 0.25 MiB/s per provisioned IOPS.</p>
+
+            <h2>Volume count is an IOPS lever nobody prices</h2>
+
+            <p>Because the baseline is per volume and the ceiling is per volume, splitting storage across volumes multiplies the total IOPS available without changing the storage cost by a cent. This is arithmetic that contradicts the usual instinct that fewer, larger volumes are simpler and therefore cheaper.</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Shape, 2,000 GiB total</th><th>Storage / month</th><th>Baseline IOPS</th><th>Cost to reach 60,000 IOPS</th><th>Total / month</th></tr></thead>
+                <tbody>
+                    <tr><td>1 &times; 2,000 GiB</td><td>$160.00</td><td>3,000</td><td>+$285.00 for 57,000</td><td>$445.00</td></tr>
+                    <tr><td>4 &times; 500 GiB</td><td>$160.00</td><td>12,000</td><td>+$240.00 for 48,000</td><td>$400.00</td></tr>
+                    <tr><td>8 &times; 250 GiB</td><td>$160.00</td><td>24,000</td><td>+$180.00 for 36,000</td><td>$340.00</td></tr>
+                    <tr><td>20 &times; 100 GiB</td><td>$160.00</td><td>60,000</td><td>+$0.00</td><td>$160.00</td></tr>
+                </tbody>
+            </table>
+
+            <p>Same 2,000 GiB, same 60,000 IOPS, $160 or $445 depending only on how the bytes are divided. The $285 difference is precisely the marginal IOPS bill that twenty free baselines replaced. To spend it, the volumes have to be striped with LVM or RAID 0, because a filesystem on one volume is still capped at 80,000 IOPS however many volumes exist beside it. Striping trades independent failure domains for aggregate throughput &mdash; one lost volume takes the whole fileset &mdash; which is why the pattern fits replicas, caches and scratch space better than primary data.</p>
+
+            <p>The caveat that keeps this honest: a workload already using 80,000 IOPS on one volume has no reason to be split. The saving only materialises when the target exceeds what a single volume can deliver, or when the fleet is small enough that its baselines are idle. Twenty volumes each running at 200 IOPS is $160 a month spent to acquire throughput nobody uses.</p>
+
+            <h2>io2 lost the ceiling argument as well as the price one</h2>
+
+            <p>The obvious question after seeing these numbers is whether io2 is ever worth it, since its IOPS rate is thirteen times the gp3 marginal rate. The old answer was that io2 buys a ceiling gp3 cannot reach. That answer expired: gp3 now provisions up to 80,000 IOPS, which is <em>above</em> the 64,000 IOPS that a standard io2 volume tops out at, so io2 loses on cost and on throughput at the same time.</p>
+
+            <p>Put the two side by side on the same 500 GiB volume. gp3 at 80,000 IOPS costs $425.00 a month. io2 at 64,000 IOPS &mdash; fewer operations, on a smaller ceiling &mdash; costs $3,598.50. The premium is 8.5&times; for a slower maximum, which means io2 is no longer a performance purchase at all.</p>
+
+            <table class="cost-table">
+                <thead><tr><th>io2 provisioned IOPS</th><th>Tier rate</th><th>IOPS charge / month</th><th>Plus 500 GiB storage</th></tr></thead>
+                <tbody>
+                    <tr><td>3,000</td><td>$0.065</td><td>$195.00</td><td>$257.50</td></tr>
+                    <tr><td>16,000</td><td>$0.065</td><td>$1,040.00</td><td>$1,102.50</td></tr>
+                    <tr><td>32,000</td><td>$0.065</td><td>$2,080.00</td><td>$2,142.50</td></tr>
+                    <tr><td>64,000</td><td>$0.065 / $0.0455</td><td>$3,536.00</td><td>$3,598.50</td></tr>
+                    <tr><td>128,000</td><td>$0.065 / $0.0455 / $0.03185</td><td>$5,574.40</td><td>$5,636.90</td></tr>
+                </tbody>
+            </table>
+
+            <p>The tiers are the only place in EBS pricing where the marginal rate falls with volume, and they only engage above 32,000 IOPS. They buy less than they look like they buy: at 128,000 IOPS the average rate has fallen to $0.0436 per IOPS-month, still nearly nine times gp3's $0.005, for capacity that requires io2 Block Express and a volume of at least 256 GiB.</p>
+
+            <p>Three things still justify the premium, and none of them is throughput. <strong>Durability</strong>: io2 is designed for 99.999% annual durability against 99.8&ndash;99.9% for gp3, a hundredfold difference in volume-affecting failure rate. <strong>Latency</strong>: Block Express is designed for an average under 500 microseconds on 16 KiB I/O, against single-digit milliseconds for gp3, and it reduces the frequency of I/Os exceeding 800 microseconds by more than tenfold. <strong>A ceiling above 80,000</strong>: Block Express reaches 256,000 IOPS and 4,000 MiB/s, which is the only EBS configuration that serves a workload gp3 cannot.</p>
+
+            <p>For a database with replayable logs and hourly snapshots, the durability difference is a rounding error on the risk register. For a volume holding the only copy of something, it is the entire argument. That is a narrower case than it was two years ago, and it is the case io2's price actually reflects.</p>
+
+            <h2>Block size decides which ceiling you hit</h2>
+
+            <p>IOPS and throughput are provisioned independently on gp3, which means the workload's block size determines which of the two limits binds first. Multiplying 80,000 IOPS by the block size gives the throughput that ceiling implies, and comparing it against 2,000 MiB/s tells you which number to stop paying for.</p>
+
+            <table class="cost-table">
+                <thead><tr><th>Block size</th><th>Throughput implied at 80,000 IOPS</th><th>Binding limit</th><th>IOPS actually delivered</th></tr></thead>
+                <tbody>
+                    <tr><td>4 KiB</td><td>312.5 MiB/s</td><td>IOPS</td><td>80,000</td></tr>
+                    <tr><td>8 KiB</td><td>625 MiB/s</td><td>IOPS</td><td>80,000</td></tr>
+                    <tr><td>16 KiB</td><td>1,250 MiB/s</td><td>IOPS</td><td>80,000</td></tr>
+                    <tr><td>25.6 KiB</td><td>2,000 MiB/s</td><td>Both, exactly</td><td>80,000</td></tr>
+                    <tr><td>64 KiB</td><td>5,000 MiB/s, 2.5&times; over the cap</td><td>Throughput</td><td>32,000</td></tr>
+                    <tr><td>256 KiB</td><td>20,000 MiB/s, 10&times; over the cap</td><td>Throughput</td><td>8,000</td></tr>
+                </tbody>
+            </table>
+
+            <p><strong>25.6 KiB is the exact crossover</strong>: 80,000 &times; 25.6 KiB is 2,000 MiB/s with nothing left over, which is why AWS quotes that I/O size beside the gp3 maximum. Below it, buying throughput is waste, because the IOPS cap arrives first. Above it, buying IOPS is waste, because the throughput cap arrives first. A 256 KiB workload with 80,000 provisioned IOPS delivers 8,000, so nine tenths of the $385.00 monthly IOPS charge &mdash; $346.50 &mdash; buys capacity the volume physically cannot deliver.</p>
+
+            <p>This is also the reason the two dials cannot be sized independently in practice. Throughput is provisionable at 0.25 MiB/s per provisioned IOPS, so the pair moves together unless you deliberately leave one side idle, and the ratio is the I/O size the volume is designed around.</p>
+
+            <h2>What this page does not price</h2>
+
+            <p><strong>Snapshots.</strong> Snapshot storage is a separate meter, priced per GiB-month of changed data rather than anything provisioned. It is modelled on <a href="/ebs-snapshot-cost">the snapshot cost page</a>, because the growth curve is nothing like the volume cost curve.</p>
+
+            <p><strong>Orphaned volumes.</strong> A volume is billed until it is released, not until its instance is terminated. A <code>DeleteOnTermination</code> flag set to false &mdash; the default for volumes created separately and attached afterwards &mdash; leaves a full-price volume behind after the instance is gone. This is the most common way a fleet of forty volumes becomes a fleet of sixty.</p>
+
+            <p><strong>Fast Snapshot Restore.</strong> $0.75 per DSU-hour, billed for as long as the restore option stays enabled, not for the restores performed. Enabling it on a volume that snapshots daily is a recurring charge that reads like a one-off.</p>
+
+            <p><strong>Volume initialisation.</strong> Restoring from a snapshot in the background costs nothing extra but delivers first-touch latency until the blocks are pulled. Paying the provisioned-rate fee to pre-warm is a performance decision with a price, and it is not included here.</p>
+
+            <p><strong>Free tier.</strong> 30 GiB of storage is included per account per month, which is deliberately not subtracted, for the same reason as everywhere else on this site: a projection that assumes the free tier stops being a projection the moment the fleet grows.</p>
+        </section>
+
+        <section class="seo-section" id="pricing-basis">
+            <h2>Pricing Basis, Sources &amp; Assumptions</h2>
+            <p>Every rate on this page is a <strong>published vendor list price</strong> &mdash; no negotiated discounts, private pricing, savings plans, credits or enterprise agreements. Totals are in <strong>USD</strong> and exclude tax. Rates were last checked against the sources below on <time datetime="2026-11-16">2026-11-16</time>.</p>
+            <table class="cost-table">
+                <thead><tr><th>Pricing input</th><th>Basis used on this page</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Source</strong></td><td><a href="https://aws.amazon.com/ebs/pricing/" rel="nofollow noopener" target="_blank">Amazon EBS pricing</a> for the volume type definitions and billing rules, cross-checked against the <a href="https://b0.p.awsstatic.com/pricing/2.0/meteredUnitMaps/ec2/USD/current/ebs.json" rel="nofollow noopener" target="_blank">AWS price list feed for EBS</a> for the exact us-east-1 rates: $0.08 per gp3 GiB-month, $0.005 per provisioned IOPS-month, $40.96 per GiBps-month of provisioned throughput (equivalent to $0.04 per MiB/s-month), $0.10 per gp2 GiB-month, $0.125 per io2 GiB-month with tiered IOPS at $0.065, $0.0455 and $0.03185, $0.045 per st1 GiB-month and $0.015 per sc1 GiB-month.</td></tr>
+                    <tr><td><strong>Region</strong></td><td>US East (N. Virginia), us-east-1. Other regions are priced higher and the difference is not modelled here.</td></tr>
+                    <tr><td><strong>Currency</strong></td><td>USD &mdash; list price, tax excluded</td></tr>
+                    <tr><td><strong>Last checked</strong></td><td><time datetime="2026-11-16">2026-11-16</time> &mdash; all seven rates plus the gp3 ceilings (3,000 IOPS and 125 MiB/s included, 80,000 IOPS and 2,000 MiB/s maximum), the 500 IOPS-per-GiB ratio and the 0.25 MiB/s per IOPS throughput ratio were re-read from the <a href="https://docs.aws.amazon.com/ebs/latest/userguide/general-purpose.html" rel="nofollow noopener" target="_blank">gp3 volume type documentation</a> and the price feed on this date.</td></tr>
+                </tbody>
+            </table>
+            <h3>Modelling assumptions</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li><strong>Provisioned, not consumed.</strong> Every figure is the provisioned quantity multiplied by its rate. A volume left idle bills identically to a saturated one of the same shape, and no I/O charges are added on top, because EBS does not meter IOPs on gp3, gp2, io2, st1 or sc1.</li>
+                <li><strong>Month length.</strong> 730 hours by default, the billing convention of (365 &times; 24) &divide; 12. The field is adjustable because February bills 672 hours and a 31-day month bills 744, a &plusmn;7% swing on any figure here.</li>
+                <li><strong>Year length.</strong> 8,760 hours, exactly 730 &times; 12, so the monthly and annual columns never disagree.</li>
+                <li><strong>Baseline.</strong> The 3,000 IOPS and 125 MiB/s allowance is applied per volume to gp3 only. gp2 derives IOPS from size at 3 per GiB with a 100 IOPS floor and a 16,000 ceiling; io2, st1 and sc1 are priced without a baseline deduction because they do not have one.</li>
+                <li><strong>io2 tiers.</strong> The first 32,000 IOPS are charged at $0.065, the next 32,000 at $0.0455, and everything above 64,000 at $0.03185, applied progressively rather than as a flat rate on the whole quantity.</li>
+                <li><strong>st1 and sc1.</strong> Throughput is fixed by size &mdash; 40 MiB/s per TiB for st1 with a 125 MiB/s floor, 12 MiB/s per TiB for sc1 with the same floor &mdash; and the IOPS and throughput fields on this page are ignored for those two types.</li>
+                <li><strong>Excluded.</strong> Snapshots, Fast Snapshot Restore, volume initialisation, EBS direct APIs, data transfer between volumes and instances, EBS Multi-Attach, the free tier, and any reserved or committed-use discount.</li>
+            </ul>
+        </section>
+
+        <!-- ── Related Tools ── -->
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/ebs-snapshot-cost">EBS Snapshot Cost &rarr;</a>
+                <a href="/iops-to-throughput">IOPS to Throughput &rarr;</a>
+                <a href="/rds-instance-cost">RDS Instance Cost &rarr;</a>
+                <a href="/dynamodb-capacity-cost">DynamoDB Capacity Cost &rarr;</a>
+                <a href="/gib-to-gb-marketing-gap">GiB vs GB Gap &rarr;</a>
+                <a href="/pod-density-calculator">Pod Density &rarr;</a>
+            </div>
+        </div>
+<footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 122 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/methodology">Methodology</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">RSS &amp; Updates</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+
+    <script>
+    (function () {
+        // 2026-11-16 核对的 us-east-1 公开牌价（AWS 价目 feed + EBS 定价页）
+        var GP3_GB = 0.08;
+        var GP2_GB = 0.10;
+        var IO2_GB = 0.125;
+        var ST1_GB = 0.045;
+        var SC1_GB = 0.015;
+        var GP3_IOPS = 0.005;      // 超出 3,000 后的每 IOPS-月
+        var GP3_TPUT = 0.04;       // 超出 125 MiB/s 后的每 MiB/s-月
+        var IO2_T1 = 0.065;        // 0 - 32,000
+        var IO2_T2 = 0.0455;       // 32,001 - 64,000
+        var IO2_T3 = 0.03185;      // 64,001+
+        var BASE_IOPS = 3000;
+        var BASE_TPUT = 125;
+        var MAX_GP3_IOPS = 80000;
+        var MAX_GP3_TPUT = 2000;
+        var IOPS_PER_GIB_CAP = 500;   // gp3 每 GiB 最多 500 IOPS
+        var GIB_FOR_MAX_IOPS = 160;   // 80,000 / 500
+        var TPUT_PER_IOPS = 0.25;     // 每预置 IOPS 可换 0.25 MiB/s
+
+        function num(id, def) {
+            var el = document.getElementById(id);
+            if (!el) { return def; }
+            var v = parseFloat(el.value);
+            return isFinite(v) ? v : def;
+        }
+
+        function money(v) {
+            if (!isFinite(v)) { v = 0; }
+            return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function commas(v) {
+            if (!isFinite(v)) { v = 0; }
+            return Math.round(v).toLocaleString('en-US');
+        }
+
+        function io2Block(iops) {
+            var t1 = Math.min(iops, 32000);
+            var t2 = Math.min(Math.max(iops - 32000, 0), 32000);
+            var t3 = Math.max(iops - 64000, 0);
+            return t1 * IO2_T1 + t2 * IO2_T2 + t3 * IO2_T3;
+        }
+
+        function compute() {
+            var size = Math.max(1, Math.min(65536, num('size', 500)));
+            var count = Math.max(1, Math.min(500, Math.floor(num('count', 2))));
+            var hours = Math.max(1, Math.min(744, num('hours', 730)));
+            var iopsIn = Math.max(0, Math.min(256000, num('iops', 3000)));
+            var tputIn = Math.max(0, Math.min(4000, num('tput', 125)));
+            var vtype = document.getElementById('vtype').value;
+
+            var months = hours / 730;
+            var storage = 0, iopsCost = 0, tputCost = 0, notes = [];
+
+            if (vtype === 'gp3') {
+                storage = size * GP3_GB;
+                iopsCost = Math.max(0, iopsIn - BASE_IOPS) * GP3_IOPS;
+                tputCost = Math.max(0, tputIn - BASE_TPUT) * GP3_TPUT;
+                var capHere = size * IOPS_PER_GIB_CAP;
+                if (iopsIn > MAX_GP3_IOPS) {
+                    notes.push('gp3 tops out at ' + commas(MAX_GP3_IOPS) + ' IOPS per volume; the rest is not purchasable.');
+                }
+                if (iopsIn > capHere) {
+                    notes.push(commas(size) + ' GiB at 500 IOPS/GiB caps at ' + commas(capHere) + ' IOPS \u2014 grow the volume to ' + commas(Math.ceil(iopsIn / IOPS_PER_GIB_CAP)) + ' GiB to provision ' + commas(iopsIn) + '.');
+                }
+                if (iopsIn > capHere && GIB_FOR_MAX_IOPS > size) {
+                    notes.push('The full ' + commas(MAX_GP3_IOPS) + ' IOPS needs at least ' + GIB_FOR_MAX_IOPS + ' GiB.');
+                }
+                if (tputIn > MAX_GP3_TPUT) {
+                    notes.push('gp3 tops out at ' + commas(MAX_GP3_TPUT) + ' MiB/s per volume; above that needs io2 Block Express.');
+                }
+                if (tputIn > iopsIn * TPUT_PER_IOPS + 0.001) {
+                    notes.push('Throughput is provisionable at 0.25 MiB/s per IOPS, so ' + commas(iopsIn) + ' IOPS supports at most ' + commas(iopsIn * TPUT_PER_IOPS) + ' MiB/s.');
+                }
+            } else if (vtype === 'gp2') {
+                storage = size * GP2_GB;
+                var gp2Iops = Math.min(16000, Math.max(100, size * 3));
+                notes.push('gp2 ignores the IOPS field: ' + commas(size) + ' GiB grants ' + commas(gp2Iops) + ' IOPS, bursting to 3,000 while credits last.');
+            } else if (vtype === 'io2') {
+                storage = size * IO2_GB;
+                iopsCost = io2Block(iopsIn);
+                if (iopsIn > 64000 && size < 512) {
+                    notes.push('io2 above 64,000 IOPS needs Block Express and at least 512 GiB of volume.');
+                }
+            } else if (vtype === 'st1') {
+                storage = size * ST1_GB;
+                notes.push('st1 is HDD: 40 MiB/s per TiB with a 125 MiB/s floor. IOPS is not provisionable.');
+            } else {
+                storage = size * SC1_GB;
+                notes.push('sc1 is cold HDD: 12 MiB/s per TiB with a 125 MiB/s floor. IOPS is not provisionable.');
+            }
+
+            storage *= months;
+            iopsCost *= months;
+            tputCost *= months;
+
+            var perVol = storage + iopsCost + tputCost;
+            var fleet = perVol * count;
+            var eff = size > 0 ? perVol / size : 0;
+            var included = BASE_IOPS * GP3_IOPS + BASE_TPUT * GP3_TPUT;
+
+            document.getElementById('storage-val').innerText = money(storage);
+            document.getElementById('iops-val').innerText = money(iopsCost);
+            document.getElementById('tput-val').innerText = money(tputCost);
+            document.getElementById('per-val').innerText = money(perVol);
+            document.getElementById('fleet-val').innerText = money(fleet);
+            document.getElementById('year-val').innerText = money(fleet * 12);
+            document.getElementById('eff-val').innerText = money(eff);
+            document.getElementById('free-val').innerText = money(included);
+
+            document.getElementById('results-params').innerText =
+                count + ' \u00d7 ' + commas(size) + ' GiB ' + vtype + ' \u00b7 ' +
+                commas(iopsIn) + ' IOPS \u00b7 ' + commas(tputIn) + ' MiB/s \u00b7 ' +
+                hours + ' h/month \u00b7 effective ' + money(eff) + ' per GiB';
+
+            var warn = document.getElementById('warn-line');
+            if (notes.length) {
+                warn.innerText = notes.join(' ');
+                warn.style.display = 'block';
+            } else {
+                warn.style.display = 'none';
+                warn.innerText = '';
+            }
+
+            document.getElementById('results-card').style.display = 'block';
+        }
+
+        document.addEventListener('DOMContentLoaded', compute);
+        document.querySelector('.btn-calc').addEventListener('click', compute);
+    })();
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>
