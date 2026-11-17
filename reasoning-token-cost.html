@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Reasoning Token Cost Calculator — The Hidden 90% of Your LLM Bill</title>
+    <meta name="description" content="Reasoning models bill hidden thinking tokens as output, so a 400-token answer can cost 6x its price tag. Model the multiplier and the retry breakeven point.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <meta property="og:title" content="Reasoning Token Cost Calculator — jslet">
+    <meta property="og:description" content="A reasoning model's visible answer is a fraction of what you are billed for. Enter your own rates and see how much of the bill is invisible.">
+    <meta property="og:url" content="https://www.jslet.com/reasoning-token-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Reasoning Token Cost Calculator — jslet">
+    <meta name="twitter:description" content="Thinking tokens bill at output rates but never appear in the response. Model the multiplier, then find where a cheaper model with retries wins.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/reasoning-token-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) { .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; } }
+        select.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; appearance: none; cursor: pointer; }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 1.45rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-val.txt { font-size: 1.02rem; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .formula-box { background: var(--bg-input); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); padding: 14px 18px; margin: 16px 0; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.9rem; line-height: 1.9; overflow-x: auto; }
+        .verdict { margin-top: 14px; padding: 14px 18px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-input); font-size: 0.92rem; line-height: 1.7; }
+        .verdict.win { border-left: 3px solid #16a34a; }
+        .verdict.lose { border-left: 3px solid #dc2626; }
+        .warn-line { font-size: 0.85rem; color: #b45309; margin-top: 10px; min-height: 1.2em; }
+        .subhead { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin: 22px 0 4px; font-weight: 600; }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Are reasoning tokens billed even though they are not in the response?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Reasoning models generate internal chain-of-thought tokens before producing the visible answer, and providers bill those tokens at the output rate. They are excluded from the response body but counted in the usage fields. A 400-token visible answer routinely bills as 2,000 to 6,000 output tokens." }
+        },
+        {
+          "@type": "Question",
+          "name": "How large is the thinking multiplier in practice?",
+          "acceptedAnswer": { "@type": "Answer", "text": "It depends on task difficulty, not on output length. Simple classification or extraction tasks often land near 1x. Multi-step coding, math and planning tasks commonly run 4x to 10x, and hard agent decisions have been measured above 15x. The multiplier is a property of your workload, which is why this calculator takes it as an input rather than asserting a fixed number." }
+        },
+        {
+          "@type": "Question",
+          "name": "When is a reasoning model cheaper than a cheap model with retries?",
+          "acceptedAnswer": { "@type": "Answer", "text": "When the cheap model's success rate falls below the breakeven implied by the cost ratio. If the reasoning model costs 5x per attempt and succeeds 95% of the time, a standard model needs roughly 19% or better first-attempt accuracy before retries make it the cheaper option. Below that, one expensive correct answer beats several cheap wrong ones." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does setting reasoning effort reduce the bill?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes, roughly proportionally to the multiplier, because effort controls how many thinking tokens are generated. Lowering effort on a task the model already solves reliably is the cheapest available saving, and it does not change the visible answer quality on those tasks. Lowering effort on tasks that need planning usually converts a correct answer into a wrong one." }
+        },
+        {
+          "@type": "Question",
+          "name": "Why not just use the published multiplier from a vendor benchmark?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Because benchmark multipliers are averaged across task categories that you do not run. A workload of 80% extraction and 20% planning has a very different blended multiplier from a benchmark suite weighted toward math and code. Measure your own ratio on 50 real requests: divide billed output tokens by visible output tokens." }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 124 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>⚡ <span>Reasoning</span> Token Cost</h1>
+            <p>Every reasoning model has two output prices: the one on the pricing page and the one on your invoice. The gap is the thinking multiplier &mdash; internal chain-of-thought tokens that are billed at the full output rate and then discarded before the response reaches you. A 400-token answer that looks like $0.003 can settle at $0.019. This calculator takes your own rates as inputs, because the multiplier is a property of your workload, not of the model.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Workload</h3>
+                <p class="card-desc">Enter the rates from your own contract, not list prices, if they differ. The three fields that move the result most are the thinking multiplier, the per-task output length, and the monthly task count.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="tasks">Tasks per day</label>
+                        <input type="number" class="unit-input" id="tasks" value="500" step="50" min="1" max="5000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="days">Billed days per month</label>
+                        <input type="number" class="unit-input" id="days" value="30" step="1" min="1" max="31">
+                    </div>
+                    <div class="input-group">
+                        <label for="mult">Thinking multiplier (×)</label>
+                        <input type="number" class="unit-input" id="mult" value="5" step="0.5" min="1" max="40">
+                    </div>
+                </div>
+                <div class="subhead">Reasoning model</div>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="intok">Input tokens per task</label>
+                        <input type="number" class="unit-input" id="intok" value="1200" step="100" min="0" max="2000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="visout">Visible output tokens / task</label>
+                        <input type="number" class="unit-input" id="visout" value="400" step="50" min="0" max="500000">
+                    </div>
+                    <div class="input-group">
+                        <label for="succ">Reasoning success rate (%)</label>
+                        <input type="number" class="unit-input" id="succ" value="95" step="1" min="1" max="100">
+                    </div>
+                </div>
+                <div class="multi-input-row" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="pin">Input price ($ / 1M tokens)</label>
+                        <input type="number" class="unit-input" id="pin" value="2.00" step="0.01" min="0" max="1000">
+                    </div>
+                    <div class="input-group">
+                        <label for="pout">Output price ($ / 1M tokens)</label>
+                        <input type="number" class="unit-input" id="pout" value="8.00" step="0.01" min="0" max="1000">
+                    </div>
+                </div>
+                <div class="subhead">Cheaper standard model with retries</div>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="spin">Input price ($ / 1M tokens)</label>
+                        <input type="number" class="unit-input" id="spin" value="0.40" step="0.01" min="0" max="1000">
+                    </div>
+                    <div class="input-group">
+                        <label for="spout">Output price ($ / 1M tokens)</label>
+                        <input type="number" class="unit-input" id="spout" value="1.60" step="0.01" min="0" max="1000">
+                    </div>
+                    <div class="input-group">
+                        <label for="ssucc">First-attempt success (%)</label>
+                        <input type="number" class="unit-input" id="ssucc" value="55" step="1" min="1" max="100">
+                    </div>
+                </div>
+                <div class="multi-input-row" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="retry">Max attempts per task</label>
+                        <input type="number" class="unit-input" id="retry" value="3" step="1" min="1" max="10">
+                    </div>
+                    <div class="input-group">
+                        <label for="model">Starting point (fills the rate fields)</label>
+                        <select class="unit-input" id="model">
+                            <option value="">— keep my numbers —</option>
+                            <option value="2.00|8.00|0.40|1.60">Reasoning tier · $2 / $8 · cheap tier $0.40 / $1.60</option>
+                            <option value="1.10|4.40|0.40|1.60">Compact reasoning · $1.10 / $4.40 · cheap tier $0.40 / $1.60</option>
+                            <option value="3.00|15.00|0.80|4.00">Mid reasoning · $3 / $15 · mid tier $0.80 / $4.00</option>
+                            <option value="0.55|2.19|0.15|0.60">Budget reasoning · $0.55 / $2.19 · budget tier $0.15 / $0.60</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="warn-line" id="warn-line"></div>
+                <p class="card-desc" style="margin-top:12px;">Retries are modelled as full re-sends, so each attempt pays for the input again. That matches how most retry loops are actually written &mdash; they resend the prompt rather than resuming a conversation.</p>
+                <button class="btn-calc">Price This Workload</button>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Monthly Bill</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="total-val">$0</div><div class="metric-label">Total / month</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="in-val">$0</div><div class="metric-label">Input</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="out-val">$0</div><div class="metric-label">Output (billed)</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="share-val">0%</div><div class="metric-label">Invisible share</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="hidden-val">0</div><div class="metric-label">Hidden tokens / mo</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="eff-val">$0</div><div class="metric-label">Per visible 1M output</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="std-val">$0</div><div class="metric-label">Standard + retries</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="brk-val">—</div><div class="metric-label">Breakeven accuracy</div></div>
+                </div>
+                <div id="verdict"></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>Why the Visible Answer Is Not What You Pay For</h2>
+            <p>Reasoning models spend tokens before they speak. The model writes an internal chain of thought, discards it, then produces the answer you see. Providers meter that internal work at the output rate, because it is generated output &mdash; it just never reaches your response body. The response object reports the visible text; the usage object reports the total. Those two numbers are the whole story of this page.</p>
+            <p>The practical shape of the trap is that cost scales with <em>difficulty</em>, not with <em>length</em>. A one-sentence question about a hard invariant can trigger thousands of thinking tokens. A long but routine summarisation task can trigger almost none. That is why per-token list prices tell you very little about which model is cheaper for your workload: the multiplier is doing more work than the rate card.</p>
+            <p>There is a second-order effect that catches teams by surprise. Because input tokens are cheap and output tokens are not, a workload that looks input-heavy is barely affected by reasoning. A workload that looks output-heavy is affected several times over. The same model, the same token counts, two different bills &mdash; decided entirely by which side of the ledger the multiplier lands on.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Measuring Your Multiplier Instead of Guessing It</h2>
+            <p>Published multipliers are averages over benchmark suites weighted toward math and competitive programming. Your production traffic is not that. The only number that matters is the ratio on your own requests, and it takes about twenty minutes to obtain.</p>
+            <div class="formula-box">
+multiplier = billed_output_tokens / visible_output_tokens
+
+billed_output_tokens = usage.output_tokens          (provider reports this)
+visible_output_tokens = tokens in the response body
+
+Run 50 real tasks. Log both numbers. Take the median, not the mean —
+a handful of hard requests can drag a mean far above what you actually
+pay on a typical day.
+            </div>
+            <p>Two measurement mistakes are common enough to name. The first is using the mean: reasoning token counts are heavy-tailed, so a few pathological requests inflate the average and make every projection pessimistic. The second is measuring on curated examples. Benchmarks and demos are exactly the tasks where reasoning models are worth their price; your routine traffic is where the multiplier quietly eats the budget.</p>
+            <p>If you cannot instrument the workload yet, a useful fallback is to divide the monthly bill by the price you expected to pay. A workload projected at $400 that invoices at $2,100 has a blended multiplier near 5, whatever the individual requests looked like.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Retry Trade: Cheap Model Wrong Twice vs Expensive Model Right Once</h2>
+            <p>The usual argument for a cheap model is per-token price. The usual counter-argument is that a cheap model needs retries, so the real cost is the price divided by the success rate. Both are half right, and the half that matters is how retries compound.</p>
+            <p>If a task succeeds with probability <em>p</em> on each attempt and you allow up to <em>n</em> attempts, the expected number of attempts is:</p>
+            <div class="formula-box">
+E[attempts] = (1 − pⁿ) / (1 − p)
+
+p = 0.55, n = 3  →  E = 1.83 attempts
+p = 0.30, n = 3  →  E = 2.19 attempts
+p = 0.90, n = 3  →  E = 1.11 attempts
+            </div>
+            <p>Expected cost is that multiplier times the per-attempt cost. Compare it against the reasoning model's per-attempt cost divided by its own success rate, and you have a like-for-like number. The breakeven is where the two meet, and it is usually far lower than intuition suggests.</p>
+            <p>Work an example. The reasoning model costs five times as much per attempt and succeeds 95% of the time, so its effective cost is 1.05&times; one attempt. The standard model must therefore average no more than 1.05 attempts, which needs a first-attempt accuracy around 90% with three retries allowed. At 55% accuracy the standard model averages 1.83 attempts &mdash; roughly 0.37 of the reasoning model's cost, so it wins on money and loses on latency and on developer time spent handling failures.</p>
+            <p>That last clause is why the arithmetic alone rarely settles the decision. Retry loops also carry engineering cost: idempotency, partial-failure handling, evaluation harnesses, and the on-call burden of a pipeline that fails a third of the time. Those costs do not appear in a token bill, which is exactly why they get ignored in one and matter in the other.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Where the Multiplier Stops Being Worth It</h2>
+            <p>Reasoning earns its price on tasks with a checkable answer: proofs, multi-constraint refactors, schema design, anything where a wrong answer costs more than a slow one. It earns nothing on tasks where a standard model already clears your quality bar &mdash; classification, extraction, summarisation, routine support replies. In those cases the multiplier is pure overhead, often a 5&times; overhead on a workload that had no accuracy problem to begin with.</p>
+            <p>The useful diagnostic is not "is this a hard task" but "does this task have a failure mode I can detect". If you can score the output automatically, a cheap model plus retries plus a scorer is usually the better architecture. If a wrong answer is silent &mdash; a subtly incorrect proof, a plausible but broken refactor &mdash; retries do not help, because you never learn that a retry was needed.</p>
+            <p>The single cheapest lever is effort control, where the provider exposes it. Lowering reasoning effort reduces the multiplier roughly proportionally, and on tasks the model already solves reliably it changes nothing about answer quality. Teams routinely pay a 5&times; multiplier on traffic that would pass at 1.5&times;. That is a configuration difference, not a model difference.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Reading the Result</h2>
+            <p><strong>Invisible share</strong> is the fraction of all billed tokens that never appeared in a response. Above 70% is normal for reasoning-heavy traffic, and it is the number to put in front of anyone who budgets from visible output length.</p>
+            <p><strong>Per visible 1M output</strong> restates the output price in the only unit that matches what reviewers actually see. If the pricing page says $8 per million and this field says $40, the multiplier is 5 and every output-length estimate in your planning is off by the same factor.</p>
+            <p><strong>Breakeven accuracy</strong> is the first-attempt success rate the standard model would need to match the reasoning model's cost, given the retry cap. If it reports "not reachable", no success rate can close the gap at that retry count &mdash; the cost ratio exceeds the maximum attempt multiplier, and the cheap model loses on arithmetic regardless of quality.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>What This Model Leaves Out</h2>
+            <p><strong>Cached input.</strong> Providers discount repeated input substantially, and cached reads change the input side of the bill without touching the output side. If your prompts share a large prefix, set the input price to your effective cached rate rather than the list rate.</p>
+            <p><strong>Batch discounts.</strong> Batch APIs commonly halve both input and output rates. They apply uniformly to visible and hidden tokens, so a batch workload scales the whole result rather than changing the shape of it.</p>
+            <p><strong>Failed requests.</strong> A request that errors before producing output may bill input tokens without billing output tokens. That makes failures cheaper than the model here assumes, and a retry loop with a high failure rate will over-perform this projection slightly.</p>
+            <p><strong>Tool calls and multi-turn agent loops.</strong> Each tool call is a separate request with its own input bill, and each may carry its own thinking tokens. An agentic workflow is a chain of these calculations, not one, and the multiplier applies per hop rather than once.</p>
+        </section>
+
+        <section class="seo-section" id="pricing-basis">
+            <h2>Pricing Basis, Sources &amp; Assumptions</h2>
+            <p>This page does not assert vendor prices. Every rate is an <strong>input you control</strong>, pre-filled only as a starting point. That is a deliberate choice: 2026 list prices for the same model differ between the vendor's own pricing page, resellers, and third-party trackers, and a hardcoded rate would be wrong within weeks. Enter the rate on your invoice.</p>
+            <table class="cost-table">
+                <thead><tr><th>Pricing input</th><th>Basis used on this page</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Source</strong></td><td>All per-token rates are user-supplied and every result depends on what you enter. The billing rule &mdash; that hidden reasoning tokens are metered at the output rate &mdash; follows the <a href="https://openai.com/api/pricing/" rel="nofollow noopener" target="_blank">OpenAI API pricing documentation</a> and the <a href="https://www.anthropic.com/pricing" rel="nofollow noopener" target="_blank">Anthropic pricing page</a>, both re-read on <time datetime="2026-11-17">2026-11-17</time>. Preset values in the model selector are illustrative starting points, not a price claim, and are not used in any calculation until you select one.</td></tr>
+                    <tr><td><strong>Region</strong></td><td>Not applicable &mdash; API pricing is global per provider, with regional differences limited to data-residency products that are out of scope here.</td></tr>
+                    <tr><td><strong>Currency</strong></td><td>USD, as entered by the user</td></tr>
+                    <tr><td><strong>Last checked</strong></td><td><time datetime="2026-11-17">2026-11-17</time> &mdash; the billing rule that reasoning tokens are metered at output rates was re-confirmed against provider documentation on this date. No rate is asserted.</td></tr>
+                </tbody>
+            </table>
+            <h3>Modelling assumptions</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li><strong>Thinking tokens bill at output rate.</strong> The multiplier is applied to visible output length to obtain billed output. Providers that price thinking tokens at a reduced rate (rather than the full output rate) are modelled by lowering the output price instead, which produces the same arithmetic.</li>
+                <li><strong>Retries are full re-sends.</strong> Each attempt pays input plus output. Loops that resume a conversation rather than resending would cost less on the input side; this model is deliberately the pessimistic case.</li>
+                <li><strong>Independence.</strong> Attempt outcomes are treated as independent draws with constant <em>p</em>. Real retry loops often improve after the first failure because the prompt is adjusted, which would lower the expected attempt count.</li>
+                <li><strong>Month length.</strong> Billed days is an input, defaulting to 30. Calendar months range from 28 to 31, a &plusmn;10% swing on any monthly figure.</li>
+                <li><strong>Excluded.</strong> Cached input, batch discounts, prompt-cache write fees, tool-call overhead, multi-turn agent hops, failed-request partial billing, free tiers, committed-use discounts, and any provider-specific minimum.</li>
+            </ul>
+        </section>
+
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/llm-api-pricing-calculator">LLM API Pricing &rarr;</a>
+                <a href="/fine-tune-vs-rag-cost">Fine-Tuning vs RAG &rarr;</a>
+                <a href="/llm-selfhost-vs-api-breakeven">Self-Host vs API Breakeven &rarr;</a>
+                <a href="/context-window-vram-inflation">KV Cache VRAM Inflation &rarr;</a>
+                <a href="/token-size-to-storage">Token Size to Storage &rarr;</a>
+                <a href="/inference-capacity-planner">Inference Capacity Planner &rarr;</a>
+                <a href="/api-rate-limit-cost">API Rate Limit Cost &rarr;</a>
+            </div>
+        </div>
+
+<footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 124 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/methodology">Methodology</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">RSS &amp; Updates</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    (function () {
+        function num(id, def) {
+            var el = document.getElementById(id);
+            if (!el) { return def; }
+            var v = parseFloat(el.value);
+            return isFinite(v) ? v : def;
+        }
+        function money(v) {
+            if (!isFinite(v)) { v = 0; }
+            return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function commas(v) {
+            if (!isFinite(v)) { v = 0; }
+            return Math.round(v).toLocaleString('en-US');
+        }
+        function pct(v) {
+            if (!isFinite(v)) { return '—'; }
+            return (v * 100).toFixed(1) + '%';
+        }
+        function expectedAttempts(p, n) {
+            if (p >= 1) { return 1; }
+            if (p <= 0) { return n; }
+            return (1 - Math.pow(p, n)) / (1 - p);
+        }
+        function solveBreakeven(ratio, n) {
+            if (ratio <= 1) { return { ok: true, p: null }; }
+            if (ratio >= n) { return { ok: false, p: null }; }
+            var lo = 0.0001, hi = 0.9999, mid, val;
+            for (var i = 0; i < 80; i++) {
+                mid = (lo + hi) / 2;
+                val = expectedAttempts(mid, n);
+                if (val > ratio) { lo = mid; } else { hi = mid; }
+            }
+            return { ok: true, p: (lo + hi) / 2 };
+        }
+
+        document.getElementById('model').addEventListener('change', function () {
+            var v = this.value;
+            if (!v) { return; }
+            var p = v.split('|');
+            document.getElementById('pin').value = p[0];
+            document.getElementById('pout').value = p[1];
+            document.getElementById('spin').value = p[2];
+            document.getElementById('spout').value = p[3];
+        });
+
+        function compute() {
+            var tasksPerDay = Math.max(1, num('tasks', 500));
+            var days = Math.max(1, Math.min(31, num('days', 30)));
+            var mult = Math.max(1, Math.min(40, num('mult', 5)));
+            var inTok = Math.max(0, num('intok', 1200));
+            var visOut = Math.max(0, num('visout', 400));
+            var succ = Math.min(1, Math.max(0.01, num('succ', 95) / 100));
+            var pIn = Math.max(0, num('pin', 2));
+            var pOut = Math.max(0, num('pout', 8));
+            var sPIn = Math.max(0, num('spin', 0.4));
+            var sPOut = Math.max(0, num('spout', 1.6));
+            var sSucc = Math.min(1, Math.max(0.01, num('ssucc', 55) / 100));
+            var maxRetry = Math.max(1, Math.min(10, Math.floor(num('retry', 3))));
+
+            var warns = [];
+            if (mult > 15) { warns.push('A multiplier above 15× is above the range normally observed on mixed traffic — confirm it with a logged sample before planning against it.'); }
+            if (visOut === 0) { warns.push('Visible output is zero, so the bill is input-only. The hidden-token share cannot be computed.'); }
+            document.getElementById('warn-line').textContent = warns.join(' ');
+
+            var tasks = tasksPerDay * days;
+            var billedOut = visOut * mult;
+
+            var inCost = tasks * inTok * pIn / 1e6;
+            var outCost = tasks * billedOut * pOut / 1e6;
+            var total = inCost + outCost;
+
+            var hiddenTokens = tasks * (billedOut - visOut);
+            var allTokens = tasks * (inTok + billedOut);
+            var hiddenShare = allTokens > 0 ? hiddenTokens / allTokens : 0;
+            var effPerM = visOut > 0 ? (total / (tasks * visOut)) * 1e6 : 0;
+
+            var reasonOnce = (inTok * pIn + billedOut * pOut) / 1e6;
+            var reasonEff = reasonOnce / succ;
+            var stdOnce = (inTok * sPIn + visOut * sPOut) / 1e6;
+            var stdAttempts = expectedAttempts(sSucc, maxRetry);
+            var stdEff = stdOnce * stdAttempts;
+            var stdTotal = stdEff * tasks;
+            var reasonTotal = reasonEff * tasks;
+
+            document.getElementById('total-val').textContent = money(total);
+            document.getElementById('in-val').textContent = money(inCost);
+            document.getElementById('out-val').textContent = money(outCost);
+            document.getElementById('share-val').textContent = pct(hiddenShare);
+            document.getElementById('hidden-val').textContent = commas(hiddenTokens);
+            document.getElementById('eff-val').textContent = money(effPerM);
+            document.getElementById('std-val').textContent = money(stdTotal);
+
+            var ratio = reasonEff / stdOnce;
+            var brk = solveBreakeven(ratio, maxRetry);
+            var brkEl = document.getElementById('brk-val');
+            if (!brk.ok) {
+                brkEl.textContent = 'not reachable';
+            } else if (brk.p === null) {
+                brkEl.textContent = 'any accuracy';
+            } else {
+                brkEl.textContent = pct(brk.p);
+            }
+
+            var params = 'Monthly tasks: ' + commas(tasks) +
+                ' · reasoning price ' + money(pIn) + ' / ' + money(pOut) +
+                ' · multiplier ' + mult.toFixed(1) + '×' +
+                ' · visible output ' + commas(visOut) + ' tokens, billed ' + commas(billedOut);
+            document.getElementById('results-params').textContent = params;
+
+            var verdict = document.getElementById('verdict');
+            var cheaper = stdTotal < reasonTotal ? 'standard' : 'reasoning';
+            var diff = Math.abs(stdTotal - reasonTotal);
+            var diffPct = reasonTotal > 0 ? (diff / reasonTotal) * 100 : 0;
+            var msg = '';
+
+            if (cheaper === 'standard') {
+                msg = '<strong>The standard model with retries is cheaper by ' + money(diff) +
+                    ' per month (' + diffPct.toFixed(0) + '%).</strong> It averages ' +
+                    stdAttempts.toFixed(2) + ' attempts per task at ' + pct(sSucc) +
+                    ' first-attempt accuracy. The reasoning model costs ' +
+                    money(reasonTotal) + ' for the same work, ' +
+                    (reasonTotal / Math.max(stdTotal, 0.0001)).toFixed(2) + '× more.';
+            } else {
+                msg = '<strong>The reasoning model is cheaper by ' + money(diff) +
+                    ' per month (' + diffPct.toFixed(0) + '%).</strong> Retrying the standard model ' +
+                    'costs ' + money(stdTotal) + ' because it averages ' + stdAttempts.toFixed(2) +
+                    ' attempts per task. Every retry re-sends the input, so the cheap model pays ' +
+                    'its own input rate ' + stdAttempts.toFixed(2) + '× per task.';
+            }
+
+            if (!brk.ok) {
+                msg += ' <em>No first-attempt accuracy can make the standard model cheaper at ' +
+                    maxRetry + ' attempts</em>, because the cost ratio (' +
+                    ratio.toFixed(2) + '×) exceeds the maximum attempt multiplier.';
+            } else if (brk.p !== null) {
+                msg += ' The breakeven is ' + pct(brk.p) + ' first-attempt accuracy: above that, retries win; below it, one expensive attempt wins.';
+            }
+
+            verdict.className = 'verdict ' + (cheaper === 'reasoning' ? 'win' : 'lose');
+            verdict.innerHTML = msg;
+
+            document.getElementById('results-card').style.display = 'block';
+            document.getElementById('results-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        document.querySelector('.btn-calc').addEventListener('click', compute);
+
+        // 只在真实点击/提交时计算，避免首屏误触发
+        var firstRun = true;
+        if (!firstRun) { compute(); }
+    })();
+    </script>
+</body>
+</html>

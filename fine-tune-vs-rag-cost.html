@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Fine-Tuning vs RAG Cost Calculator — The Permanent Token Tax</title>
+    <meta name="description" content="Fine-tuning charges 1.5–2x on every token for the life of the product, not once. Compare it against RAG's extra input tokens and find the real breakeven.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <meta property="og:title" content="Fine-Tuning vs RAG Cost Calculator — jslet">
+    <meta property="og:description" content="A training run is the cheap part. The expensive part is the per-token premium you pay forever. Model both paths and find where retrieval wins.">
+    <meta property="og:url" content="https://www.jslet.com/fine-tune-vs-rag-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Fine-Tuning vs RAG Cost Calculator — jslet">
+    <meta name="twitter:description" content="Training is a one-off line item. The 2x inference premium is not. Find the retrieval length where fine-tuning stops saving money.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/fine-tune-vs-rag-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) { .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; } }
+        select.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; appearance: none; cursor: pointer; }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 1.45rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-val.txt { font-size: 1.02rem; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .formula-box { background: var(--bg-input); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); padding: 14px 18px; margin: 16px 0; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.9rem; line-height: 1.9; overflow-x: auto; }
+        .verdict { margin-top: 14px; padding: 14px 18px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-input); font-size: 0.92rem; line-height: 1.7; }
+        .verdict.win { border-left: 3px solid #16a34a; }
+        .verdict.lose { border-left: 3px solid #dc2626; }
+        .warn-line { font-size: 0.85rem; color: #b45309; margin-top: 10px; min-height: 1.2em; }
+        .subhead { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin: 22px 0 4px; font-weight: 600; }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Is fine-tuning a one-time cost?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. The training run is one-time, but hosted fine-tuned models are billed at a premium of roughly 1.5x to 2x the base model's input and output rates for every token, for as long as you use the tuned model. At 20,000 tasks a month the inference premium dwarfs the training bill within weeks." }
+        },
+        {
+          "@type": "Question",
+          "name": "When is fine-tuning actually cheaper than RAG?",
+          "acceptedAnswer": { "@type": "Answer", "text": "In two cases. First, when retrieval would inject more tokens than the fine-tuning premium costs — there is a crossover retrieval length, usually in the low thousands of tokens. Second, and more commonly, when a fine-tuned small model can replace a larger base model outright, cutting the base rate by 50–80% before the premium is applied. Fine-tuning to save tokens on the same model almost never pays." }
+        },
+        {
+          "@type": "Question",
+          "name": "Can fine-tuning teach a model new facts?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Poorly. FineTuneBench, which tested commercial fine-tuning APIs directly, found roughly 37% accuracy when injecting new facts and 19% when updating existing ones. Retrieval scored far higher on the same tasks. Fine-tuning changes behaviour and format reliably; it is not a reliable memory. Use retrieval for facts and fine-tuning for behaviour." }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does RAG get cheaper per token than fine-tuning at scale?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Because RAG spends on the cheap side of the ledger. Retrieved context adds input tokens, and input is typically a quarter the price of output and is the side that prompt caching discounts. Fine-tuning applies its premium to both sides, including output, which is the expensive side. A chatty product pays the fine-tuning tax harder than a terse one." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does the calculator include engineering time?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No, deliberately. Engineering time usually dominates both paths — a retrieval pipeline with evaluation typically runs 6–12 engineer-weeks, and fine-tuning with data curation and evaluation runs 8–16. Those costs depend on your team's rates and are better added manually than modelled with a default that will be wrong for everyone." }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 124 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>⚖️ <span>Fine-Tuning</span> vs RAG</h1>
+            <p>The pricing page sells fine-tuning as a training bill: a few dollars per million training tokens, paid once. The invoice tells a different story. A fine-tuned model is billed at roughly 1.5&times; to 2&times; the base rate on <em>every input and output token, forever</em> &mdash; and the premium lands on output, which already costs several times what input costs. This calculator separates the one-time cost from the permanent one, then finds the retrieval length at which RAG overtakes it.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>📐 Workload</h3>
+                <p class="card-desc">Enter rates from your own contract. The comparison is between three paths on the same traffic: what you pay today, the same model plus retrieved context, and a fine-tuned model.</p>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="tasks">Tasks per month</label>
+                        <input type="number" class="unit-input" id="tasks" value="20000" step="1000" min="1" max="100000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="intok">Input tokens per task</label>
+                        <input type="number" class="unit-input" id="intok" value="800" step="100" min="0" max="2000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="outtok">Output tokens per task</label>
+                        <input type="number" class="unit-input" id="outtok" value="300" step="50" min="0" max="500000">
+                    </div>
+                </div>
+
+                <div class="subhead">What you pay today</div>
+                <div class="multi-input-row">
+                    <div class="input-group">
+                        <label for="cin">Input price ($ / 1M)</label>
+                        <input type="number" class="unit-input" id="cin" value="2.00" step="0.01" min="0" max="1000">
+                    </div>
+                    <div class="input-group">
+                        <label for="cout">Output price ($ / 1M)</label>
+                        <input type="number" class="unit-input" id="cout" value="8.00" step="0.01" min="0" max="1000">
+                    </div>
+                </div>
+
+                <div class="subhead">Fine-tuned path</div>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="bin">Base input price ($ / 1M)</label>
+                        <input type="number" class="unit-input" id="bin" value="2.00" step="0.01" min="0" max="1000">
+                    </div>
+                    <div class="input-group">
+                        <label for="bout">Base output price ($ / 1M)</label>
+                        <input type="number" class="unit-input" id="bout" value="8.00" step="0.01" min="0" max="1000">
+                    </div>
+                    <div class="input-group">
+                        <label for="mult">Fine-tuned premium (×)</label>
+                        <input type="number" class="unit-input" id="mult" value="2" step="0.1" min="1" max="5">
+                    </div>
+                </div>
+                <div class="multi-input-row" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="train">Training cost ($ one-off)</label>
+                        <input type="number" class="unit-input" id="train" value="10" step="5" min="0" max="1000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="reyear">Retrains per year</label>
+                        <input type="number" class="unit-input" id="reyear" value="2" step="1" min="0" max="60">
+                    </div>
+                </div>
+
+                <div class="subhead">Retrieval path</div>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="ragtok">Retrieved tokens per task</label>
+                        <input type="number" class="unit-input" id="ragtok" value="2500" step="250" min="0" max="1000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="embed">Embedding cost ($ one-off)</label>
+                        <input type="number" class="unit-input" id="embed" value="0.10" step="0.10" min="0" max="1000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="vdb">Vector DB ($ / month)</label>
+                        <input type="number" class="unit-input" id="vdb" value="70" step="10" min="0" max="100000">
+                    </div>
+                </div>
+
+                <div class="warn-line" id="warn-line"></div>
+                <p class="card-desc" style="margin-top:12px;">If you are fine-tuning a <em>smaller</em> model to replace a larger one, set the base prices to the small model's rates and keep today's prices as the large model's. That is the only configuration where fine-tuning usually wins on cost &mdash; and this calculator will show it.</p>
+                <button class="btn-calc">Compare the Three Paths</button>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>🎯 Annual Cost</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="cur-val">$0</div><div class="metric-label">Today</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="rag-val">$0</div><div class="metric-label">RAG</div></div>
+                    <div class="metric-tile"><div class="metric-val" id="ft-val">$0</div><div class="metric-label">Fine-tuned</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="tax-val">0×</div><div class="metric-label">Per-token premium</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="train-share">0%</div><div class="metric-label">Training as % of FT</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="cross-rag">—</div><div class="metric-label">Crossover retrieval len</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="best-val">—</div><div class="metric-label">Cheapest path</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="save-val">$0</div><div class="metric-label">Best vs today / year</div></div>
+                </div>
+                <div id="verdict"></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>The Cost the Pricing Page Buries</h2>
+            <p>Hosted fine-tuning has two separate meters. The first is training: dollars per million training tokens, charged once per run, and genuinely small &mdash; a typical run on a few thousand examples lands in the tens of dollars. The second is inference on the tuned model, and it is charged at a premium over the base model, commonly 1.5&times; to 2&times;, applied to both input and output for the entire life of the product.</p>
+            <p>Marketing copy tends to quote the first meter and imply that is the cost of fine-tuning. The second meter is the one that scales with your business. Work the arithmetic on a support-desk workload at 20,000 tasks a month: the training bill might be $10, while the inference premium adds hundreds of dollars monthly, and it does not amortise, because it is a rate rather than a fee.</p>
+            <p>The premium also lands unevenly. Output tokens cost several times what input tokens cost, so a workload with long answers pays the fine-tuning tax on its most expensive component. A terse classifier pays comparatively little. Two teams can run the same number of tasks, on the same base model, with the same fine-tuning job, and see premiums that differ by an order of magnitude &mdash; purely because one of them writes paragraphs.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Why Retrieval Usually Wins on Cost</h2>
+            <p>RAG's cost structure is the mirror image. Instead of raising the price of every token, it adds more input tokens: retrieved passages get prepended to each prompt. Input is the cheap side of the ledger, and it is also the side that prompt caching discounts, so a well-designed retrieval layer can reuse a large stable prefix at a fraction of list price.</p>
+            <p>This is why the two approaches diverge so sharply at scale. Adding 2,000 retrieved tokens to a prompt at an input rate of $0.40 per million costs $0.0008 per task. Applying a 2&times; premium to an output of 300 tokens at $1.60 per million costs $0.00096 per task &mdash; more, on a workload that produces almost nothing. As output length grows, the gap widens further, because the premium follows the output and retrieval does not.</p>
+            <p>There is a crossover, and it is computable. Fine-tuning becomes cheaper per task than retrieval only when the retrieved context is long enough that the input tokens it adds cost more than the premium applies. The threshold is:</p>
+            <div class="formula-box">
+R* = [ M × (I × P_in + O × P_out) − (I × P_in + O × P_out) ] / P_in
+
+R* = crossover retrieved tokens per task
+M  = fine-tuned premium (e.g. 2.0)
+I  = input tokens per task,  O = output tokens per task
+P_in, P_out = base input and output prices per token
+
+At I=800, O=300, P_in=$0.40/M, P_out=$1.60/M, M=2.0:
+R* = (1 × (0.00032 + 0.00048)) / 0.0000004 ≈ 2,000 tokens
+            </div>
+            <p>Below that threshold, retrieval is cheaper per task. Above it, fine-tuning is. Note what the formula says about output length: the longer your answers, the higher the threshold climbs, because the premium is being paid on more expensive tokens. A workload with 1,500-token answers needs several times more retrieved context before fine-tuning breaks even.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Only Case Where Fine-Tuning Reliably Saves Money</h2>
+            <p>Fine-tuning to save tokens on the same model is almost always a losing trade, because the premium pushes every token in the wrong direction. The configuration that does work is different: fine-tuning a <em>smaller</em> model until it matches a larger one on your narrow task, then serving the small model.</p>
+            <p>The economics are straightforward once you see them. A small model fine-tuned to handle a narrow, well-specified task can land at 50&ndash;80% below the large model's base rate, and the fine-tuning premium is applied to that lower base. The saving comes from the model swap, not from the fine-tuning &mdash; fine-tuning is what makes the swap viable. That distinction matters, because it tells you what to test: whether the tuned small model clears your quality bar, not whether fine-tuning is cheaper in the abstract.</p>
+            <p>Set the base prices to the small model's rates and today's prices to the large model's, and the calculator will show whether your volume makes the swap worthwhile. Set both to the same model and it will show the premium eating the budget, which is the more common outcome and the one marketing pages tend not to illustrate.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Cost Is the Second Question: Fine-Tuning Is Not a Memory</h2>
+            <p>The decisive argument against fine-tuning for knowledge is not financial. FineTuneBench, a study that tested commercial fine-tuning APIs directly rather than open models in a lab, measured roughly 37% accuracy when injecting new facts and 19% when updating facts the model already had. A separate evaluation of retrieval on comparable tasks scored far higher. Fine-tuning changes <em>how</em> a model responds; it does not reliably change <em>what</em> it knows.</p>
+            <p>This matters for cost modelling because the failure mode is silent. A retrieval system that cannot find a document fails visibly. A fine-tuned model that half-learned a fact fails by producing a confident, plausible, wrong answer &mdash; and you find out from a customer. Teams that fine-tune for knowledge often end up adding retrieval on top to fix the accuracy, at which point they are paying for both paths.</p>
+            <p>The defensible split is well established: retrieval for facts and freshness, fine-tuning for form. Format adherence, tone, output structure, domain-specific reasoning patterns &mdash; those are behaviour changes, they are what fine-tuning is genuinely good at, and they are the cases where the premium is buying something real.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Reading the Result</h2>
+            <p><strong>Per-token premium</strong> is the fine-tuned cost per task divided by today's cost per task. Above 1.0 means fine-tuning made every request more expensive; below 1.0 means the model swap is doing the work, and the fine-tuning premium is small enough not to undo it.</p>
+            <p><strong>Training as % of fine-tuned spend</strong> is the reality check on the one-time cost. If this is below about 5%, the training bill is noise and the decision is entirely about the inference premium. That is the usual case, and it is why the training price gets quoted in marketing: it is the small number.</p>
+            <p><strong>Crossover retrieval length</strong> is the number of retrieved tokens at which RAG and fine-tuning cost the same per task. If your actual retrieval is shorter, RAG is cheaper per task and the only remaining question is fixed costs. If it reports "fine-tuning cheaper at any length", the tuned model's per-task cost is already below retrieval's, and RAG cannot catch up on variable cost.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>What This Model Leaves Out</h2>
+            <p><strong>Engineering time.</strong> This is usually the largest real cost and it is excluded on purpose, because it depends on your team's rates. A retrieval pipeline with permissions and evaluation typically runs 6&ndash;12 engineer-weeks; fine-tuning with data curation, evaluation and deployment runs 8&ndash;16. At fully loaded rates, those numbers frequently exceed the entire token bill for a year.</p>
+            <p><strong>Data curation.</strong> Fine-tuning needs labelled input-output pairs &mdash; commonly 50 to 10,000 examples &mdash; and the labelling is done by people who understand the domain. That cost does not appear on any pricing page.</p>
+            <p><strong>Retraining cycles.</strong> Modelled here as a count per year. In practice a retrain also requires a fresh evaluation pass and often a fresh labelling round, so the true cost per cycle is higher than the training bill alone.</p>
+            <p><strong>Prompt caching on the retrieval side.</strong> Excluded, which makes RAG look more expensive than a well-built pipeline actually is. A stable retrieved prefix that hits the cache can be billed at a small fraction of list input price.</p>
+            <p><strong>Latency.</strong> Retrieval adds a lookup step, typically tens to hundreds of milliseconds. Fine-tuning removes it. If your product is latency-sensitive, that is a real advantage for fine-tuning that no cost model captures.</p>
+        </section>
+
+        <section class="seo-section" id="pricing-basis">
+            <h2>Pricing Basis, Sources &amp; Assumptions</h2>
+            <p>This page does not assert vendor prices. Every rate is an <strong>input you control</strong>; the defaults are placeholders chosen to make the arithmetic legible, not a quote. Enter the rates on your invoice, including any negotiated or committed-use discount.</p>
+            <table class="cost-table">
+                <thead><tr><th>Pricing input</th><th>Basis used on this page</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Source</strong></td><td>All per-token rates, training costs, embedding costs and vector-database fees are user-supplied and every result depends on what you enter. The two structural facts this model rests on &mdash; training is billed once per run, and hosted fine-tuned inference carries a per-token premium &mdash; follow the <a href="https://openai.com/api/pricing/" rel="nofollow noopener" target="_blank">OpenAI API pricing documentation</a> and the <a href="https://www.anthropic.com/pricing" rel="nofollow noopener" target="_blank">Anthropic pricing page</a>, both re-read on <time datetime="2026-11-17">2026-11-17</time>. Default values are illustrative placeholders, not a price claim.</td></tr>
+                    <tr><td><strong>Region</strong></td><td>Not applicable &mdash; API pricing is global per provider. Hosted vector databases do vary by region and by tier; use your plan's actual monthly bill.</td></tr>
+                    <tr><td><strong>Currency</strong></td><td>USD, as entered by the user</td></tr>
+                    <tr><td><strong>Last checked</strong></td><td><time datetime="2026-11-17">2026-11-17</time> &mdash; the structural claims (training is one-off, tuned-model inference carries a per-token premium, retrieved context is input-priced) were re-confirmed against provider documentation on this date. No rate is asserted.</td></tr>
+                </tbody>
+            </table>
+            <h3>Modelling assumptions</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li><strong>Premium applies to both sides.</strong> The fine-tuned premium multiplies both input and output base rates. Providers that discount one side only would produce a lower figure than shown.</li>
+                <li><strong>Annualised at twelve months.</strong> Monthly figures are multiplied by twelve rather than by a per-month calendar. One-off costs (training, embeddings) are counted once, plus retrains.</li>
+                <li><strong>Retrieval adds only tokens.</strong> RAG is modelled purely as extra input tokens per task plus a fixed vector-database fee and a one-off embedding bill. Reranking, query expansion and hybrid search are excluded.</li>
+                <li><strong>Same task volume across paths.</strong> All three paths are priced on identical traffic. In practice a retrieval system may answer a query the fine-tuned model would have failed, which changes volume and is not modelled.</li>
+                <li><strong>Excluded.</strong> Engineering time, data labelling, evaluation harnesses, latency differences, prompt caching, batch discounts, hosting for self-managed models, free tiers, and any committed-use discount.</li>
+            </ul>
+        </section>
+
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/reasoning-token-cost">Reasoning Token Cost &rarr;</a>
+                <a href="/llm-fine-tuning-cost">LLM Fine-Tuning Cost &rarr;</a>
+                <a href="/llm-api-pricing-calculator">LLM API Pricing &rarr;</a>
+                <a href="/vector-index-memory">Vector Index Memory &rarr;</a>
+                <a href="/llm-selfhost-vs-api-breakeven">Self-Host vs API Breakeven &rarr;</a>
+                <a href="/token-size-to-storage">Token Size to Storage &rarr;</a>
+                <a href="/inference-capacity-planner">Inference Capacity Planner &rarr;</a>
+            </div>
+        </div>
+
+<footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 124 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/methodology">Methodology</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">RSS &amp; Updates</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    (function () {
+        function num(id, def) {
+            var el = document.getElementById(id);
+            if (!el) { return def; }
+            var v = parseFloat(el.value);
+            return isFinite(v) ? v : def;
+        }
+        function money(v) {
+            if (!isFinite(v)) { v = 0; }
+            return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function commas(v) {
+            if (!isFinite(v)) { v = 0; }
+            return Math.round(v).toLocaleString('en-US');
+        }
+        function pct(v, d) {
+            if (!isFinite(v)) { return '—'; }
+            return (v * 100).toFixed(d === undefined ? 1 : d) + '%';
+        }
+
+        function compute() {
+            var x = Math.max(1, num('tasks', 20000));
+            var I = Math.max(0, num('intok', 800));
+            var O = Math.max(0, num('outtok', 300));
+            var cin = Math.max(0, num('cin', 2));
+            var cout = Math.max(0, num('cout', 8));
+            var bin = Math.max(0, num('bin', 2));
+            var bout = Math.max(0, num('bout', 8));
+            var M = Math.max(1, num('mult', 2));
+            var T = Math.max(0, num('train', 10));
+            var K = Math.max(0, num('reyear', 2));
+            var R = Math.max(0, num('ragtok', 2500));
+            var E = Math.max(0, num('embed', 0.1));
+            var V = Math.max(0, num('vdb', 70));
+
+            var warns = [];
+            if (M > 3) { warns.push('A premium above 3× is higher than the 1.5–2× commonly published for hosted fine-tuning — confirm the rate before relying on the result.'); }
+            if (cin === 0) { warns.push('Today\'s input price is zero, so the crossover retrieval length cannot be derived (it divides by that rate).'); }
+            document.getElementById('warn-line').textContent = warns.join(' ');
+
+            var perCur = (I * cin + O * cout) / 1e6;
+            var perRag = ((I + R) * cin + O * cout) / 1e6;
+            var perFt  = (I * bin + O * bout) * M / 1e6;
+
+            var yCur = 12 * x * perCur;
+            var yRag = 12 * V + E + 12 * x * perRag;
+            var yFt  = T * (1 + K) + 12 * x * perFt;
+
+            var trainTotal = T * (1 + K);
+            var tax = perCur > 0 ? perFt / perCur : 0;
+            var trainShare = yFt > 0 ? trainTotal / yFt : 0;
+
+            document.getElementById('cur-val').textContent = money(yCur);
+            document.getElementById('rag-val').textContent = money(yRag);
+            document.getElementById('ft-val').textContent = money(yFt);
+            document.getElementById('tax-val').textContent = tax.toFixed(2) + '×';
+            document.getElementById('train-share').textContent = pct(trainShare, 1);
+
+            var crossEl = document.getElementById('cross-rag');
+            if (cin <= 0) {
+                crossEl.textContent = 'n/a';
+            } else {
+                var rStar = (M * (I * bin + O * bout) - (I * cin + O * cout)) / cin;
+                if (rStar <= 0) {
+                    crossEl.textContent = 'FT at any length';
+                } else {
+                    crossEl.textContent = commas(rStar) + ' tok';
+                }
+            }
+
+            var best = 'today';
+            var bestVal = yCur;
+            if (yRag < bestVal) { best = 'rag'; bestVal = yRag; }
+            if (yFt < bestVal) { best = 'fine-tuned'; bestVal = yFt; }
+            var labels = { 'today': 'Today', 'rag': 'RAG', 'fine-tuned': 'Fine-tuned' };
+            document.getElementById('best-val').textContent = labels[best];
+            document.getElementById('save-val').textContent = money(yCur - bestVal);
+
+            document.getElementById('results-params').textContent =
+                commas(x) + ' tasks/month · ' + commas(I) + ' in / ' + commas(O) + ' out · ' +
+                'premium ' + M.toFixed(1) + '× · ' + commas(R) + ' retrieved tokens · ' +
+                commas(x * 12) + ' tasks/year';
+
+            var verdict = document.getElementById('verdict');
+            var msg = '';
+            var ragVsFt = yFt - yRag;
+            var cheaperOfTwo = ragVsFt < 0 ? 'fine-tuning' : 'RAG';
+
+            msg += '<strong>' + labels[best] + ' is the cheapest path at ' + money(bestVal) +
+                ' per year.</strong> ';
+
+            if (yCur - bestVal > 0) {
+                msg += 'That is ' + money(yCur - bestVal) + ' less than today (' +
+                    pct((yCur - bestVal) / Math.max(yCur, 0.0001), 0) + '). ';
+            }
+
+            if (Math.abs(ragVsFt) < Math.max(yRag, yFt) * 0.02) {
+                msg += 'RAG and fine-tuning are effectively tied, so decide on accuracy and latency rather than cost. ';
+            } else {
+                msg += 'Between the two build paths, ' + cheaperOfTwo + ' wins by ' +
+                    money(Math.abs(ragVsFt)) + ' per year. ';
+            }
+
+            if (tax > 1) {
+                msg += 'The fine-tuned path costs ' + tax.toFixed(2) +
+                    '× today\'s price per task, and only ' + pct(trainShare, 1) +
+                    ' of its annual spend is the training bill — the rest is the permanent per-token premium.';
+            } else {
+                msg += 'The fine-tuned path costs ' + tax.toFixed(2) +
+                    '× today\'s price per task, which means a smaller model is doing the work and the premium is not undoing the swap.';
+            }
+
+            verdict.className = 'verdict ' + (best === 'today' ? 'lose' : 'win');
+            verdict.innerHTML = msg;
+
+            document.getElementById('results-card').style.display = 'block';
+            document.getElementById('results-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        document.querySelector('.btn-calc').addEventListener('click', compute);
+    })();
+    </script>
+</body>
+</html>
