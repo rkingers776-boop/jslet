@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Agent Context Cost Calculator — Why Multi-Turn Agents Cost 5x the Estimate</title>
+    <meta name="description" content="Every agent turn resends the history, so cost grows with the square of the turn count. Model the real bill, the marginal last turn, and what compaction buys.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <meta property="og:title" content="Agent Context Cost Calculator — jslet">
+    <meta property="og:description" content="A twelve-turn agent does not cost twelve calls. History is resent every turn, so the bill grows quadratically while the estimate stays linear.">
+    <meta property="og:url" content="https://www.jslet.com/agent-context-cost">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Agent Context Cost Calculator — jslet">
+    <meta name="twitter:description" content="Tool output is resent on every following turn, so a 500-token result can be billed thirty times. See which turn your agent becomes expensive.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/agent-context-cost">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        .multi-input-row-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 700px) { .multi-input-row-3, .multi-input-row-4 { grid-template-columns: 1fr; } }
+        @media (max-width: 600px) { .multi-input-row { grid-template-columns: 1fr; } }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 1.45rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-val.txt { font-size: 1.02rem; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .formula-box { background: var(--bg-input); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); padding: 14px 18px; margin: 16px 0; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.9rem; line-height: 1.9; overflow-x: auto; }
+        .verdict { margin-top: 14px; padding: 14px 18px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-input); font-size: 0.92rem; line-height: 1.7; }
+        .verdict.win { border-left: 3px solid #16a34a; }
+        .verdict.lose { border-left: 3px solid #dc2626; }
+        .warn-line { font-size: 0.85rem; color: #b45309; margin-top: 10px; min-height: 1.2em; }
+        .subhead { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin: 22px 0 4px; font-weight: 600; }
+        .ladder { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.86rem; }
+        .ladder th, .ladder td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: right; }
+        .ladder th:first-child, .ladder td:first-child { text-align: left; }
+        .ladder tr.hi td { background: rgba(79, 70, 229, 0.08); font-weight: 600; }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Why does a multi-turn agent cost more than the sum of its calls?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Because each turn resends the entire conversation so far, including every previous tool result. Turn one sends a short context, turn twelve sends everything from turns one to eleven as well. Total input tokens grow with the square of the turn count while a per-call estimate grows linearly." }
+        },
+        {
+          "@type": "Question",
+          "name": "At how many turns does the estimate break down?",
+          "acceptedAnswer": { "@type": "Answer", "text": "The bill is already double the per-call estimate when the turn count equals 1 plus twice the base context divided by per-turn growth. With a 2,000 token base and 1,500 tokens of growth per turn, that is the fourth turn. Anything past four turns is outside the regime where a per-call estimate is meaningful." }
+        },
+        {
+          "@type": "Question",
+          "name": "What dominates the cost of an agent turn, input or output?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Input, by a wide margin, even though output is priced several times higher per token. Output is generated once and then becomes part of the input on every later turn, so it is billed once at the output rate and then repeatedly at the input rate. Tool results follow the same pattern and are usually the largest single contributor." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does summarising or truncating the history help?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes, and the saving is exactly the growth that would have happened above the threshold. Capping context at a fixed length converts quadratic growth into linear growth, so the benefit rises with turn count. On a twelve-turn loop with a 2,000 token base and 1,500 tokens of growth, capping at 8,000 tokens removes about a third of the input bill." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is fewer turns always cheaper?",
+          "acceptedAnswer": { "@type": "Answer", "text": "In token cost, yes, and strongly, because cost is quadratic in turn count. Halving the turns removes about three quarters of the input bill, not half. Whether the quality holds is a separate question that this page does not answer, but the cost argument for collapsing two steps into one is much larger than a per-call estimate suggests." }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 126 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>&#9889; <span>Agent</span> Context Cost</h1>
+            <p>An agent that takes twelve turns is not twelve calls. Every turn resends the whole conversation &mdash; the system prompt, every tool result, every previous answer &mdash; so the input side of the bill grows with the <em>square</em> of the turn count while the estimate you wrote on the whiteboard grows in a straight line. At twelve turns the real bill is already several times the estimate, and the last turn alone can cost nine times the first. This calculator turns your loop shape into the number that will actually appear on the invoice.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>&#128208; Loop Shape</h3>
+                <p class="card-desc">Enter what one turn adds to the conversation. The model assumes the whole history is resent each turn, which is how almost every agent framework works by default. If your framework truncates or summarises, set the cap below.</p>
+                <div class="subhead">What every turn carries</div>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="base">Base context (tokens)</label>
+                        <input type="number" class="unit-input" id="base" value="2000" step="100" min="0" max="2000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="usr">User message / turn</label>
+                        <input type="number" class="unit-input" id="usr" value="300" step="50" min="0" max="200000">
+                    </div>
+                    <div class="input-group">
+                        <label for="out">Assistant output / turn</label>
+                        <input type="number" class="unit-input" id="out" value="400" step="50" min="0" max="200000">
+                    </div>
+                </div>
+                <div class="multi-input-row-4" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="tool">Tool result / turn</label>
+                        <input type="number" class="unit-input" id="tool" value="800" step="50" min="0" max="500000">
+                    </div>
+                    <div class="input-group">
+                        <label for="turns">Turns per task</label>
+                        <input type="number" class="unit-input" id="turns" value="12" step="1" min="1" max="200">
+                    </div>
+                    <div class="input-group">
+                        <label for="cap">Compact at (tokens, 0 = off)</label>
+                        <input type="number" class="unit-input" id="cap" value="0" step="1000" min="0" max="2000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="tasks">Tasks per day</label>
+                        <input type="number" class="unit-input" id="tasks" value="200" step="10" min="1" max="1000000">
+                    </div>
+                </div>
+                <div class="subhead">Rates &mdash; from your contract</div>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="pin">Input price ($ / 1M)</label>
+                        <input type="number" class="unit-input" id="pin" value="2.00" step="0.01" min="0" max="1000">
+                    </div>
+                    <div class="input-group">
+                        <label for="pout">Output price ($ / 1M)</label>
+                        <input type="number" class="unit-input" id="pout" value="8.00" step="0.01" min="0" max="1000">
+                    </div>
+                    <div class="input-group">
+                        <label for="days">Billed days per month</label>
+                        <input type="number" class="unit-input" id="days" value="30" step="1" min="1" max="31">
+                    </div>
+                </div>
+                <div class="warn-line" id="warn-line"></div>
+                <p class="card-desc" style="margin-top:12px;">A tool result counts once as new content and then again on every following turn. That is why tool output dominates agent bills even when the individual results look small: a 500-token JSON response fetched on turn three is billed on turns four through twelve as well.</p>
+                <button class="btn-calc">Price This Agent</button>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>&#127919; The Real Bill</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val" id="total-val">$0</div><div class="metric-label">Total / month</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="in-val">$0</div><div class="metric-label">Input / month</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="out-val">$0</div><div class="metric-label">Output / month</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="percall-val">$0</div><div class="metric-label">Flat-call estimate</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="over-val">1&times;</div><div class="metric-label">Overhead vs flat</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="last-val">1&times;</div><div class="metric-label">Last turn &divide; first</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="twice-val">&mdash;</div><div class="metric-label">2&times; at turn</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="tool-val">0%</div><div class="metric-label">Tool output share</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="cap-val">&mdash;</div><div class="metric-label">Cap saving</div></div>
+                </div>
+                <div id="verdict"></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>The Per-Call Estimate Is the Wrong Unit</h2>
+            <p>Almost every agent budget starts the same way: take the average tokens in one request, multiply by the number of requests, multiply by the price. That arithmetic is correct for a stateless service and wrong for an agent, and the error is not a rounding difference. It is structural.</p>
+            <p>A stateless endpoint sends the same short prompt every time. An agent cannot, because the model has no memory between calls. Everything it needs to know about what happened in turn three has to be re-sent in turn four: the user's instruction, its own previous reasoning, and every tool result it has collected. Context is not a cache the provider keeps for you &mdash; it is a payload you re-upload on every call, and you are billed for the upload.</p>
+            <p>The consequence is that the per-call unit understates the bill by a factor that grows with the loop length. Short loops hide it. A three-turn chain is close to the estimate and looks fine in testing. A twenty-turn research agent is off by an order of magnitude, and nobody notices until the invoice arrives, because the individual calls each looked cheap.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Why the Growth Is Quadratic</h2>
+            <p>Let <em>k</em> be everything one turn adds to the conversation &mdash; user message, assistant output, and tool result. The input at turn <em>t</em> is the base plus <em>k</em> for each completed turn before it:</p>
+            <div class="formula-box">
+k        = user + output + tool                    tokens added per turn
+ctx(t)   = base + (t - 1) &times; k                      input tokens at turn t
+
+total_in = N &times; base + k &times; N &times; (N - 1) / 2         sum over all turns
+est      = N &times; base                            flat-call estimate
+overhead = 1 + k &times; (N - 1) / (2 &times; base)             total_in / est
+N_2x     = 1 + 2 &times; base / k                        first turn at 2x overhead
+</div>
+            <p>The estimate term is deliberately the flat one: <em>N</em> calls of the same size as the first. That is what a budget written before the loop was instrumented actually contains, and it makes the comparison a like-for-like one rather than a comparison against a per-turn average that already knows the answer. The second term is the whole story. It has an <em>N</em> squared in it, divided by two, and it is multiplied by <em>k</em> &mdash; so the marginal cost of adding one more turn is not constant, it is the current context length. Turn twelve is expensive because turns one through eleven are still in the payload.</p>
+            <p>The <em>N_2x</em> line is the one worth memorising. It says where your estimate stops being usable, and it depends only on the ratio of base to growth. A large system prompt buys you more turns before the error becomes visible, which is a genuinely underrated argument for thorough tool definitions. A small prompt with chatty tool results crosses the threshold almost immediately.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Last Turn Is the Expensive One</h2>
+            <p>Because context length is linear in the turn index, the cost of a turn is linear in the turn index too. The ratio between the final turn and the first is simply the final context divided by the base. In a loop with a 2,000 token base and 1,500 tokens of growth, the twelfth turn sends 18,500 tokens against the first turn's 2,000 &mdash; a factor of 9.25.</p>
+            <p>This changes what optimisation should target. Averaged over the loop, every turn looks roughly similar and no single turn looks alarming, which is why per-turn dashboards rarely surface the problem. Sorted by cost, the last few turns carry most of the bill. If the loop can terminate earlier &mdash; a better tool, a tighter success condition, a cheaper verification step &mdash; the saving is concentrated exactly where the money is.</p>
+            <table class="ladder">
+                <thead>
+                    <tr><th>Turn</th><th>Context sent</th><th>Cost of this turn</th><th>Cumulative</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>1</td><td class="num">2,000</td><td class="num">$0.0072</td><td class="num">$0.0072</td></tr>
+                    <tr><td>4</td><td class="num">6,500</td><td class="num">$0.0162</td><td class="num">$0.0468</td></tr>
+                    <tr><td>8</td><td class="num">12,500</td><td class="num">$0.0282</td><td class="num">$0.1416</td></tr>
+                    <tr class="hi"><td>12</td><td class="num">18,500</td><td class="num">$0.0402</td><td class="num">$0.2844</td></tr>
+                </tbody>
+            </table>
+            <p>The last row is the whole task, and the numbers are per-turn cost at $2 per million input plus $8 per million output for 400 output tokens. Turn twelve alone is 5.6 times turn one. The cumulative column is what a quarterly review actually sees, and it is 5.1 times what a per-call estimate would have predicted for the same twelve turns.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Tool Output Is the Usual Villain</h2>
+            <p>Of the three things a turn adds, tool results are typically the largest and the least examined. A user message is short by design. An assistant answer is bounded by the model's verbosity. A tool result is bounded by whatever the tool returns, which is often raw: a full JSON document, a web page's text, an unfiltered SQL result, a directory listing.</p>
+            <p>The cost of a tool result is not its length, it is its length multiplied by the number of turns that follow. A 4,000-token result fetched on turn two of a twelve-turn loop is billed eleven times &mdash; 44,000 input tokens for one lookup. Trimming that result to 800 tokens before it enters the conversation removes 35,200 tokens from the task, which at $2 per million is seven cents per task and $420 a month at 200 tasks a day.</p>
+            <p>This is why "return a summary, not a dump" is the highest-leverage change in most agent codebases, and why it is invisible in any per-call analysis. The trimming happens inside the tool, so the model never sees the difference, the quality does not change, and the bill moves by a third.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Compaction Is a Threshold, Not a Strategy</h2>
+            <p>Capping the context at a fixed length converts the quadratic term into a linear one: once the conversation hits the cap, each turn sends the cap instead of the ever-growing history. The saving is exactly the growth that would have happened above the threshold, which is why it rises with turn count and does nothing for short loops.</p>
+            <p>The threshold itself is the interesting decision, and it has two costs rather than one. Below the cap, the model sees everything and quality is unaffected. Above it, something has to be dropped or summarised, and the summarisation call is itself a completion you pay for. A cap set aggressively saves input tokens and spends them back on summarising, plus whatever quality loss comes from the model forgetting the middle of the task.</p>
+            <p>Set the cap as input to see the trade in tokens. The default of zero means no compaction, which is what most frameworks do unless you configure otherwise &mdash; so if the cap saving field reads as a dash, you are paying the full quadratic price and probably did not choose to.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Two Levers This Page Does Not Price</h2>
+            <p>The first is caching, and it interacts with everything above. The stable part of an agent's context &mdash; system prompt, tool definitions, standing instructions &mdash; is the same on every turn, which makes it the ideal cache prefix. It is also usually the part that <em>does not</em> grow, so caching it caps the floor of the bill without touching the growth. Whether that trade pays depends on request spacing, which is a separate calculation on <a href="/prompt-cache-breakeven">the prompt cache break-even page</a>.</p>
+            <p>The second is model routing. Running early turns on a cheap model and escalating only when the task proves hard is attractive, but it does not change the shape of the curve &mdash; it changes the price of the vertical axis. A quadratic bill discounted by 70% is still quadratic, and it still overtakes the linear estimate at the same turn count. Routing buys headroom; it does not buy structure.</p>
+            <p>What actually buys structure is fewer turns and smaller tool results, in that order. Both are engineering decisions, both are measurable per task, and neither requires a vendor change.</p>
+        </section>
+
+        <section class="seo-section" id="pricing-basis">
+            <h2>Pricing Basis, Sources &amp; Assumptions</h2>
+            <p>This page does not assert vendor prices. Both rates are <strong>inputs you control</strong>, pre-filled as a starting point because the arithmetic is easier to read with real-looking numbers. Enter the rates on your invoice, including any negotiated or committed-use discount.</p>
+            <table class="cost-table">
+                <thead><tr><th>Pricing input</th><th>Basis used on this page</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Source</strong></td><td>All per-token rates are user-supplied and every result depends on what you enter. The structural fact the model rests on &mdash; that a chat completion is stateless and the caller resends the full history each turn, with every token billed as input &mdash; follows the <a href="https://openai.com/api/pricing/" rel="nofollow noopener" target="_blank">OpenAI API pricing documentation</a> and the <a href="https://platform.claude.com/docs/en/about-claude/pricing" rel="nofollow noopener" target="_blank">Anthropic pricing documentation</a>, both re-read on <time datetime="2026-11-20">2026-11-20</time>. Default rates are illustrative placeholders, not a price claim.</td></tr>
+                    <tr><td><strong>Region</strong></td><td>Not applicable &mdash; first-party API pricing is global per provider. Regional and multi-region marketplace endpoints can carry a premium; use the rate on your invoice if you buy through one.</td></tr>
+                    <tr><td><strong>Currency</strong></td><td>USD, as entered by the user</td></tr>
+                    <tr><td><strong>Last checked</strong></td><td><time datetime="2026-11-20">2026-11-20</time> &mdash; the stateless request model and the input/output price split were re-confirmed against provider documentation on this date. No rate is asserted.</td></tr>
+                </tbody>
+            </table>
+            <h3>Modelling assumptions</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li><strong>Uniform turns.</strong> Every turn is assumed to add the same <em>k</em> tokens. Real loops vary &mdash; a turn that fetches a large document costs far more than one that answers from memory &mdash; and the total is the sum of the actual values, so a uniform mean is an approximation. It is accurate for the average and understates variance.</li>
+                <li><strong>Full history resend.</strong> No framework-side trimming, sliding windows, or provider-side conversation state is assumed unless you set a cap. This is the default behaviour of most agent loops and the pessimistic case.</li>
+                <li><strong>Compaction is a hard cap.</strong> Setting a cap truncates context to that length rather than summarising it, so the cost of the summarisation call itself is not counted. That makes the cap saving an upper bound.</li>
+                <li><strong>Tool results are billed as input.</strong> Results returned inside the conversation are input tokens on the following turn. Tools that bill separately for their own execution are out of scope.</li>
+                <li><strong>Excluded.</strong> Prompt caching, batch discounts, reasoning tokens inside a turn, retries, failed tasks, streaming overhead, and any charge for tool execution itself.</li>
+                <li><strong>Month length.</strong> Billed days is an input, defaulting to 30. Calendar months range from 28 to 31, a &plusmn;10% swing on any monthly figure.</li>
+            </ul>
+        </section>
+
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/prompt-cache-breakeven">Prompt Cache Break-Even &rarr;</a>
+                <a href="/reasoning-token-cost">Reasoning Token Cost &rarr;</a>
+                <a href="/fine-tune-vs-rag-cost">Fine-Tuning vs RAG &rarr;</a>
+                <a href="/context-window-vram-inflation">KV Cache VRAM Inflation &rarr;</a>
+                <a href="/llm-api-pricing-calculator">LLM API Pricing &rarr;</a>
+                <a href="/token-size-to-storage">Token Size to Storage &rarr;</a>
+                <a href="/inference-capacity-planner">Inference Capacity Planner &rarr;</a>
+            </div>
+        </div>
+
+<footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 126 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/methodology">Methodology</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">RSS &amp; Updates</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    (function () {
+        function num(id, def) {
+            var el = document.getElementById(id);
+            if (!el) { return def; }
+            var v = parseFloat(el.value);
+            return isFinite(v) ? v : def;
+        }
+        function money(v) {
+            if (!isFinite(v)) { v = 0; }
+            return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function commas(v) {
+            if (!isFinite(v)) { v = 0; }
+            return Math.round(v).toLocaleString('en-US');
+        }
+        function x(v) {
+            if (!isFinite(v)) { return '&mdash;'; }
+            return v.toFixed(2) + '&times;';
+        }
+
+        // 每轮上下文序列
+        function contexts(base, k, n, cap) {
+            var out = [];
+            for (var t = 1; t <= n; t++) {
+                var c = base + (t - 1) * k;
+                if (cap > 0 && c > cap) { c = cap; }
+                out.push(c);
+            }
+            return out;
+        }
+
+        function compute() {
+            var base = Math.max(0, num('base', 2000));
+            var usr = Math.max(0, num('usr', 300));
+            var outTok = Math.max(0, num('out', 400));
+            var tool = Math.max(0, num('tool', 800));
+            var turns = Math.max(1, Math.min(200, Math.floor(num('turns', 12))));
+            var cap = Math.max(0, num('cap', 0));
+            var tasks = Math.max(1, num('tasks', 200));
+            var days = Math.max(1, Math.min(31, num('days', 30)));
+            var pIn = Math.max(0, num('pin', 2));
+            var pOut = Math.max(0, num('pout', 8));
+
+            var warns = [];
+            if (cap > 0 && cap < base) {
+                cap = base;
+                warns.push('Cap raised to the base context, because a cap below the system prompt cannot be applied without truncating it.');
+            }
+
+            var k = usr + outTok + tool;
+            var ctx = contexts(base, k, turns, cap);
+            var totalIn = 0;
+            for (var i = 0; i < ctx.length; i++) { totalIn += ctx[i]; }
+            var totalOut = turns * outTok;
+
+            // 每调用估算：按「每次都与首轮同样大小」的平坦口径
+            var perCallIn = turns * base;
+            var overhead = perCallIn > 0 ? totalIn / perCallIn : 1;
+            var lastOverFirst = base > 0 ? ctx[ctx.length - 1] / base : 1;
+
+            // 2x 阈值轮次
+            var twiceTile = '&mdash;';
+            if (k > 0 && base > 0) {
+                var t2 = 1 + 2 * base / k;
+                twiceTile = Math.ceil(t2) <= turns ? String(Math.ceil(t2)) : '&gt;' + turns;
+            }
+
+            // 工具输出占比
+            var toolShare = 0;
+            if (turns > 1 && totalIn > 0) {
+                toolShare = (tool * turns * (turns - 1) / 2) / totalIn;
+            }
+
+            // 月度
+            var callsMonth = tasks * days;
+            var inCost = totalIn / 1e6 * pIn * callsMonth;
+            var outCost = totalOut / 1e6 * pOut * callsMonth;
+            var totalCost = inCost + outCost;
+            var perCallCost = perCallIn / 1e6 * pIn * callsMonth + outCost;
+
+            // cap 节省
+            var capSaving = '&mdash;';
+            if (cap > 0) {
+                var ctxNo = contexts(base, k, turns, 0);
+                var inNo = 0;
+                for (var j = 0; j < ctxNo.length; j++) { inNo += ctxNo[j]; }
+                if (inNo > 0) {
+                    capSaving = ((1 - totalIn / inNo) * 100).toFixed(1) + '%';
+                }
+            }
+
+            document.getElementById('total-val').textContent = money(totalCost);
+            document.getElementById('in-val').textContent = money(inCost);
+            document.getElementById('out-val').textContent = money(outCost);
+            document.getElementById('percall-val').textContent = money(perCallCost);
+            document.getElementById('over-val').innerHTML = x(overhead);
+            document.getElementById('last-val').innerHTML = x(lastOverFirst);
+            document.getElementById('twice-val').innerHTML = twiceTile;
+            document.getElementById('tool-val').textContent = (toolShare * 100).toFixed(1) + '%';
+            document.getElementById('cap-val').textContent = capSaving;
+
+            document.getElementById('results-params').innerHTML =
+                turns + ' turns &middot; ' + commas(base) + ' token base &middot; +' + commas(k) +
+                ' per turn &middot; ' + commas(tasks) + ' tasks/day &middot; ' + commas(totalIn) +
+                ' input tokens per task';
+
+            var msg = 'Each task sends <strong>' + commas(totalIn) + ' input tokens</strong>, which is ' +
+                x(overhead) + ' the flat-call estimate of ' + commas(perCallIn) + '. The last turn costs ' +
+                x(lastOverFirst) + ' the first, because it carries ' + commas(ctx[ctx.length - 1]) +
+                ' tokens of history. ';
+
+            if (toolShare > 0.25) {
+                msg += 'Tool results are ' + (toolShare * 100).toFixed(1) + '% of the input bill &mdash; trimming them is the cheapest change available. ';
+            }
+            if (cap > 0) {
+                msg += 'Compacting at ' + commas(cap) + ' tokens removes ' + capSaving + ' of the input side. ';
+            } else if (turns >= 8) {
+                msg += 'No compaction is configured, so this is the full quadratic price. ';
+            }
+            msg += 'Cutting the loop to ' + Math.max(1, Math.floor(turns / 2)) + ' turns would take the input bill from ' +
+                money(inCost) + ' to roughly ' + money(inCost * (Math.floor(turns / 2) * base + k * Math.floor(turns / 2) * (Math.floor(turns / 2) - 1) / 2) / totalIn) +
+                ' per month.';
+
+            var vd = document.getElementById('verdict');
+            vd.className = 'verdict ' + (overhead >= 2 ? 'lose' : 'win');
+            vd.innerHTML = msg;
+
+            document.getElementById('warn-line').textContent = warns.join(' ');
+            document.getElementById('results-card').style.display = 'block';
+            document.getElementById('results-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        document.querySelector('.btn-calc').addEventListener('click', compute);
+
+        var firstRun = true;
+        if (!firstRun) { compute(); }
+    })();
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>

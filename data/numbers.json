@@ -5,7 +5,7 @@
   "methodology": "https://www.jslet.com/methodology",
   "license_note": "Facts are free to cite. Attribution optional.",
   "counts": {
-    "numbers": 117
+    "numbers": 121
   },
   "numbers": [
     {
@@ -1321,6 +1321,54 @@
       "formula": "R* = (2-1) x (800 x $0.40 + 300 x $1.60) / $0.40 = 800 / 0.40 = 2,000 tokens",
       "source": "Derived from the per-task cost equalisation between a fine-tuned and a retrieval path, checked 2026-11-17",
       "url": "/fine-tune-vs-rag-cost"
+    },
+    {
+      "id": "prompt-cache-token-surcharge",
+      "topic": "LLM prompt caching",
+      "metric": "surcharge on cached input when the request gap exceeds the 5-minute lifetime",
+      "value": 25,
+      "unit": "percent",
+      "condition": "5-minute cache tier at a 1.25x write premium and a 0.10x read rate, average gap of 400 seconds against a 300 second lifetime",
+      "formula": "n = floor(300 / 400) = 0, so n = 1 request per window; multiplier = write / 1 = 1.25; (1.25 - 1) / 1 = 25 percent",
+      "source": "Arithmetic on the published cache-write premium structure (short and long tiers, read discount), checked 2026-11-20",
+      "page": "https://www.jslet.com/prompt-cache-breakeven",
+      "verified": "2026-11-20"
+    },
+    {
+      "id": "prompt-cache-breakeven-reuse",
+      "topic": "LLM prompt caching",
+      "metric": "reuses per cache lifetime at which a 1.25x write premium is repaid",
+      "value": 2,
+      "unit": "requests",
+      "condition": "1.25x cache write, 0.10x cache read, 5-minute lifetime, uniformly spaced requests",
+      "formula": "n* = ceil((1.25 - 0.10) / (1 - 0.10)) = ceil(1.15 / 0.90) = ceil(1.278) = 2",
+      "source": "Derived from setting the cached cost multiple equal to 1, checked 2026-11-20",
+      "page": "https://www.jslet.com/prompt-cache-breakeven",
+      "verified": "2026-11-20"
+    },
+    {
+      "id": "agent-turn-input-overhead",
+      "topic": "LLM agent cost",
+      "metric": "input tokens per task as a multiple of a flat per-call estimate",
+      "value": 5.13,
+      "unit": "multiple",
+      "condition": "2,000 token base context, 1,500 tokens added per turn (300 user, 400 output, 800 tool result), 12 turns per task, full history resent each turn",
+      "formula": "total = 12 x 2,000 + 1,500 x 12 x 11 / 2 = 24,000 + 99,000 = 123,000; flat estimate = 12 x 2,000 = 24,000; 123,000 / 24,000 = 5.13",
+      "source": "Arithmetic on stateless chat completions that resend the full history, checked 2026-11-20",
+      "page": "https://www.jslet.com/agent-context-cost",
+      "verified": "2026-11-20"
+    },
+    {
+      "id": "agent-last-turn-cost-ratio",
+      "topic": "LLM agent cost",
+      "metric": "cost of the final turn divided by the cost of the first",
+      "value": 9.25,
+      "unit": "multiple",
+      "condition": "2,000 token base context, 1,500 tokens added per turn, twelve turns, same output length on every turn",
+      "formula": "context at turn 12 = 2,000 + 11 x 1,500 = 18,500; 18,500 / 2,000 = 9.25",
+      "source": "Derived from linear context growth under full history resend, checked 2026-11-20",
+      "page": "https://www.jslet.com/agent-context-cost",
+      "verified": "2026-11-20"
     }
   ]
 }

@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; base-uri 'self'; form-action 'self';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Prompt Cache Break-Even Calculator — When Caching Raises Your Bill</title>
+    <meta name="description" content="A cache write costs 1.25x and a read 0.1x, so requests spaced past the TTL pay a 25% surcharge instead of a discount. Find your break-even reuse count.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <meta property="og:title" content="Prompt Cache Break-Even Calculator — jslet">
+    <meta property="og:description" content="Caching is the only LLM feature that can increase a bill. Enter your request spacing and see whether the write premium ever gets repaid.">
+    <meta property="og:url" content="https://www.jslet.com/prompt-cache-breakeven">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="jslet">
+    <meta property="og:image" content="https://www.jslet.com/og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="en_US">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Prompt Cache Break-Even Calculator — jslet">
+    <meta name="twitter:description" content="The 90% discount applies to a read, not to your bill. Model the write premium against your real request spacing and pick the right TTL tier.">
+    <meta name="twitter:image" content="https://www.jslet.com/og-image.png">
+    <link rel="canonical" href="https://www.jslet.com/prompt-cache-breakeven">
+    <style>
+        .multi-input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .multi-input-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) { .multi-input-row, .multi-input-row-3 { grid-template-columns: 1fr; } }
+        select.unit-input { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.95rem; color: var(--text-heading); background: var(--bg-input); font-family: "SF Mono", "Cascadia Code", Consolas, monospace; appearance: none; cursor: pointer; }
+        select.unit-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+        .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 14px; }
+        .metric-tile { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+        .metric-tile .metric-val { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 1.45rem; font-weight: 700; color: var(--accent); }
+        .metric-tile .metric-val.txt { font-size: 1.02rem; }
+        .metric-tile .metric-val.neg { color: #dc2626; }
+        .metric-tile .metric-val.pos { color: #16a34a; }
+        .metric-tile .metric-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+        .formula-box { background: var(--bg-input); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); padding: 14px 18px; margin: 16px 0; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 0.9rem; line-height: 1.9; overflow-x: auto; }
+        .verdict { margin-top: 14px; padding: 14px 18px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-input); font-size: 0.92rem; line-height: 1.7; }
+        .verdict.win { border-left: 3px solid #16a34a; }
+        .verdict.lose { border-left: 3px solid #dc2626; }
+        .warn-line { font-size: 0.85rem; color: #b45309; margin-top: 10px; min-height: 1.2em; }
+        .subhead { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin: 22px 0 4px; font-weight: 600; }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Can prompt caching make my bill go up?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. A cache write is billed above the normal input rate, typically 1.25x for a five-minute lifetime and 2x for a one-hour lifetime, while a read is billed at roughly 0.1x. If no request arrives before the cache expires, every request pays the write premium and none of them collect the read discount. At a 1.25x write that is a 25% surcharge on every cached token." }
+        },
+        {
+          "@type": "Question",
+          "name": "How many reuses does a cache need before it pays for itself?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Two for a 1.25x write, three for a 2x write. The break-even reuse count is (write minus read) divided by (1 minus read), rounded up. With a 1.25x write and a 0.1x read that is 1.15 over 0.9, or 1.28, which means the second request already comes out ahead." }
+        },
+        {
+          "@type": "Question",
+          "name": "Why does caching only save a few percent of my bill?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Because the discount applies to the cacheable prefix, not to the whole request. If the stable system prompt and tool definitions are 8,000 tokens and the per-request content is 1,000 tokens, only 89% of input tokens can ever be cached, and the output tokens are untouched. A 70% discount on the prefix becomes a 63% discount on the input line and less than that on the total bill." }
+        },
+        {
+          "@type": "Question",
+          "name": "Should I use the five-minute or the one-hour cache?",
+          "acceptedAnswer": { "@type": "Answer", "text": "It depends on spacing, not on volume. The five-minute tier is cheaper to write and breaks even at two reuses, but it only survives gaps under five minutes. The one-hour tier costs twice as much to write and needs three reuses, but it still pays across gaps of half an hour or more. A workload with a ten-minute gap gets nothing from the five-minute tier and a large saving from the one-hour tier." }
+        },
+        {
+          "@type": "Question",
+          "name": "What happens if my prompt is shorter than the minimum cacheable length?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Nothing. The request succeeds at full price and no error is returned. The only evidence is in the usage object: if the cache creation and cache read counters are both zero, nothing was cached. Minimums range from 512 to 4,096 tokens depending on the model, so a short system prompt silently disables the feature." }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+
+<div id="site-nav" data-current="tool">
+        <noscript><div class="jslet-header" id="jslet-nav"><div class="jslet-header-inner"><div class="jslet-nav-left"><a href="/" class="jslet-logo-btn" aria-label="jslet home"><svg class="jslet-mark" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a><span class="jslet-brand-text">Tool Hub</span></div><div class="jslet-search-container"><div class="jslet-search-bar"><label for="noscript-search" class="sr-only">Search</label><input type="text" id="noscript-search" placeholder="Search 126 dev tools, calculators &amp; briefings..." aria-label="Search"></div></div><div class="jslet-nav-right"><a href="/articles" class="jslet-icon-btn" aria-label="Updates &amp; articles">📰</a><a href="/rss.xml" class="jslet-icon-btn" aria-label="RSS feed">📡</a><a href="/about" class="jslet-profile-btn" aria-label="Your profile"><div class="jslet-profile-avatar">J</div></a></div></div></div><div class="noscript-nav-links"><a href="/">Home</a> · <a href="/json-tools">JSON</a> · <a href="/core-calculators">Calculators</a> · <a href="/articles">Articles</a> · <a href="/about">About</a></div></noscript>
+    </div>
+
+    <div class="container" id="main-content">
+        <header>
+            <h1>&#9889; <span>Prompt Cache</span> Break-Even</h1>
+            <p>Prompt caching is the only feature in the LLM stack that can make a bill go up. Vendors advertise a 90% discount on cached input, and that number is real &mdash; but it is the price of a <em>read</em>. A <em>write</em> is billed above the normal input rate, and if no request arrives before the cache expires, every single request pays the write premium and collects nothing. This calculator takes your request spacing and tells you which side of that line you are on, and which lifetime tier you should actually be buying.</p>
+        </header>
+
+        <main class="matrix-grid">
+            <div class="calculator-card" style="grid-column: 1 / -1;">
+                <h3>&#128208; Your Request Shape</h3>
+                <p class="card-desc">The two fields that decide the answer are the average gap between requests that share the same prefix, and the cache lifetime you selected. Length matters far less than people expect, because every term scales with it.</p>
+                <div class="subhead">Cacheable prefix</div>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="prefix">Stable prefix tokens</label>
+                        <input type="number" class="unit-input" id="prefix" value="8000" step="500" min="0" max="2000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="suffix">Variable tokens per request</label>
+                        <input type="number" class="unit-input" id="suffix" value="1000" step="100" min="0" max="2000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="mincache">Provider minimum to cache</label>
+                        <input type="number" class="unit-input" id="mincache" value="1024" step="128" min="0" max="100000">
+                    </div>
+                </div>
+                <div class="subhead">Traffic shape</div>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="reqs">Requests / day on that prefix</label>
+                        <input type="number" class="unit-input" id="reqs" value="216" step="10" min="1" max="5000000">
+                    </div>
+                    <div class="input-group">
+                        <label for="gap">Average gap (seconds)</label>
+                        <input type="number" class="unit-input" id="gap" value="400" step="10" min="1" max="86400">
+                    </div>
+                    <div class="input-group">
+                        <label for="days">Billed days per month</label>
+                        <input type="number" class="unit-input" id="days" value="30" step="1" min="1" max="31">
+                    </div>
+                </div>
+                <div class="subhead">Cache economics &mdash; from your contract</div>
+                <div class="multi-input-row-3">
+                    <div class="input-group">
+                        <label for="pin">Input price ($ / 1M tokens)</label>
+                        <input type="number" class="unit-input" id="pin" value="2.00" step="0.01" min="0" max="1000">
+                    </div>
+                    <div class="input-group">
+                        <label for="write">Write multiplier (&times;)</label>
+                        <input type="number" class="unit-input" id="write" value="1.25" step="0.05" min="0" max="10">
+                    </div>
+                    <div class="input-group">
+                        <label for="read">Read multiplier (&times;)</label>
+                        <input type="number" class="unit-input" id="read" value="0.10" step="0.01" min="0" max="10">
+                    </div>
+                </div>
+                <div class="multi-input-row" style="margin-top:14px;">
+                    <div class="input-group">
+                        <label for="ttl">Cache lifetime, minutes</label>
+                        <input type="number" class="unit-input" id="ttl" value="5" step="1" min="1" max="1440">
+                    </div>
+                    <div class="input-group">
+                        <label for="tier">Tier preset</label>
+                        <select class="unit-input" id="tier">
+                            <option value="">&mdash; keep my numbers &mdash;</option>
+                            <option value="5|1.25">5-minute tier &middot; 1.25&times; write &middot; 0.10&times; read</option>
+                            <option value="60|2.00">1-hour tier &middot; 2.00&times; write &middot; 0.10&times; read</option>
+                            <option value="30|1.00">No write charge &middot; 30 min tier &middot; 1.00&times; write</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="warn-line" id="warn-line"></div>
+                <p class="card-desc" style="margin-top:12px;">The gap is the interval between requests that reuse the <em>same</em> prefix &mdash; not your overall request rate. A service handling 20 endpoints at 10 requests per second each has a 0.5 second gap on every one of them, which is a very different problem from 10 requests per second spread across 20 prefixes.</p>
+                <button class="btn-calc">Price This Cache</button>
+            </div>
+
+            <div class="calculator-card" style="grid-column: 1 / -1; display: none;" id="results-card">
+                <h3>&#127919; What the Cache Does to the Bill</h3>
+                <p class="card-desc" id="results-params"></p>
+                <div class="metric-grid">
+                    <div class="metric-tile"><div class="metric-val txt" id="hit-val">0%</div><div class="metric-label">Hit rate</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="mult-val">1.00&times;</div><div class="metric-label">Prefix multiplier</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="psave-val">0%</div><div class="metric-label">Prefix saving</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="bsave-val">0%</div><div class="metric-label">Whole input bill</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="best-val">&mdash;</div><div class="metric-label">Best tier here</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="cost-val">$0</div><div class="metric-label">Input / mo, cached</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="base-val">$0</div><div class="metric-label">Input / mo, plain</div></div>
+                    <div class="metric-tile"><div class="metric-val txt" id="brk-val">&mdash;</div><div class="metric-label">Break-even reuse</div></div>
+                </div>
+                <div id="verdict"></div>
+            </div>
+        </main>
+
+        <section class="seo-section">
+            <h2>The Feature That Bills You for Trying</h2>
+            <p>Every other cost lever in this stack is monotonic: fewer tokens cost less, a cheaper model costs less, a shorter answer costs less. Caching is not monotonic. Turning it on moves two prices at once, and in the wrong direction for one of them. A write is billed at a multiple of the base input rate, a read is billed at a fraction of it, and the multiple only gets repaid if something reads the cache back before it expires.</p>
+            <p>The expiry is the part that gets lost in the marketing. A five-minute lifetime means the cache is discarded five minutes of <em>inactivity</em> after the last read, so a steady stream of requests keeps it alive indefinitely &mdash; that is the case the vendor benchmarks. But a workload that calls the same prefix every seven minutes never keeps it alive, because seven is greater than five. Every request writes, none reads, and the bill goes up by the write premium. Nothing warns you. The request succeeds, the answer is correct, the usage object even shows cache tokens being created, which looks like the feature is working.</p>
+            <p>This is why the calculator asks for your gap before anything else. The gap is a property of your application, not of the model, and it is the only input that can flip the sign of the result.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Arithmetic, Without the Marketing</h2>
+            <p>Model a cache lifetime as a window that holds <em>n</em> requests reusing the same prefix. The first one writes, the following <em>n</em> &minus; 1 read, and the window then expires and the cycle repeats. Effective cost per request, expressed as a multiple of the uncached input price:</p>
+            <div class="formula-box">
+n     = floor(ttl_seconds / gap_seconds)        requests per cache lifetime
+h     = (n - 1) / n                              hit rate
+M     = (w + (n - 1) &times; r) / n                      cost multiple vs uncached
+n*    = ceil((w - r) / (1 - r))                  minimum n for caching to pay
+
+5-min tier, w = 1.25, r = 0.10  &rarr;  n* = ceil(1.15 / 0.90) = 2 requests
+1-hour tier, w = 2.00, r = 0.10  &rarr;  n* = ceil(1.90 / 0.90) = 3 requests
+</div>
+            <p>Those two break-even counts are worth internalising because they are small and absolute. Two reuses justify a five-minute cache. Three justify a one-hour cache. Below that the feature is not neutral, it is negative, and the penalty is exactly the write premium: 25% with the short tier, 100% with the long one.</p>
+            <p>Note what is <em>not</em> in the formula: the length of the prefix. Every term scales linearly with it, so a long prefix does not improve the ratio, it only multiplies the absolute dollars on both sides of the comparison. Short prompts are worse for a different reason &mdash; they may fall under the provider minimum and never be cached at all &mdash; but length is not what determines whether caching pays.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Choosing the Tier Is a Spacing Question</h2>
+            <p>The tiers differ by a factor of two in write cost and a factor of twelve in lifetime, so the right answer depends almost entirely on how far apart your requests are. The table below holds the multipliers fixed at the published 1.25&times; / 0.10&times; and 2.00&times; / 0.10&times; and assumes enough daily volume that the window is never volume-limited.</p>
+            <table class="cost-table">
+                <thead>
+                    <tr><th>Average gap</th><th>5-minute tier</th><th>1-hour tier</th><th>Verdict</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>30 seconds</td><td class="num">0.22&times; &middot; &minus;78.5%</td><td class="num">0.12&times; &middot; &minus;88.4%</td><td>Either pays; the long tier wins</td></tr>
+                    <tr><td>1 minute</td><td class="num">0.33&times; &middot; &minus;67.0%</td><td class="num">0.13&times; &middot; &minus;86.8%</td><td>Either pays; the long tier wins</td></tr>
+                    <tr><td>2 minutes</td><td class="num">0.68&times; &middot; &minus;32.5%</td><td class="num">0.16&times; &middot; &minus;83.7%</td><td>Either pays; the long tier wins clearly</td></tr>
+                    <tr><td>4 minutes</td><td class="num">1.25&times; &middot; <strong>+25.0%</strong></td><td class="num">0.23&times; &middot; &minus;77.3%</td><td>Short tier is a pure loss</td></tr>
+                    <tr><td>10 minutes</td><td class="num">1.25&times; &middot; <strong>+25.0%</strong></td><td class="num">0.31&times; &middot; &minus;68.9%</td><td>Short tier is a pure loss</td></tr>
+                    <tr><td>30 minutes</td><td class="num">1.25&times; &middot; <strong>+25.0%</strong></td><td class="num">1.05&times; &middot; <strong>+5.0%</strong></td><td>Both tiers lose; leave caching off</td></tr>
+                    <tr><td>1 hour or more</td><td class="num">1.25&times; &middot; <strong>+25.0%</strong></td><td class="num">2.00&times; &middot; <strong>+100%</strong></td><td>Both tiers lose badly</td></tr>
+                </tbody>
+            </table>
+            <p>The single most expensive configuration in that table is the one most teams ship by default: the five-minute tier on a workload whose requests arrive four to thirty minutes apart. It is not a small error. It is a 25% surcharge on every cached token, applied silently, for as long as the configuration stays in place.</p>
+            <p>The 30-minute row is the other useful one. At that spacing the one-hour cache is also a loss, because two requests per window cannot repay a 2&times; write. When both tiers show a penalty, the correct move is to disable caching entirely &mdash; not to pick the less bad tier.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>Where the 90% Actually Lands</h2>
+            <p>Even a correctly configured cache does not cut your bill by 90%, and the reason is structural rather than a hidden fee. Caching applies to the stable prefix only. Everything after the last cache breakpoint &mdash; the user's question, retrieved documents, the conversation tail, the image payloads &mdash; is billed at the full input rate on every request and cannot be cached, because it is different each time.</p>
+            <p>So the discount on the <em>bill</em> is the discount on the prefix multiplied by the prefix's share of input tokens. A 70% prefix discount on a request that is 89% prefix becomes a 63% saving on the input line. On the total bill it is smaller still, because output tokens are untouched and output is the expensive side. If your workload is output-heavy, caching has less room to work with than the headline suggests, and the calculator reports that weighted number as <em>whole input bill</em> rather than quoting the headline.</p>
+            <p>This is the same pattern that shows up across this site: the number a vendor advertises is correct for the quantity the vendor named, and wrong for the quantity you are trying to budget. The fix is not scepticism, it is arithmetic &mdash; apply the discount to the base it actually covers.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>The Silent Failure Below the Minimum</h2>
+            <p>Each model has a minimum cacheable length, ranging from a few hundred tokens to several thousand depending on generation. Below it, the request runs uncached at full price and returns no error, no warning and no status code. The response is indistinguishable from a successful cache write except in one place: the usage object reports zero for both cache creation and cache read.</p>
+            <p>This is the failure mode that wastes the most engineering time, because the observable behaviour is "caching is enabled and nothing changed". Teams spend days tuning breakpoints and restructuring prompts when the actual problem is that the prompt is 800 tokens against a 1,024-token floor. The calculator carries the floor as an input so the result collapses to a 1.00&times; multiplier and a 0% saving when it is violated, which is the honest answer, instead of showing a large theoretical discount that will never appear on an invoice.</p>
+            <p>Two related details are worth knowing. First, prefix matching is exact and runs backwards from the breakpoint, so a timestamp, a request ID, or a shuffled tool list at the top of the prompt invalidates everything after it. Second, the match is prefix-based, not block-based: inserting one token near the front discards the entire cache even if the rest of the content is identical. Cache-friendly prompts are therefore built with the most volatile content last, which is often the opposite of how they were originally written.</p>
+        </section>
+
+        <section class="seo-section">
+            <h2>What To Do With the Answer</h2>
+            <p>If the calculator shows a penalty, there are only three real options, and they are ordered by effort rather than by payoff. Turning caching off is free and stops the bleed immediately. Moving to a longer tier fixes every case where the gap sits between the two lifetimes, which is the most common shape in production because agent loops and human-in-the-loop approvals naturally pause for a few minutes. Restructuring the prompt so that the cacheable prefix is longer and more stable is the option with the largest ceiling and the most work.</p>
+            <p>If it shows a saving, the next question is whether the saving survives your deployment cadence. A prompt that is edited and redeployed twice a day invalidates the cache twice a day, and the warm-up cost is paid again on the first request of every cycle. For a few hundred requests per day that cost is noise; for a prefix serving thousands of requests per hour it is worth measuring separately.</p>
+            <p>One lever this page deliberately does not price is throughput. On most providers a cache read does not count against the input-tokens-per-minute limit, so a high hit rate buys headroom as well as money &mdash; which can matter more than the bill if you are rate-limited during peak. That is a capacity argument, not a cost one, and mixing the two into a single number would hide both.</p>
+        </section>
+
+        <section class="seo-section" id="pricing-basis">
+            <h2>Pricing Basis, Sources &amp; Assumptions</h2>
+            <p>This page does not assert vendor prices. The multipliers and the input rate are <strong>inputs you control</strong>, pre-filled with the published structure so the arithmetic is legible. Your contract may differ, and if it does, your numbers are the ones that matter.</p>
+            <table class="cost-table">
+                <thead><tr><th>Pricing input</th><th>Basis used on this page</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Source</strong></td><td>The multiplier structure &mdash; a cache write priced above the base input rate, a cache read priced well below it, and a short versus long lifetime with different write costs &mdash; follows the <a href="https://platform.claude.com/docs/en/about-claude/pricing" rel="nofollow noopener" target="_blank">Anthropic pricing documentation</a> and the <a href="https://openai.com/api/pricing/" rel="nofollow noopener" target="_blank">OpenAI API pricing page</a>, both re-read on <time datetime="2026-11-20">2026-11-20</time>. Preset multipliers (1.25&times;, 2.00&times;, 0.10&times;) reflect that published structure; they are starting points, not a quote, and are not used until you select a preset or type your own.</td></tr>
+                    <tr><td><strong>Region</strong></td><td>Not applicable &mdash; first-party API pricing is global per provider. Regional and multi-region endpoints on cloud marketplaces can carry a premium, and if you buy through one, use that invoice rate.</td></tr>
+                    <tr><td><strong>Currency</strong></td><td>USD, as entered by the user</td></tr>
+                    <tr><td><strong>Last checked</strong></td><td><time datetime="2026-11-20">2026-11-20</time> &mdash; the existence of a write premium, a read discount, and two lifetime tiers was re-confirmed against provider documentation on this date. No rate is asserted.</td></tr>
+                </tbody>
+            </table>
+            <h3>Modelling assumptions</h3>
+            <ul style="font-size:0.88rem; line-height:1.85;">
+                <li><strong>Uniform spacing.</strong> Requests are treated as evenly spaced at the gap you enter. Real traffic is bursty, which raises the hit rate above this estimate &mdash; a burst of ten requests in thirty seconds behaves like a fifty-second gap, not a ten-minute one. The model is deliberately the pessimistic case for a given mean gap.</li>
+                <li><strong>One write per window.</strong> The first request in each window writes and the rest read. Workloads that keep a cache alive continuously by touching it just inside the TTL will do slightly better, because the touch refreshes the lifetime without a new write.</li>
+                <li><strong>Cost is input-only.</strong> Output tokens are not modelled, because caching does not change them. The whole-bill figure refers to the input line, not to your total invoice.</li>
+                <li><strong>Excluded.</strong> Retrieval and storage fees on providers that bill cache storage by the hour, batch discounts, negotiated committed-use rates, the throughput benefit of cache reads not counting against rate limits, and provider-specific eviction under memory pressure.</li>
+                <li><strong>Month length.</strong> Billed days is an input, defaulting to 30. Calendar months range from 28 to 31, a &plusmn;10% swing on any monthly figure.</li>
+            </ul>
+        </section>
+
+        <div class="related-tools">
+            <h3>Related Tools</h3>
+            <div class="related-grid">
+                <a href="/reasoning-token-cost">Reasoning Token Cost &rarr;</a>
+                <a href="/agent-context-cost">Agent Context Cost &rarr;</a>
+                <a href="/fine-tune-vs-rag-cost">Fine-Tuning vs RAG &rarr;</a>
+                <a href="/llm-api-pricing-calculator">LLM API Pricing &rarr;</a>
+                <a href="/llm-selfhost-vs-api-breakeven">Self-Host vs API Breakeven &rarr;</a>
+                <a href="/token-size-to-storage">Token Size to Storage &rarr;</a>
+                <a href="/cdn-cache-hit-ratio-impact">CDN Cache Hit Ratio &rarr;</a>
+            </div>
+        </div>
+
+<footer class="jslet-footer-box">
+            <div class="jslet-footer-inner">
+                <div class="jslet-footer-top">
+                    <h3>Get more insights</h3>
+                    <p>Looking for a specific tool or an explanation? Visit the <a href="/about">Help &amp; Documentation Center</a></p>
+                </div>
+
+                <div class="jslet-footer-features">
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 1v3h10V1h2v3a4 4 0 0 1 4 4v11a4 4 0 0 1-4 4H5a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4V1zm14 8V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v1zm0 3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v7c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Weekly technical briefings</strong>
+                            <span>Subscribe to the <a href="/rss.xml">jslet RSS Feed</a> for the latest cloud economics reports</span>
+                        </div>
+                    </div>
+
+                    <div class="jslet-feature-col">
+                        <div class="jslet-feat-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9 9a3 3 0 1 1 6 0 3 3 0 0 1-6 0m10.48 5a9 9 0 1 0-14.97 0l-1.7 6.4a1.7 1.7 0 0 0 2.5 1.92l1.94-1.12 1.12 1.95a1.7 1.7 0 0 0 3.12-.42l.51-1.88.5 1.88a1.7 1.7 0 0 0 3.13.42l1.12-1.95 1.95 1.12a1.7 1.7 0 0 0 2.5-1.92zM5 9a7 7 0 1 1 14 0A7 7 0 0 1 5 9m14.08 11.24-3.06-1.77-1.77 3.06-.97-3.62c1.75-.25 3.34-1 4.61-2.1zm-9.33 1.3-1.77-3.07-3.06 1.77L6.1 15.8a9 9 0 0 0 4.6 2.1z"></path></svg>
+                        </div>
+                        <div class="jslet-feat-text">
+                            <strong>Real production case studies</strong>
+                            <span>See how teams like yours optimize cloud spend: <a href="/articles">view in-depth articles</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer nav (brand + resources + company) -->
+                <div class="jslet-footer-nav-grid">
+                    <!-- Brand -->
+                    <div class="jslet-footer-brand">
+                        <a href="/" class="jslet-footer-logo" aria-label="jslet home">
+                            <svg class="jslet-mark" width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#4F46E5"/><rect width="64" height="30" rx="16" fill="#ffffff" opacity="0.18"/><circle cx="40" cy="16" r="5" fill="#ffffff"/><path d="M40 27 L40 45 C40 52.5 30 54.5 26.5 48" fill="none" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <span class="jslet-footer-name">jslet.com</span>
+                        </a>
+                        <p class="jslet-footer-tagline">Cloud and AI infrastructure cost models &amp; engineering calculators. 126 tools, all running locally in your browser.</p>
+                        <div class="jslet-footer-score">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="#059669"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0m-8 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4"></path></svg>
+                            Architecture-ready · 100% client-side
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Resources -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Resources</h4>
+                        <ul>
+                            <li><a href="/articles">Briefings</a></li>
+                            <li><a href="/rss.xml">RSS feed</a></li>
+                            <li><a href="/security-sre">Security / SRE</a></li>
+                            <li><a href="/devops-utilities">DevOps</a></li>
+                            <li><a href="/search">Site search</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Column 3: Company -->
+                    <div class="jslet-footer-nav-col">
+                        <h4>Company</h4>
+                        <ul>
+                            <li><a href="/about">About jslet</a></li>
+                            <li><a href="/methodology">Methodology</a></li>
+                            <li><a href="/privacy">Privacy policy</a></li>
+                            <li><a href="/terms">Terms of service</a></li>
+                            <li><a href="/subscribe">RSS &amp; Updates</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="jslet-copyright-line">
+                    <p>&copy; 2026 jslet. All rights reserved. &bull; <a href="/privacy">Privacy</a> &bull; <a href="/terms">Terms</a> &bull; <a href="/about">About &amp; contact</a></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+    (function () {
+        function num(id, def) {
+            var el = document.getElementById(id);
+            if (!el) { return def; }
+            var v = parseFloat(el.value);
+            return isFinite(v) ? v : def;
+        }
+        function money(v) {
+            if (!isFinite(v)) { v = 0; }
+            var neg = v < 0;
+            var s = '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            return neg ? '-' + s : s;
+        }
+        function pctSigned(v) {
+            if (!isFinite(v)) { return '&mdash;'; }
+            var p = v * 100;
+            var sign = p > 0 ? '+' : (p < 0 ? '&minus;' : '');
+            return sign + Math.abs(p).toFixed(1) + '%';
+        }
+        function mult(v) {
+            if (!isFinite(v)) { return '&mdash;'; }
+            return v.toFixed(2) + '&times;';
+        }
+
+        // 给定寿命与间隔，返回窗口内请求数
+        function windowCount(ttlSec, gapSec, reqsPerDay) {
+            if (gapSec <= 0) { return 1; }
+            var byGap = Math.floor(ttlSec / gapSec);
+            var byVolume = (reqsPerDay * ttlSec) / 86400;
+            var n = Math.min(byGap, Math.floor(byVolume));
+            return n >= 1 ? n : 1;
+        }
+
+        // 成本倍数
+        function costMultiple(w, r, n) {
+            if (n <= 1) { return w; }
+            return (w + (n - 1) * r) / n;
+        }
+
+        document.getElementById('tier').addEventListener('change', function () {
+            var v = this.value;
+            if (!v) { return; }
+            var p = v.split('|');
+            document.getElementById('ttl').value = p[0];
+            document.getElementById('write').value = p[1];
+        });
+
+        function compute() {
+            var prefix = Math.max(0, num('prefix', 8000));
+            var suffix = Math.max(0, num('suffix', 1000));
+            var minCache = Math.max(0, num('mincache', 1024));
+            var reqs = Math.max(1, num('reqs', 216));
+            var gap = Math.max(1, num('gap', 400));
+            var days = Math.max(1, Math.min(31, num('days', 30)));
+            var pIn = Math.max(0, num('pin', 2));
+            var w = Math.max(0, num('write', 1.25));
+            var r = Math.max(0, num('read', 0.10));
+            var ttlMin = Math.max(1, num('ttl', 5));
+            var ttlSec = ttlMin * 60;
+
+            var warns = [];
+            var belowMin = prefix > 0 && prefix < minCache;
+
+            var n = windowCount(ttlSec, gap, reqs);
+            var hit = (n - 1) / n;
+            var m = costMultiple(w, r, n);
+
+            if (belowMin) {
+                // 低于最小值：请求照常成功，但不进缓存，也不收写入溢价
+                n = 1;
+                hit = 0;
+                m = 1;
+                warns.push('Prefix is below the provider minimum of ' + Math.round(minCache) +
+                    ' tokens. These requests run uncached at full price and return no error, so the ' +
+                    'real saving is zero regardless of what the multipliers say.');
+            }
+
+            // 每月 token
+            var callsPerMonth = reqs * days;
+            var prefixTokMo = callsPerMonth * prefix;
+            var suffixTokMo = callsPerMonth * suffix;
+
+            var prefixPlain = prefixTokMo / 1e6 * pIn;
+            var prefixCached = prefixPlain * m;
+            var suffixCost = suffixTokMo / 1e6 * pIn;
+
+            var totalPlain = prefixPlain + suffixCost;
+            var totalCached = prefixCached + suffixCost;
+
+            var prefixSave = -((prefixCached - prefixPlain) / (prefixPlain || 1));
+            var billSave = -((totalCached - totalPlain) / (totalPlain || 1));
+
+            // 另一个 tier：5m vs 1h。长寿命的写入溢价 = 短寿命 × 1.6（published 1.25 -> 2.00）
+            var ttl5 = 300, ttl1 = 3600;
+            var w5 = w, w1 = w * 1.6;
+            var n5 = windowCount(ttl5, gap, reqs);
+            var n1 = windowCount(ttl1, gap, reqs);
+            var m5 = costMultiple(w5, r, n5);
+            var m1 = costMultiple(w1, r, n1);
+
+            var bestName = 'none', bestM = 1;
+            if (!belowMin) {
+                if (m5 < bestM) { bestM = m5; bestName = '5-minute'; }
+                if (m1 < bestM) { bestM = m1; bestName = '1-hour'; }
+            }
+
+            // 断点复用次数
+            var brk = '&mdash;';
+            if (1 - r > 0) {
+                var need = Math.ceil((w - r) / (1 - r));
+                brk = (need < 1 ? 1 : need) + ' req';
+            }
+
+            document.getElementById('hit-val').textContent = (hit * 100).toFixed(1) + '%';
+            document.getElementById('mult-val').textContent = mult(m);
+            document.getElementById('psave-val').innerHTML = pctSigned(prefixSave);
+            document.getElementById('bsave-val').innerHTML = pctSigned(billSave);
+            document.getElementById('best-val').innerHTML = belowMin ? 'collapses' :
+                (bestName === 'none' ? 'leave off' : bestName + ' &middot; ' + mult(bestM));
+            document.getElementById('cost-val').textContent = money(totalCached);
+            document.getElementById('base-val').textContent = money(totalPlain);
+            document.getElementById('brk-val').textContent = brk;
+
+            var pv = document.getElementById('psave-val');
+            pv.className = 'metric-val txt ' + (prefixSave > 0 ? 'pos' : (prefixSave < 0 ? 'neg' : ''));
+            var bv = document.getElementById('bsave-val');
+            bv.className = 'metric-val txt ' + (billSave > 0 ? 'pos' : (billSave < 0 ? 'neg' : ''));
+
+            document.getElementById('results-params').innerHTML =
+                Math.round(prefix).toLocaleString('en-US') + ' token prefix &middot; ' +
+                Math.round(suffix).toLocaleString('en-US') + ' variable &middot; ' +
+                Math.round(gap) + 's gap &middot; ' + Math.round(ttlMin) + ' min tier &middot; ' +
+                n + ' request' + (n === 1 ? '' : 's') + ' per window';
+
+            // 结论
+            var msg;
+            if (belowMin) {
+                msg = 'The prefix is under the cacheable minimum, so nothing is stored. At ' +
+                    money(totalCached) + ' per month in input, you are paying the plain price and ' +
+                    'collecting none of the discount. Either lengthen the stable prefix above ' +
+                    Math.round(minCache) + ' tokens or stop paying for a feature you cannot use.';
+            } else if (m > 1) {
+                msg = 'Caching <strong>costs you ' + ((m - 1) * 100).toFixed(1) + '% more</strong> here: ' +
+                    'a ' + gap + ' second gap against a ' + Math.round(ttlMin) + ' minute lifetime means ' +
+                    'every request writes and none reads, so the write premium at ' + w.toFixed(2) +
+                    '&times; is never repaid. That is ' + money(totalCached - totalPlain) +
+                    ' per month of avoidable spend.';
+                if (bestName !== 'none') {
+                    msg += ' The ' + bestName + ' tier would run at ' + mult(bestM) + ' instead &mdash; ' +
+                        'about ' + money(totalPlain * (1 - ((prefixPlain * bestM + suffixCost) / totalPlain))) +
+                        ' saved against no caching at all.';
+                } else {
+                    msg += ' No tier repays its write premium at this spacing, so the honest answer is to disable caching.';
+                }
+            } else if (m === 1) {
+                msg = 'Caching is exactly neutral here: the write premium and the read discount cancel out at ' +
+                    n + ' request' + (n === 1 ? '' : 's') + ' per window.';
+            } else {
+                msg = 'Caching <strong>saves ' + ((1 - m) * 100).toFixed(1) + '%</strong> on the prefix, which is ' +
+                    pctSigned(billSave) + ' of the input line and ' + money(totalPlain - totalCached) +
+                    ' per month. The hit rate is ' + (hit * 100).toFixed(1) + '% with ' +
+                    n + ' request' + (n === 1 ? '' : 's') + ' per ' + Math.round(ttlMin) + ' minute window.';
+                if (bestName !== 'none' && bestM < m - 0.001) {
+                    msg += ' The ' + bestName + ' tier would do better at ' + mult(bestM) + ': the write premium is larger but it is repaid across a longer window.';
+                }
+            }
+            if (hit > 0 && hit < 0.5) {
+                msg += ' A hit rate under 50% is fragile &mdash; one slow request at the wrong moment resets the window.';
+            }
+
+            var vd = document.getElementById('verdict');
+            vd.className = 'verdict ' + (m > 1 ? 'lose' : (m < 1 ? 'win' : ''));
+            vd.innerHTML = msg;
+
+            document.getElementById('warn-line').textContent = warns.join(' ');
+            document.getElementById('results-card').style.display = 'block';
+            document.getElementById('results-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        document.querySelector('.btn-calc').addEventListener('click', compute);
+
+        // 只在真实点击时计算，避免首屏误触发
+        var firstRun = true;
+        if (!firstRun) { compute(); }
+    })();
+    </script>
+
+    <script src="nav.js"></script>
+</body>
+</html>
